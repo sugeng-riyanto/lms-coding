@@ -1,0 +1,35 @@
+# Supabase local configuration.
+# Membutuhkan Supabase CLI + Docker (`supabase start`).
+# Tanpa keduanya (seperti environment build saat ini), file ini hanya dokumentasi;
+# JANGAN commit secret — hanya placeholder non-rahasia.
+
+project_id = "autonomous-learning-lms"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Email/pw + magic link sesuai kebijakan sekolah (SECURITY_PRIVACY.md).
+# MFA guru diwajibkan saat tersedia di dashboard.
+enable_signup = false
+jwt_expiry = 3600
+
+[storage]
+enabled = true
+# Buckets private dibuat di migration 20260906000001_storage.sql:
+# submissions (per-folder uid), certificates (server-only).
+
+[analytics]
+enabled = false

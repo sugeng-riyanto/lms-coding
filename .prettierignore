@@ -1,0 +1,6 @@
+.next/
+node_modules/
+package-lock.json
+# Dokumen spesifikasi (*.md di root) adalah source of truth beku —
+# JANGAN diformat ulang agar diff tetap bermakna.
+*.md
