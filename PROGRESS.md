@@ -99,4 +99,21 @@ Perubahan sesi ini:
 - Phase 1 exit criteria: TERPENUHI STATIS **dan LIVE** — denial 38/38 PASS pada Postgres 18 via `scripts/live-denial/` (shim Supabase + migration verbatim + seed + fixture; lihat `scripts/live-denial/README.md`). Supabase CLI/Docker tetap tidak ada → hanya lapisan HTTP (PostgREST/GoTrue) yang belum teruji.
 - Mode demo DEV-ONLY (preview tanpa Supabase): `lib/supabase/demo.ts` + `createClient()` demo-aware + guard demo identity + banner amber di root layout — halaman guarded (/learn, /teacher, /profile, cohorts, questions, dll) RENDER state kosong alih-alih error boundary saat `next dev` tanpa env. `createStrictClient` di server actions & 3 API handlers (export, pdf, public verifier) menjaga write/API tetap fail keras; NODE_ENV=production tidak pernah masuk mode demo (fail closed). File: `lib/supabase/demo.ts` (baru), `lib/supabase/server.ts`, `lib/auth/guards.ts`, `app/layout.tsx`, `features/actions.ts`, 3 route handlers, `.prettierignore` (+next-env.d.ts).
 - Responsive audit publik (/, /login, /health, /unauthorized, /verify) via Playwright chromium @360/768/1440px: 0 horizontal overflow di semua route & lebar; satu-satunya elemen ber-overflow internal adalah skip-link `sr-only` (by design). Screenshot: `.freebuff/responsive/*.png` (tool dir, tidak di-commit). CATATAN: `/verify` hanya teruji dalam state 404 (tanpa row demo + RLS anon Phase 6); state valid (dl flex justify-between) belum teruji @360px.
-- Live-denial harness: `scripts/live-denial/` (00_shim, 05_grants, 10_fixture, 20_denial, run.sh, README) — tooling dev, dipakai manual; tidak bagian CI (CI tanpa Postgres). Migration `20260906000008_rls_recursion_fix.sql` berisi perbaikan 2 bug nyata yang hanya muncul saat eksekusi sungguhan (lihat README): recursion cycle policy dan grant EXECUTE helper private ke authenticated.
+- Live-denial harness: `scripts/live-denial/` (00_shim, 05_grants, 10_fixture, 20_denial, run.sh, README) — tooling dev, dipakai manual; migration `20260906000008_rls_recursion_fix.sql` berisi perbaikan 2 bug nyata yang hanya muncul saat eksekusi sungguhan (lihat README): recursion cycle policy dan grant EXECUTE helper private ke authenticated.
+- CI kini menggates live-denial juga: job `live-denial` di `.github/workflows/ci.yml` (setelah `verify`, service container `postgres:18` di port 5432 + `postgresql-client` via apt, lalu `bash scripts/live-denial/run.sh` dengan env `PGHOST/PGPORT/PGUSER/PGPASSWORD` default). Divalidasi lokal: suite tetap 38/38 PASS dengan kontrak env yang sama.
+
+## Verifikasi gate ulang — HEAD 17e2c26 (2026-09-06)
+
+Seluruh gate dijalankan ulang terhadap HEAD `17e2c26` (tree bersih + 2 file uncommitted: `ci.yml`, `PROGRESS.md` — tidak memengaruhi gate):
+
+| Gate | Exit | Hasil |
+|---|---|---|
+| `format:check` | 0 | PASS (semua file prettier-clean) |
+| `lint` | 0 | PASS (`eslint . --max-warnings=0`) |
+| `typecheck` | 0 | PASS (`tsc --noEmit`) |
+| `test` | 0 | PASS 113/113 (20 files) |
+| `build` | 0 | PASS (production build) |
+| `db:typecheck` | 0 | PASS (DB advisor: 34 tables, 1 view) |
+| `e2e` | 0 | PASS 3 passed / 1 skipped (login skip: tanpa Supabase live) |
+
+Log per gate: `/tmp/gate-{format,lint,typecheck,test,build,db,e2e}.log` (tool dir, tidak di-commit).
