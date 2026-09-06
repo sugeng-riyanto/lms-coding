@@ -1,13 +1,53 @@
 -- Seed demo ANONIM: 1 guru, 1 kelas, 3 murid, 1 course, 3 level.
 -- Jalankan HANYA di local/preview. UUID tetap agar fixture tests deterministik.
--- Password/SEED dikelola via Supabase Auth admin API; file ini hanya data domain.
+
+-- ============================================================================
+-- Auth seed LOKAL (E2E/demo) — auth.users + auth.identities, idempotent.
+-- HANYA untuk `supabase db reset` lokal; data anonim, password demo non-rahasia.
+--   guru@demo.local     / DemoPass-2026!   (uuid a0000000-…-001, teacher)
+--   murid01@demo.local  / DemoPass-2026!   (uuid b0000000-…-001, student)
+--   murid02@demo.local  / DemoPass-2026!   (uuid b0000000-…-002, student)
+--   murid03@demo.local  / DemoPass-2026!   (uuid b0000000-…-003, student)
+-- Ganti password di clone Anda; jangan pernah pakai akun ini di production.
+-- ============================================================================
+insert into auth.users
+  (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
+   raw_app_meta_data, created_at, updated_at)
+values
+  ('a0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'guru@demo.local',
+   extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', now(), now()),
+  ('b0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'murid01@demo.local',
+   extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', now(), now()),
+  ('b0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'murid02@demo.local',
+   extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', now(), now()),
+  ('b0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'murid03@demo.local',
+   extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', now(), now())
+on conflict (id) do nothing;
+
+-- identities wajib untuk email/password sign-in di GoTrue modern.
+insert into auth.identities
+  (provider_id, user_id, identity_data, provider, last_sign_in_at, created_at, updated_at)
+select u.id::text, u.id,
+       jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true),
+       'email', now(), now(), now()
+from auth.users u
+where u.email in ('guru@demo.local', 'murid01@demo.local', 'murid02@demo.local', 'murid03@demo.local')
+on conflict (provider, provider_id) do nothing;
 
 -- org
 insert into public.organizations (id, name, slug) values
   ('11111111-1111-1111-1111-111111111111', 'Sekolah Demo', 'sekolah-demo')
 on conflict (id) do nothing;
 
--- NOTE: auth.users dibuat via dashboard/CLI; id di bawah merujuk user seed tersebut.
+-- NOTE: auth.users + identities sudah dibuat di blok atas dengan UUID tetap yang sama.
 -- teacher
 insert into public.profiles (id, organization_id, display_name) values
   ('a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Guru Demo')
@@ -57,3 +97,20 @@ insert into public.enrollments (course_id, student_id, cohort_id, status) values
   ('d0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000001', 'active'),
   ('d0000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000001', 'active')
 on conflict do nothing;
+
+-- Demo certificate untuk verifier publik (E2E test 4 / /verify).
+-- CATATAN: view certificates_public security_invoker + RLS base-table tanpa policy
+-- `to anon` membuat anon mendapat 404 selama Phase 6 belum menambah policy baca
+-- minimal-PII untuk status active. Row ini siap dipakai begitu policy tersebut ada.
+insert into public.certificates
+  (public_id, enrollment_id, level_id, serial_no, status, issued_at, payload_json, payload_hash)
+select 'demo-valid-certificate', e.id, lv.id, 'DEMO-0001', 'active', '2026-01-15T00:00:00Z',
+       jsonb_build_object('publicId', 'demo-valid-certificate'),
+       lpad('', 64, '0')
+from public.enrollments e
+join public.courses c on c.id = e.course_id and c.slug = 'matematika-dasar'
+join public.course_versions cv on cv.course_id = c.id
+join public.levels lv on lv.course_version_id = cv.id and lv.position = 0
+where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+limit 1
+on conflict (public_id) do nothing;

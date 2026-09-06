@@ -32,10 +32,16 @@ describe("tidak ada edit in-place versi published (kontrak ADR-003)", () => {
   });
 });
 
-describe("archive bukan hard delete", () => {
-  it("archive = update status, tanpa DELETE", () => {
+describe("no hard delete pada data berattempt (DATA_MODEL.md: attempt/revision/certificate/audit append-only)", () => {
+  it("archive = update status, tanpa hard delete konten terpakai", () => {
     const actions = readFileSync("features/actions.ts", "utf8");
     expect(actions).toMatch(/status: "archived"/);
-    expect(actions).not.toMatch(/\.delete\(\)/);
+    // Satu-satunya .delete() adalah deleteContent: versi draft + subtree TANPA attempt.
+    const hardDeletes = actions.match(/\.delete\(\)/g) ?? [];
+    expect(hardDeletes.length).toBe(1);
+    expect(actions).toMatch(/PUBLISHED_IMMUTABLE/);
+    expect(actions).toMatch(/HAS_ATTEMPTS/);
+    // Tidak boleh ada hard delete pada tabel append-only.
+    expect(actions).not.toMatch(/from\("(attempts|grade_revisions|certificates|audit_logs)"\)\.delete/);
   });
 });

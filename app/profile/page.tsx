@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LogoutButton } from "./logout-button";
+import { EditProfile } from "./edit-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,8 @@ export default async function ProfilePage() {
           Profil belum tersedia. Hubungi admin sekolah.
         </p>
       )}
-      <div className="mt-6">
+      <div className="mt-6 space-y-4">
+        {p && <EditProfile initialName={p.display_name} />}
         <LogoutButton />
       </div>
     </main>

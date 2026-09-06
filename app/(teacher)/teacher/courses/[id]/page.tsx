@@ -24,16 +24,19 @@ async function getManageData(courseId: string) {
   if (!v) return { course: c, version: null, levels: [] };
   const { data: levels } = await supabase
     .from("levels")
-    .select("id,position,title")
+    .select("id,position,title,objective")
     .eq("course_version_id", v.id)
     .order("position");
   return {
     course: c,
     version: v,
-    levels: ((levels as { id: string; position: number; title: string }[] | null) ?? []).map((l) => ({
+    levels: (
+      (levels as { id: string; position: number; title: string; objective: string }[] | null) ?? []
+    ).map((l) => ({
       id: l.id,
       position: l.position,
       title: l.title,
+      objective: l.objective,
     })),
   };
 }

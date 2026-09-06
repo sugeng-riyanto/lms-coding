@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createActivity, createLesson, createModule, reorderSiblings } from "@/features/actions";
+import { EditNode } from "@/components/edit-node";
 
 export interface ManagerActivity {
   id: string;
@@ -15,6 +16,7 @@ export interface ManagerLesson {
   id: string;
   position: number;
   title: string;
+  objective: string;
   activities: ManagerActivity[];
 }
 export interface ManagerModule {
@@ -298,7 +300,10 @@ export function LevelManager({
         )}
         {initialModules.map((m) => (
           <div key={m.id} className="rounded-xl border p-4">
-            <h2 className="font-bold">Module: {m.title}</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold">Module: {m.title}</h2>
+              <EditNode table="modules" id={m.id} initialTitle={m.title} />
+            </div>
             {m.lessons.length === 0 ? (
               <p className="mt-1 text-sm text-slate-500">Belum ada lesson.</p>
             ) : (
@@ -309,7 +314,14 @@ export function LevelManager({
                       <span>
                         <strong>{i + 1}.</strong> {le.title}
                       </span>
-                      <span className="flex gap-1">
+                      <span className="flex items-center gap-1">
+                        <EditNode
+                          table="lessons"
+                          id={le.id}
+                          initialTitle={le.title}
+                          initialObjective={le.objective}
+                          showObjective
+                        />
                         <button
                           disabled={busy || i === 0}
                           aria-label={`Naikkan ${le.title}`}
@@ -360,7 +372,8 @@ export function LevelManager({
                               </Link>
                             )}
                           </span>
-                          <span className="flex gap-1">
+                          <span className="flex items-center gap-1">
+                            <EditNode table="activities" id={a.id} initialTitle={a.title} />
                             <button
                               disabled={busy || ai === 0}
                               aria-label={`Naikkan ${a.title}`}

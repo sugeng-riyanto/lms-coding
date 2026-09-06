@@ -13,3 +13,6 @@ test-results/
 *.key
 supabase/.branches/
 supabase/.temp/
+# Agent tool runtime (bukan source proyek)
+.freebuff/
+

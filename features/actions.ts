@@ -10,11 +10,13 @@ import {
   archiveCourseSchema,
   createActivitySchema,
   createAssessmentSchema,
+  createCohortSchema,
   createCourseSchema,
   createLessonSchema,
   createLevelSchema,
   createModuleSchema,
   createQuestionSchema,
+  deleteContentSchema,
   duplicateCourseSchema,
   enrollStudentSchema,
   gradeResponseSchema,
@@ -27,6 +29,9 @@ import {
   resolveAlertSchema,
   revokeCertificateSchema,
   saveResponseSchema,
+  suspendEnrollmentSchema,
+  updateContentSchema,
+  updateProfileSchema,
   startAttemptSchema,
   submitAttemptSchema,
   publishVersionSchema,
@@ -1283,4 +1288,405 @@ export async function getAttemptResult(attemptId: string) {
         | null) ?? []
     ).map((r) => ({ ...r })),
   };
+}
+
+// ---------- Authoring: resolve version dari node (draft-only guard ADR-003) ----------
+type Supa = Awaited<ReturnType<typeof createClient>>;
+
+async function resolveVersionId(supabase: Supa, table: string, id: string): Promise<string | null> {
+  if (table === "levels") {
+    const { data } = await supabase.from("levels").select("course_version_id").eq("id", id).single();
+    return (data as { course_version_id: string } | null)?.course_version_id ?? null;
+  }
+  if (table === "modules") {
+    const { data } = await supabase
+      .from("modules")
+      .select("level_id,levels(course_version_id)")
+      .eq("id", id)
+      .single();
+    const m = data as { level_id: string; levels: { course_version_id: string } | null } | null;
+    return m?.levels?.course_version_id ?? null;
+  }
+  if (table === "lessons") {
+    const { data } = await supabase
+      .from("lessons")
+      .select("module_id,modules(level_id,levels(course_version_id))")
+      .eq("id", id)
+      .single();
+    const l = data as {
+      module_id: string;
+      modules: { levels: { course_version_id: string } | null } | null;
+    } | null;
+    return l?.modules?.levels?.course_version_id ?? null;
+  }
+  const { data } = await supabase
+    .from("activities")
+    .select("lesson_id,lessons(module_id,modules(level_id,levels(course_version_id)))")
+    .eq("id", id)
+    .single();
+  const a = data as {
+    lesson_id: string;
+    lessons: { modules: { levels: { course_version_id: string } | null } | null } | null;
+  } | null;
+  return a?.lessons?.modules?.levels?.course_version_id ?? null;
+}
+
+async function isDraftVersion(supabase: Supa, versionId: string): Promise<boolean> {
+  const { data } = await supabase.from("course_versions").select("published_at").eq("id", versionId).single();
+  const v = data as { published_at: string | null } | null;
+  return Boolean(v) && v?.published_at === null;
+}
+
+// ---------- Authoring: update node (HANYA versi draft) ----------
+export async function updateContent(input: unknown) {
+  const parsed = updateContentSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  if (!parsed.data.title && !parsed.data.objective) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const versionId = await resolveVersionId(supabase, parsed.data.table, parsed.data.id);
+  if (!versionId || !(await isDraftVersion(supabase, versionId))) {
+    return { ok: false as const, error: "PUBLISHED_IMMUTABLE" };
+  }
+  const patch: Record<string, string> = { updated_at: new Date().toISOString() };
+  if (parsed.data.title) patch["title"] = parsed.data.title;
+  if (parsed.data.objective && (parsed.data.table === "levels" || parsed.data.table === "lessons")) {
+    patch["objective"] = parsed.data.objective;
+  }
+  const { data, error } = await supabase
+    .from(parsed.data.table)
+    .update(patch)
+    .eq("id", parsed.data.id)
+    .select("id");
+  if (error || ((data as { id: string }[] | null) ?? []).length === 0) {
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  }
+  return { ok: true as const };
+}
+
+// ---------- Authoring: delete node (draft + tanpa attempt terpakai) ----------
+export async function deleteContent(input: unknown) {
+  const parsed = deleteContentSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const versionId = await resolveVersionId(supabase, parsed.data.table, parsed.data.id);
+  if (!versionId || !(await isDraftVersion(supabase, versionId))) {
+    return { ok: false as const, error: "PUBLISHED_IMMUTABLE" };
+  }
+  // Kumpulkan assessment di subtree; tolak bila sudah ada attempt.
+  const assessmentIds = await collectAssessmentIds(supabase, parsed.data.table, parsed.data.id);
+  if (assessmentIds.length > 0) {
+    const { count } = await supabase
+      .from("attempts")
+      .select("id", { count: "exact", head: true })
+      .in("assessment_id", assessmentIds);
+    if ((count ?? 0) > 0) return { ok: false as const, error: "HAS_ATTEMPTS" };
+  }
+  const { error } = await supabase.from(parsed.data.table).delete().eq("id", parsed.data.id);
+  if (error) return { ok: false as const, error: "DELETE_FAILED" };
+  return { ok: true as const };
+}
+
+async function collectAssessmentIds(supabase: Supa, table: string, id: string): Promise<string[]> {
+  const out: string[] = [];
+  const lessons: string[] = [];
+  if (table === "activities") {
+    const { data } = await supabase.from("assessments").select("id").eq("activity_id", id);
+    return ((data as { id: string }[] | null) ?? []).map((r) => r.id);
+  }
+  if (table === "lessons") {
+    lessons.push(id);
+  } else {
+    // levels | modules → kumpulkan semua lesson di subtree.
+    let moduleIds: string[] = [];
+    if (table === "levels") {
+      const { data } = await supabase.from("modules").select("id").eq("level_id", id);
+      moduleIds = ((data as { id: string }[] | null) ?? []).map((r) => r.id);
+    } else {
+      moduleIds = [id];
+    }
+    for (const mid of moduleIds) {
+      const { data } = await supabase.from("lessons").select("id").eq("module_id", mid);
+      for (const l of (data as { id: string }[] | null) ?? []) lessons.push(l.id);
+    }
+  }
+  for (const lid of lessons) {
+    const { data } = await supabase.from("activities").select("id").eq("lesson_id", lid);
+    for (const a of (data as { id: string }[] | null) ?? []) {
+      const { data: asmt } = await supabase.from("assessments").select("id").eq("activity_id", a.id);
+      for (const s of (asmt as { id: string }[] | null) ?? []) out.push(s.id);
+    }
+  }
+  return out;
+}
+
+// ---------- Authoring: versi baru dari published (ADR-003, tanpa attempt/enrollment) ----------
+// Struktur versi terakhir disalin menjadi draft yang bisa diedit; versi published tak tersentuh.
+export async function createCourseVersion(input: unknown) {
+  const parsed = publishVersionSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: course } = await supabase
+    .from("courses")
+    .select("id")
+    .eq("id", parsed.data.courseId)
+    .single();
+  if (!course) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  const { data: vers } = await supabase
+    .from("course_versions")
+    .select("version")
+    .eq("course_id", parsed.data.courseId)
+    .order("version", { ascending: false })
+    .limit(1);
+  const next = (((vers as { version: number }[] | null) ?? [])[0]?.version ?? 0) + 1;
+  const { data: created, error } = await supabase
+    .from("course_versions")
+    .insert({ course_id: parsed.data.courseId, version: next })
+    .select("id")
+    .single();
+  if (error) return { ok: false as const, error: "CREATE_FAILED" };
+  const dstVersionId = (created as { id: string }).id;
+  // Salin struktur versi terakhir (published/draft) sebagai titik awal yang bisa diedit.
+  const { data: srcVers } = await supabase
+    .from("course_versions")
+    .select("id")
+    .eq("course_id", parsed.data.courseId)
+    .neq("id", dstVersionId)
+    .order("version", { ascending: false })
+    .limit(1);
+  const srcVersionId = ((srcVers as { id: string }[] | null) ?? [])[0]?.id;
+  if (srcVersionId) {
+    const copied = await copyVersionTree(supabase, srcVersionId, dstVersionId);
+    if (!copied) return { ok: false as const, error: "COPY_FAILED" };
+  }
+  return { ok: true as const, versionId: dstVersionId, version: next };
+}
+
+// Menyalin tree versi → versi (levels→…→assessment+links+prereq internal). Tanpa attempts/enrollments.
+async function copyVersionTree(supabase: Supa, srcVersionId: string, dstVersionId: string): Promise<boolean> {
+  const idMap = new Map<string, string>();
+  const remap = (oldId: string): string => {
+    let n = idMap.get(oldId);
+    if (!n) {
+      n = randomUUID();
+      idMap.set(oldId, n);
+    }
+    return n;
+  };
+  const { data: levels } = await supabase
+    .from("levels")
+    .select("id,position,title,objective,passing_score,mastery_threshold")
+    .eq("course_version_id", srcVersionId)
+    .order("position");
+  for (const lv of (levels as
+    | {
+        id: string;
+        position: number;
+        title: string;
+        objective: string;
+        passing_score: number;
+        mastery_threshold: number;
+      }[]
+    | null) ?? []) {
+    const newLevelId = remap(lv.id);
+    let { error } = await supabase.from("levels").insert({
+      id: newLevelId,
+      course_version_id: dstVersionId,
+      position: lv.position,
+      title: lv.title,
+      objective: lv.objective,
+      passing_score: lv.passing_score,
+      mastery_threshold: lv.mastery_threshold,
+    });
+    if (error) return false;
+    const { data: modules } = await supabase
+      .from("modules")
+      .select("id,position,title")
+      .eq("level_id", lv.id)
+      .order("position");
+    for (const md of (modules as { id: string; position: number; title: string }[] | null) ?? []) {
+      const newModuleId = remap(md.id);
+      ({ error } = await supabase
+        .from("modules")
+        .insert({ id: newModuleId, level_id: newLevelId, position: md.position, title: md.title }));
+      if (error) return false;
+      const { data: lessons } = await supabase
+        .from("lessons")
+        .select("id,position,title,objective,estimated_minutes,required")
+        .eq("module_id", md.id)
+        .order("position");
+      for (const le of (lessons as
+        | {
+            id: string;
+            position: number;
+            title: string;
+            objective: string;
+            estimated_minutes: number;
+            required: boolean;
+          }[]
+        | null) ?? []) {
+        const newLessonId = remap(le.id);
+        ({ error } = await supabase.from("lessons").insert({
+          id: newLessonId,
+          module_id: newModuleId,
+          position: le.position,
+          title: le.title,
+          objective: le.objective,
+          estimated_minutes: le.estimated_minutes,
+          required: le.required,
+        }));
+        if (error) return false;
+        const { data: acts } = await supabase
+          .from("activities")
+          .select("id,position,type,title,content_json,required")
+          .eq("lesson_id", le.id)
+          .order("position");
+        for (const a of (acts as
+          | {
+              id: string;
+              position: number;
+              type: string;
+              title: string;
+              content_json: unknown;
+              required: boolean;
+            }[]
+          | null) ?? []) {
+          const newActId = remap(a.id);
+          ({ error } = await supabase.from("activities").insert({
+            id: newActId,
+            lesson_id: newLessonId,
+            position: a.position,
+            type: a.type,
+            title: a.title,
+            content_json: a.content_json,
+            required: a.required,
+          }));
+          if (error) return false;
+          const { data: asmt } = await supabase
+            .from("assessments")
+            .select("id,settings_json,total_points")
+            .eq("activity_id", a.id)
+            .limit(1)
+            .single();
+          const srcAsmt = asmt as { id: string; settings_json: unknown; total_points: number } | null;
+          if (srcAsmt) {
+            const newAsmtId = randomUUID();
+            ({ error } = await supabase.from("assessments").insert({
+              id: newAsmtId,
+              activity_id: newActId,
+              settings_json: srcAsmt.settings_json,
+              total_points: srcAsmt.total_points,
+            }));
+            if (error) return false;
+            const { data: links } = await supabase
+              .from("assessment_questions")
+              .select("question_version_id,position,points")
+              .eq("assessment_id", srcAsmt.id);
+            for (const link of (links as
+              { question_version_id: string; position: number; points: number }[] | null) ?? []) {
+              ({ error } = await supabase.from("assessment_questions").insert({
+                assessment_id: newAsmtId,
+                question_version_id: link.question_version_id,
+                position: link.position,
+                points: link.points,
+              }));
+              if (error) return false;
+            }
+          }
+        }
+      }
+    }
+  }
+  const { data: prereqs } = await supabase
+    .from("prerequisites")
+    .select("target_type,target_id,required_type,required_id,rule_json");
+  for (const p of (prereqs as
+    | {
+        target_type: string;
+        target_id: string;
+        required_type: string;
+        required_id: string;
+        rule_json: unknown;
+      }[]
+    | null) ?? []) {
+    const t = idMap.get(p.target_id);
+    const r = idMap.get(p.required_id);
+    if (t && r) {
+      await supabase.from("prerequisites").insert({
+        target_type: p.target_type,
+        target_id: t,
+        required_type: p.required_type,
+        required_id: r,
+        rule_json: p.rule_json,
+      });
+    }
+  }
+  return true;
+}
+
+// ---------- Cohort: buat + suspend enrollment (API_CONTRACTS) ----------
+export async function createCohort(input: unknown) {
+  const parsed = createCohortSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  const org = mem as { organization_id: string } | null;
+  if (!org) return { ok: false as const, error: "FORBIDDEN" };
+  const { data, error } = await supabase
+    .from("cohorts")
+    .insert({
+      organization_id: org.organization_id,
+      teacher_id: userId,
+      name: parsed.data.name,
+      academic_year: parsed.data.academicYear,
+    })
+    .select("id")
+    .single();
+  if (error) return { ok: false as const, error: "CREATE_FAILED" };
+  return { ok: true as const, cohortId: (data as { id: string }).id };
+}
+
+export async function suspendEnrollment(input: unknown) {
+  const parsed = suspendEnrollmentSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  // RLS UPDATE enrollments (guru cohort) menegakkan otorisasi.
+  const { data, error } = await supabase
+    .from("enrollments")
+    .update({ status: "suspended" })
+    .eq("id", parsed.data.enrollmentId)
+    .select("id");
+  if (error || ((data as { id: string }[] | null) ?? []).length === 0) {
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  }
+  return { ok: true as const };
+}
+
+// ---------- Profile: ubah display name sendiri ----------
+export async function updateProfile(input: unknown) {
+  const parsed = updateProfileSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { error } = await supabase
+    .from("profiles")
+    .update({ display_name: parsed.data.displayName })
+    .eq("id", userId);
+  if (error) return { ok: false as const, error: "UPDATE_FAILED" };
+  return { ok: true as const };
 }

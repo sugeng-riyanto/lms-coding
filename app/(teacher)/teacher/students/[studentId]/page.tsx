@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { IssueCertificateButton } from "./issue-button";
 
 export const dynamic = "force-dynamic";
 
@@ -73,18 +74,58 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
   }
   const { data: certs } = await supabase
     .from("certificates")
-    .select("serial_no,status,issued_at")
+    .select("serial_no,status,issued_at,enrollment_id,level_id")
     .in(
       "enrollment_id",
       enrs.map((e) => e.id),
     );
+  const certRows =
+    (certs as
+      | { serial_no: string; status: string; issued_at: string; enrollment_id: string; level_id: string }[]
+      | null) ?? [];
+
+  // Approval penerbitan: level per enrollment + status sertifikat + tombol issue.
+  const issuable: {
+    enrollmentId: string;
+    courseTitle: string;
+    levelId: string;
+    levelTitle: string;
+    certStatus: string | null;
+  }[] = [];
+  for (const e of enrs) {
+    const { data: versions } = await supabase
+      .from("course_versions")
+      .select("id")
+      .eq("course_id", e.course_id)
+      .not("published_at", "is", null)
+      .order("version", { ascending: false })
+      .limit(1);
+    const v = ((versions as { id: string }[] | null) ?? [])[0];
+    if (!v) continue;
+    const { data: levelRows } = await supabase
+      .from("levels")
+      .select("id,title")
+      .eq("course_version_id", v.id)
+      .order("position");
+    for (const lv of (levelRows as { id: string; title: string }[] | null) ?? []) {
+      const existing = certRows.find((c) => c.enrollment_id === e.id && c.level_id === lv.id);
+      issuable.push({
+        enrollmentId: e.id,
+        courseTitle: e.courses?.title ?? e.course_id,
+        levelId: lv.id,
+        levelTitle: lv.title,
+        certStatus: existing?.status ?? null,
+      });
+    }
+  }
   return {
     profile,
     courses: enrs.map((e) => e.courses?.title ?? e.course_id),
     attempts,
     events,
     revisions,
-    certs: (certs as { serial_no: string; status: string; issued_at: string }[] | null) ?? [],
+    certs: certRows,
+    issuable,
   };
 }
 
@@ -159,7 +200,7 @@ export default async function StudentDetailPage({
       )}
 
       <h2 className="mt-6 text-xl font-semibold">Sertifikat</h2>
-      {data.certs.length === 0 ? (
+      {data.certs.length === 0 && data.issuable.length === 0 ? (
         <p className="mt-2 text-sm text-slate-500">Belum ada sertifikat.</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
@@ -170,6 +211,27 @@ export default async function StudentDetailPage({
           ))}
         </ul>
       )}
+
+      <h2 className="mt-6 text-xl font-semibold">Penerbitan (approval guru)</h2>
+      <p className="text-sm text-slate-500">
+        Eligibility dievaluasi server; alasan penolakan ditampilkan bila belum layak.
+      </p>
+      <ul className="mt-2 space-y-2">
+        {data.issuable.map((it) => (
+          <li
+            key={`${it.enrollmentId}-${it.levelId}`}
+            className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2 text-sm"
+          >
+            <span>
+              {it.courseTitle} · {it.levelTitle} ·{" "}
+              {it.certStatus ? `sertifikat ${it.certStatus}` : "belum terbit"}
+            </span>
+            {it.certStatus !== "active" && (
+              <IssueCertificateButton enrollmentId={it.enrollmentId} levelId={it.levelId} />
+            )}
+          </li>
+        ))}
+      </ul>
     </main>
   );
 }

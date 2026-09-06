@@ -129,6 +129,31 @@ export const resolveAlertSchema = z.object({
   note: z.string().max(2000).default(""),
 });
 
+export const updateContentSchema = z.object({
+  table: z.enum(["levels", "modules", "lessons", "activities"]),
+  id: uuidSchema,
+  title: z.string().min(3).max(200).optional(),
+  objective: z.string().min(10).max(2000).optional(),
+});
+
+export const deleteContentSchema = z.object({
+  table: z.enum(["levels", "modules", "lessons", "activities"]),
+  id: uuidSchema,
+});
+
+export const createCohortSchema = z.object({
+  name: z.string().min(3).max(200),
+  academicYear: z.string().min(4).max(20),
+});
+
+export const suspendEnrollmentSchema = z.object({
+  enrollmentId: uuidSchema,
+});
+
+export const updateProfileSchema = z.object({
+  displayName: z.string().min(2).max(100),
+});
+
 export const enrollStudentSchema = z.object({
   courseId: uuidSchema,
   studentId: uuidSchema,

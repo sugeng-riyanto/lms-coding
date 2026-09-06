@@ -5,17 +5,20 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   archiveCourse,
+  createCourseVersion,
   createLevel,
   duplicateCourse,
   publishCourseVersion,
   reorderSiblings,
 } from "@/features/actions";
+import { EditNode } from "@/components/edit-node";
 import type { PublishIssue } from "@/lib/publish-validation";
 
 export interface ManageLevel {
   id: string;
   position: number;
   title: string;
+  objective: string;
 }
 
 export function ManageCourse({
@@ -120,6 +123,21 @@ export function ManageCourse({
     if (res.ok) router.refresh();
   }
 
+  async function onNewVersion() {
+    setBusy("new-version");
+    const res = await createCourseVersion({ courseId });
+    setBusy(null);
+    setNotice(
+      res.ok
+        ? {
+            kind: "ok" as const,
+            text: `Versi ${res.version} dibuat sebagai draft (struktur disalin). Versi published tak tersentuh.`,
+          }
+        : { kind: "err" as const, text: `Gagal: ${res.error}` },
+    );
+    if (res.ok) router.refresh();
+  }
+
   return (
     <div className="mt-6 space-y-6">
       {notice && (
@@ -189,6 +207,13 @@ export function ManageCourse({
                   >
                     Kelola isi
                   </Link>
+                  <EditNode
+                    table="levels"
+                    id={l.id}
+                    initialTitle={l.title}
+                    initialObjective={l.objective}
+                    showObjective
+                  />
                   <button
                     disabled={busy !== null || i === 0}
                     onClick={() => move(i, -1)}
@@ -233,6 +258,13 @@ export function ManageCourse({
           className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
           {busy === "publish" ? "Memvalidasi…" : "Validasi & publish"}
+        </button>
+        <button
+          onClick={onNewVersion}
+          disabled={busy !== null}
+          className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60"
+        >
+          {busy === "new-version" ? "Menyalin…" : "Buat versi baru (ADR-003)"}
         </button>
         <button
           onClick={onArchive}

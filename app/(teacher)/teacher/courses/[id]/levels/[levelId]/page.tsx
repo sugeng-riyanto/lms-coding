@@ -29,11 +29,12 @@ async function getLevelTree(levelId: string) {
   for (const md of (moduleRows as { id: string; position: number; title: string }[] | null) ?? []) {
     const { data: lessonRows } = await supabase
       .from("lessons")
-      .select("id,position,title")
+      .select("id,position,title,objective")
       .eq("module_id", md.id)
       .order("position");
     const lessons: ManagerModule["lessons"] = [];
-    for (const le of (lessonRows as { id: string; position: number; title: string }[] | null) ?? []) {
+    for (const le of (lessonRows as
+      { id: string; position: number; title: string; objective: string }[] | null) ?? []) {
       const { data: actRows } = await supabase
         .from("activities")
         .select("id,position,type,title")
@@ -43,6 +44,7 @@ async function getLevelTree(levelId: string) {
         id: le.id,
         position: le.position,
         title: le.title,
+        objective: le.objective,
         activities: (
           (actRows as { id: string; position: number; type: string; title: string }[] | null) ?? []
         ).map((a) => ({ ...a })),
