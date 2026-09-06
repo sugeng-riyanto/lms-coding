@@ -3,7 +3,7 @@ import PDFDocument from "pdfkit";
 import QRCode from "qrcode";
 import { verifyPublicIdSchema } from "@/lib/validation";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { createClient } from "@/lib/supabase/server";
+import { createStrictClient as createClient } from "@/lib/supabase/server";
 
 /**
  * GET /api/certificates/{publicId}/pdf — PDF A4 landscape resmi, on-demand.

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { toCsv } from "@/lib/csv";
 import { checkRateLimit } from "@/lib/ratelimit";
 

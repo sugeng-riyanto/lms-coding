@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyPublicIdSchema } from "@/lib/validation";
 import { checkRateLimit } from "@/lib/ratelimit";
-import { createClient } from "@/lib/supabase/server";
+import { createStrictClient as createClient } from "@/lib/supabase/server";
 
 /**
  * GET /api/public/certificates/{publicId}

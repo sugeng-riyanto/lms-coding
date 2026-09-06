@@ -1,7 +1,8 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { createClient } from "@/lib/supabase/server";
+// Jalur WRITE: strict — env hilang → throw (tidak pernah sukses diam-diam di demo mode).
+import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
 import {

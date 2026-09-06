@@ -1,6 +1,8 @@
 .next/
 node_modules/
 package-lock.json
+# Dibuat ulang otomatis oleh next dev/build — jangan diformat ulang agar tidak churn.
+next-env.d.ts
 # Dokumen spesifikasi (*.md di root) adalah source of truth beku —
 # JANGAN diformat ulang agar diff tetap bermakna.
 *.md
