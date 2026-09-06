@@ -202,6 +202,32 @@ export const gradeResponseSchema = z.object({
   feedback: z.string().max(5000).default(""),
 });
 
+export const createRubricSchema = z.object({
+  questionVersionId: uuidSchema,
+  title: z.string().min(3).max(200),
+  criteria: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        maxPoints: z.coerce.number().min(1).max(1000),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
+export const saveCriterionGradeSchema = z.object({
+  responseId: uuidSchema,
+  criterionId: uuidSchema,
+  score: z.coerce.number().min(0).max(1000),
+  feedback: z.string().max(2000).default(""),
+  draft: z.boolean().default(true),
+});
+
+export const finalizeResponseGradesSchema = z.object({
+  responseId: uuidSchema,
+});
+
 export const issueCertificateSchema = z.object({
   enrollmentId: uuidSchema,
   levelId: uuidSchema,

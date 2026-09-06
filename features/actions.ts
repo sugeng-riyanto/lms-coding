@@ -11,6 +11,9 @@ import {
   addQuestionToAssessmentSchema,
   alertIdSchema,
   archiveCourseSchema,
+  createRubricSchema,
+  finalizeResponseGradesSchema,
+  saveCriterionGradeSchema,
   createActivitySchema,
   createAssessmentSchema,
   createCohortSchema,
@@ -564,6 +567,104 @@ export async function gradeResponse(input: unknown) {
     p_feedback: parsed.data.feedback,
   });
   if (error) return { ok: false as const, error: "GRADE_FAILED" };
+  return { ok: true as const };
+}
+
+// ---------- Manual assessment: rubric versioning + per-criterion grading ----------
+// Rubrik dibuat guru org soal (versi 1 + criteria + diikat ke question_versions).
+// Skor per-kriteria disimpan DRAFT via RPC (validasi guru-cohort + RUBRIC_MISMATCH);
+// finalize hanya setelah semua kriteria final → manual_score + grade_revisions + audit.
+export async function createRubricVersion(input: unknown) {
+  const parsed = createRubricSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Guru pemilik org soal (lewat question_versions → questions.organization_id).
+  const { data: qv } = await supabase
+    .from("question_versions")
+    .select("question_id")
+    .eq("id", parsed.data.questionVersionId)
+    .single();
+  const q = qv as { question_id: string } | null;
+  if (!q) return { ok: false as const, error: "NOT_FOUND" };
+  const { data: question } = await supabase
+    .from("questions")
+    .select("organization_id")
+    .eq("id", q.question_id)
+    .single();
+  const orgId = (question as { organization_id: string } | null)?.organization_id;
+  if (!orgId) return { ok: false as const, error: "NOT_FOUND" };
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("organization_id", orgId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  if (!mem) return { ok: false as const, error: "FORBIDDEN" };
+
+  const now = new Date().toISOString();
+  const { data: rubric, error: rErr } = await supabase
+    .from("rubrics")
+    .insert({
+      organization_id: orgId,
+      title: parsed.data.title,
+      version: 1,
+      created_by: userId,
+      updated_at: now,
+    })
+    .select("id")
+    .single();
+  if (rErr || !rubric) return { ok: false as const, error: "CREATE_FAILED" };
+  const rubricId = (rubric as { id: string }).id;
+  const criteria = parsed.data.criteria.map((c, i) => ({
+    rubric_id: rubricId,
+    title: c.title,
+    max_points: c.maxPoints,
+    position: i,
+  }));
+  const { error: cErr } = await supabase.from("rubric_criteria").insert(criteria);
+  if (cErr) return { ok: false as const, error: "CREATE_FAILED" };
+  const { error: linkErr } = await supabase
+    .from("question_versions")
+    .update({ rubric_id: rubricId })
+    .eq("id", parsed.data.questionVersionId);
+  if (linkErr) return { ok: false as const, error: "CREATE_FAILED" };
+  return { ok: true as const, rubricId };
+}
+
+export async function saveCriterionGrade(input: unknown) {
+  const parsed = saveCriterionGradeSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { error } = await supabase.rpc("save_criterion_grade", {
+    p_response_id: parsed.data.responseId,
+    p_criterion_id: parsed.data.criterionId,
+    p_score: parsed.data.score,
+    p_feedback: parsed.data.feedback,
+    p_draft: parsed.data.draft,
+  });
+  if (error) return { ok: false as const, error: "SAVE_FAILED" };
+  return { ok: true as const };
+}
+
+export async function finalizeResponseGrades(input: unknown) {
+  const parsed = finalizeResponseGradesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { error } = await supabase.rpc("finalize_response_grades", {
+    p_response_id: parsed.data.responseId,
+  });
+  if (error) return { ok: false as const, error: "FINALIZE_FAILED" };
   return { ok: true as const };
 }
 

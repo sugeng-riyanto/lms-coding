@@ -727,6 +727,168 @@ end $$;
 
 set role postgres;
 
+-- ============ t13: RUBRIK — per-kriteria draft/finalize + audit + lintas-akses ============
+-- (Phase 4 manual, migration 000013: versioned rubrics + criterion_scores RPC-only;
+--  guru cohort menilai per kriteria draft; finalize menghitung manual_score + revision + audit.)
+
+-- Rubrik org-1 (fixture) dengan 2 kriteria, diikat ke question_version fixture ...011.
+insert into public.rubrics (id, organization_id, title, version, created_by) values
+  ('a1000000-0000-0000-0000-000000000030', '11111111-1111-1111-1111-111111111111', 'Rubrik Esai Demo', 1,
+   'a0000000-0000-0000-0000-000000000001')
+on conflict (id) do nothing;
+insert into public.rubric_criteria (id, rubric_id, title, max_points, position) values
+  ('a1000000-0000-0000-0000-000000000031', 'a1000000-0000-0000-0000-000000000030', 'Ketepatan konsep', 60, 0),
+  ('a1000000-0000-0000-0000-000000000032', 'a1000000-0000-0000-0000-000000000030', 'Kedalaman & struktur', 40, 1)
+on conflict (id) do nothing;
+update public.question_versions set rubric_id = 'a1000000-0000-0000-0000-000000000030'
+where id = 'a1000000-0000-0000-0000-000000000011';
+
+-- Rubrik org-2 (untuk uji RUBRIC_MISMATCH lintas-org).
+insert into public.rubrics (id, organization_id, title, version, created_by) values
+  ('a1000000-0000-0000-0000-000000000040', '22222222-2222-2222-2222-222222222222', 'Rubrik Org Lain', 1,
+   'a2000000-0000-0000-0000-000000000002')
+on conflict (id) do nothing;
+insert into public.rubric_criteria (id, rubric_id, title, max_points, position) values
+  ('a1000000-0000-0000-0000-000000000041', 'a1000000-0000-0000-0000-000000000040', 'Kriteria asing', 50, 0)
+on conflict (id) do nothing;
+
+-- Guru org-1: skor draft dua kriteria; nilai lama (70 fixture) belum berubah.
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+begin
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000031', 30, 'konsep oke', true);
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000032', 20, '', true);
+  insert into public.harness_results (check_id, passed, detail)
+  select 't13_draft_saved_ok',
+         count(*) = 2 and bool_and(cs.draft) and min(r.manual_score) = 70,
+         'rows=' || count(*) || ' draft=' || bool_and(cs.draft) || ' manual=' || min(r.manual_score)
+  from public.criterion_scores cs
+  join public.responses r on r.id = cs.response_id
+  where cs.response_id = 'a1000000-0000-0000-0000-000000000012';
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_draft_saved_ok', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Kriteria dari rubrik org-2 → RUBRIC_MISMATCH (rubrik soal ≠ rubrik kriteria).
+do $$
+begin
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000041', 10, '', true);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_rubric_mismatch_rejected', false, 'RPC TIDAK menolak kriteria rubrik lain!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_rubric_mismatch_rejected', sqlerrm like '%RUBRIC_MISMATCH%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+-- Finalize dengan satu kriteria masih draft → DRAFT_INCOMPLETE.
+do $$
+begin
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000031', 54, '', false);
+  perform public.finalize_response_grades('a1000000-0000-0000-0000-000000000012');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_finalize_draft_incomplete_denied', false, 'RPC TIDAK menolak draft belum lengkap!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_finalize_draft_incomplete_denied', sqlerrm like '%DRAFT_INCOMPLETE%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+-- Finalize lengkap: skor 54/60 + 32/40 → 86/100; manual_score + revision + audit.
+do $$
+begin
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000031', 54, '', false);
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000032', 32, '', false);
+  perform public.finalize_response_grades('a1000000-0000-0000-0000-000000000012');
+  insert into public.harness_results (check_id, passed, detail)
+  select 't13_finalize_writes_revision_audit',
+         r.manual_score = 86
+         and exists (select 1 from public.grade_revisions g where g.attempt_id = r.attempt_id
+                     and g.previous_score = 70 and g.new_score = 86 and g.reason = 'rubric finalized')
+         and exists (select 1 from public.audit_logs al where al.target_id = r.id::text
+                     and al.action = 'grade.finalized'),
+         'manual=' || r.manual_score
+  from public.responses r where r.id = 'a1000000-0000-0000-0000-000000000012';
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_finalize_writes_revision_audit', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Re-finalize nilai sama → idempoten, tanpa revisi baru.
+do $$
+begin
+  perform public.finalize_response_grades('a1000000-0000-0000-0000-000000000012');
+  insert into public.harness_results (check_id, passed, detail)
+  select 't13_finalize_idempotent_noop', count(*) = 1, 'revisions=' || count(*)
+  from public.grade_revisions g
+  where g.attempt_id = (select attempt_id from public.responses where id = 'a1000000-0000-0000-0000-000000000012')
+    and g.reason = 'rubric finalized';
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_finalize_idempotent_noop', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Guru org-2: tidak boleh menilai response cohort org-1 → FORBIDDEN.
+set role postgres;
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a2000000-0000-0000-0000-000000000002","role":"authenticated"}', false);
+
+do $$
+begin
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000031', 10, '', true);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_cross_org_grade_denied', false, 'RPC TIDAK menolak guru org lain!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_cross_org_grade_denied', sqlerrm like '%FORBIDDEN%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+-- Murid 01: tidak boleh menilai (bukan guru) → FORBIDDEN; RLS menyembunyikan skor.
+set role postgres;
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.criterion_scores
+  where response_id = 'a1000000-0000-0000-0000-000000000012';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_student_scores_hidden', n = 0, 'rows=' || n);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_student_scores_hidden', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+do $$
+begin
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012',
+                                      'a1000000-0000-0000-0000-000000000031', 10, '', false);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_student_grade_denied', false, 'RPC TIDAK menolak murid!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t13_student_grade_denied', sqlerrm like '%FORBIDDEN%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+set role postgres;
+
 -- Hasil (dibaca runner).
 set role postgres;
 select check_id || '|' || case when passed then 'PASS' else 'FAIL' end as result
