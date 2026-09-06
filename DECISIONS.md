@@ -149,6 +149,73 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   dicatat di risiko rencana; koreksi data tanpa evaluasi ulang penuh tetap
   mungkin via issue biasa dengan alasan audit.
 
+## ADR-014 — Consent AI feedback per-org di kolom organizations (default false)
+
+- Status: accepted
+- Context: rencana `docs/plan-ai-draft-feedback-consent.md` (D1). SECURITY_PRIVACY.md
+  menempatkan consent sebagai kebijakan sekolah/org, bukan per-user; tabel
+  `organizations` saat ini hanya id/name/slug/timezone (tanpa kolom settings).
+- Decision: consent direpresentasikan sebagai dua kolom di `organizations`
+  (`ai_feedback_consent boolean not null default false` +
+  `ai_feedback_consent_at timestamptz`) dan hanya guru teacher aktif org yang
+  bisa mengubah via RPC definer `private.set_org_ai_consent` (audit
+  `org.ai_consent`). Env `AI_FEEDBACK_ENABLED` hanya gerbang global; consent
+  per-org tetap wajib (default false = fail closed).
+- Alternatives: (a) env global saja — bertentangan dengan kebijakan per-org;
+  (b) tabel settings terpisah — lebih fleksibel tetapi menambah permukaan RLS
+  tanpa kebutuhan MVP.
+- Consequences: menambah kolom pada tabel inti; migrasi `…000011`;
+  db-advisor tabel tetap 36 (kolom, bukan tabel baru).
+
+## ADR-015 — Draf AI hanya mengisi draft editor guru; guru tetap menekan Simpan
+
+- Status: accepted
+- Context: rencana `docs/plan-ai-draft-feedback-consent.md` (D2). Alur grading
+  final yang ada adalah `gradeResponse` (server action → RPC
+  `grade_response_manual` → `grade_revisions` append-only). Draf AI tidak boleh
+  menjadi feedback final tanpa tindakan guru eksplisit.
+- Decision: tombol "Setujui & pakai" hanya memindahkan body draft ke editor
+  feedback guru (masih bisa diedit); feedback baru final saat guru menekan
+  "Simpan nilai" lewat alur `gradeResponse` yang sudah ada (revisi/audit tidak
+  berubah). Tidak ada jalur yang menulis `responses.feedback_json` dari AI
+  tanpa aksi guru.
+- Alternatives: (a) approve langsung menulis feedback final — menghilangkan
+  kontrol/edit guru; (b) tanpa jejak draft — kehilangan audit keputusan guru.
+- Consequences: konsisten dengan aturan "AI wajib disetujui guru"; jejak draft
+  + keputusan (approved/rejected) di `ai_feedback_drafts`.
+
+## ADR-016 — Rubric suggestion DI LUAR MVP draft feedback
+
+- Status: accepted
+- Context: rencana `docs/plan-ai-draft-feedback-consent.md` (D3).
+  ASSESSMENT_AND_SCORING.md menyebut rubric per kriteria, dan tabel
+  `rubrics`/`rubric_criteria` sudah ada, tetapi belum ada alur grading rubric
+  yang dipakai UI.
+- Decision: MVP AI feedback hanya naratif (draft teks); saran skor per kriteria
+  rubric ditunda sampai alur rubric benar-benar aktif (ADR tersendiri saat itu).
+- Alternatives: menyertakan rubric suggestion sekarang — bergantung permukaan
+  yang belum dipakai dan memperluas risiko kualitas skor AI.
+- Consequences: cakupan rencana tetap fokus; dokumen mencatat ini sebagai
+  keputusan eksplisit, bukan lupa.
+
+## ADR-017 — Provider AI via adapter dengan mock default (tanpa jaringan)
+
+- Status: accepted
+- Context: rencana `docs/plan-ai-draft-feedback-consent.md` (D4). Tidak ada
+  kredensial provider eksternal di repo; pengujian harus deterministik dan
+  tanpa jaringan keluar.
+- Decision: `lib/ai-feedback.ts` mengekspos interface `AiDraftProvider`;
+  `createAiProvider()` memilih `mock` (deterministik, berlabel draft, TANPA
+  jaringan — default pengujian) / `http` (POST JSON ke base URL dari env,
+  timeout 10s, error terswallow + log redact) / `null` saat unconfigured.
+  Panggilan provider hanya dari server action (strict client); tidak ada
+  fetch/import provider di file client.
+- Alternatives: integrasi provider spesifik langsung — mengunci vendor dan
+  menaruh kredensial/format di repo; tanpa mock — test tidak deterministik.
+- Consequences: env baru `AI_FEEDBACK_ENABLED`/`AI_PROVIDER`/
+  `AI_PROVIDER_BASE_URL`/`AI_PROVIDER_API_KEY` (semua server-only, masuk
+  `.env.example` → daftar sah check-env otomatis).
+
 ## Template
 
 ```text
