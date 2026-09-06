@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
+import { isDemoBackend } from "@/lib/supabase/demo";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -84,9 +85,15 @@ export default function LoginPage() {
           {status === "loading" ? "Memeriksa…" : "Masuk"}
         </button>
       </form>
-      <p className="mt-4 text-sm text-slate-500">
-        Demo lokal: gunakan user dari <code>supabase/seed.sql</code>.
-      </p>
+      {isDemoBackend() ? (
+        <p className="mt-4 text-sm text-slate-500">
+          Mode demo: gunakan akun contoh dari <code>supabase/seed.sql</code>.
+        </p>
+      ) : (
+        <p className="mt-4 text-sm text-slate-500">
+          Terhubung ke server sekolah. Gunakan akun yang diberikan institusi Anda.
+        </p>
+      )}
     </main>
   );
 }
