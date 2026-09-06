@@ -53,9 +53,13 @@ import { normalizeOrder } from "@/lib/reorder";
 import { validateCourseDraft, type DraftLevel, type DraftPrereq } from "@/lib/publish-validation";
 import { checkRateLimit } from "@/lib/ratelimit";
 import {
+  MAX_CONTENT_ROWS,
+  MAX_STUDENT_ROWS,
   groupContentRows,
   parseContentRows,
   parseStudentRows,
+  rowsOverCap,
+  xlsxFileError,
   type BulkActivityType,
 } from "@/lib/bulk-import";
 import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
@@ -1999,6 +2003,8 @@ export async function bulkImportStudents(formData: FormData) {
   const file = formData.get("file");
   const cohortIdRaw = formData.get("cohortId");
   if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "FILE_MISSING" };
+  const fileErr = xlsxFileError(file);
+  if (fileErr) return { ok: false as const, error: fileErr };
   if (typeof cohortIdRaw !== "string" || !uuidSchema.safeParse(cohortIdRaw).success)
     return { ok: false as const, error: "INVALID_INPUT" };
   const supabase = await createClient();
@@ -2019,6 +2025,8 @@ export async function bulkImportStudents(formData: FormData) {
   const sheetRows = await xlsxRows(file);
   const { rows, errors } = parseStudentRows(sheetRows);
   if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+  if (rowsOverCap(rows.length, MAX_STUDENT_ROWS))
+    return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_STUDENT_ROWS, errors };
 
   // Resolusi email → user id (service client; hanya server).
   const svc = createServiceClient();
@@ -2040,6 +2048,9 @@ export async function bulkImportStudents(formData: FormData) {
   const memberSet = new Set(
     ((currentMembers as { student_id: string }[] | null) ?? []).map((m) => m.student_id),
   );
+
+  // Kumpulkan dulu baris yang benar-benar baru, lalu tulis dalam batch (chunked).
+  const pending: { id: string; email: string; displayName: string }[] = [];
   for (const r of rows) {
     const userId = emailToId.get(r.email);
     if (!userId) {
@@ -2050,29 +2061,49 @@ export async function bulkImportStudents(formData: FormData) {
       existing++;
       continue;
     }
-    // Profil + membership (provisioning akun = privileged, bukan policy guru).
-    await svc
-      .from("profiles")
-      .upsert(
-        { id: userId, organization_id: c.organization_id, display_name: r.displayName },
-        { onConflict: "id" },
-      );
+    pending.push({ id: userId, email: r.email, displayName: r.displayName });
+  }
+
+  // Profil + membership (provisioning akun = privileged, bukan policy guru).
+  const profileRows = pending.map((p) => ({
+    id: p.id,
+    organization_id: c.organization_id,
+    display_name: p.displayName,
+  }));
+  const membershipRows = pending.map((p) => ({
+    organization_id: c.organization_id,
+    user_id: p.id,
+    role: "student" as const,
+    status: "active" as const,
+  }));
+  for (let i = 0; i < profileRows.length; i += EMAIL_CHUNK) {
+    await svc.from("profiles").upsert(profileRows.slice(i, i + EMAIL_CHUNK), { onConflict: "id" });
+  }
+  for (let i = 0; i < membershipRows.length; i += EMAIL_CHUNK) {
     await svc
       .from("memberships")
-      .upsert(
-        { organization_id: c.organization_id, user_id: userId, role: "student", status: "active" },
-        { onConflict: "organization_id,user_id" },
-      );
-    // Keanggotaan cohort lewat RLS guru (teacher insert policy).
-    const { error: cmErr } = await supabase.from("cohort_members").insert({
-      cohort_id: c.id,
-      student_id: userId,
-      status: "active",
-    });
-    if (cmErr) errors.push(`Murid ${r.email}: gagal ditambahkan ke cohort (${cmErr.message}).`);
-    else {
-      memberSet.add(userId);
-      added++;
+      .upsert(membershipRows.slice(i, i + EMAIL_CHUNK), { onConflict: "organization_id,user_id" });
+  }
+  // Keanggotaan cohort lewat RLS guru (teacher insert policy), chunked.
+  const CM_CHUNK = 50;
+  for (let i = 0; i < pending.length; i += CM_CHUNK) {
+    const chunk = pending.slice(i, i + CM_CHUNK);
+    const { error: cmErr } = await supabase
+      .from("cohort_members")
+      .insert(chunk.map((p) => ({ cohort_id: c.id, student_id: p.id, status: "active" })));
+    if (!cmErr) {
+      added += chunk.length;
+      continue;
+    }
+    // Batch gagal → coba per baris agar error bisa diatribusikan per email.
+    for (const p of chunk) {
+      const { error: oneErr } = await supabase.from("cohort_members").insert({
+        cohort_id: c.id,
+        student_id: p.id,
+        status: "active",
+      });
+      if (oneErr) errors.push(`Murid ${p.email}: gagal ditambahkan ke cohort (${oneErr.message}).`);
+      else added++;
     }
   }
 
@@ -2085,6 +2116,8 @@ export async function bulkImportContent(formData: FormData) {
   const courseIdRaw = formData.get("courseId");
   const levelIdRaw = formData.get("levelId");
   if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "FILE_MISSING" };
+  const fileErr = xlsxFileError(file);
+  if (fileErr) return { ok: false as const, error: fileErr };
   if (
     typeof courseIdRaw !== "string" ||
     typeof levelIdRaw !== "string" ||
@@ -2123,73 +2156,101 @@ export async function bulkImportContent(formData: FormData) {
   const sheetRows = await xlsxRows(file);
   const { rows, errors } = parseContentRows(sheetRows);
   if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+  if (rowsOverCap(rows.length, MAX_CONTENT_ROWS))
+    return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_CONTENT_ROWS, errors };
 
   let modules = 0;
   let lessons = 0;
   let activities = 0;
   const grouped = groupContentRows(rows);
+
+  // Module: posisi dihitung sekali di JS, lalu insert batch (1 request).
+  const { data: mLast } = await supabase
+    .from("modules")
+    .select("position")
+    .eq("level_id", levelIdRaw)
+    .order("position", { ascending: false })
+    .limit(1);
+  const mBase = (((mLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
+  const moduleTitles = [...grouped.keys()];
+  const { data: modRows, error: mErr } = await supabase
+    .from("modules")
+    .insert(moduleTitles.map((title, i) => ({ level_id: levelIdRaw, position: mBase + i, title })))
+    .select("id,title");
+  const moduleIdByTitle = new Map<string, string>();
+  for (const m of (modRows as { id: string; title: string }[] | null) ?? []) {
+    moduleIdByTitle.set(m.title, m.id);
+  }
+  if (mErr) errors.push(`Module batch: gagal dibuat (${mErr.message}).`);
+
   for (const [moduleTitle, lessonsMap] of grouped) {
-    const { data: mLast } = await supabase
-      .from("modules")
-      .select("position")
-      .eq("level_id", levelIdRaw)
-      .order("position", { ascending: false })
-      .limit(1);
-    const mPos = (((mLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
-    const { data: mod, error: mErr } = await supabase
-      .from("modules")
-      .insert({ level_id: levelIdRaw, position: mPos, title: moduleTitle })
-      .select("id")
-      .single();
-    if (mErr || !mod) {
+    const moduleId = moduleIdByTitle.get(moduleTitle);
+    if (!moduleId) {
       errors.push(`Module "${moduleTitle}": gagal dibuat.`);
       continue;
     }
     modules++;
-    for (const [lessonTitle, activityRows] of lessonsMap) {
-      const objective = activityRows[0]?.objective ?? "";
-      const { data: lLast } = await supabase
-        .from("lessons")
-        .select("position")
-        .eq("module_id", (mod as { id: string }).id)
-        .order("position", { ascending: false })
-        .limit(1);
-      const lPos = (((lLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
-      const { data: les, error: lErr } = await supabase
-        .from("lessons")
-        .insert({
-          module_id: (mod as { id: string }).id,
-          position: lPos,
-          title: lessonTitle,
-          objective: objective || "Materi pelajaran ini.",
+
+    // Lesson per module: posisi dari 0 (module baru), insert batch.
+    const lessonTitles = [...lessonsMap.keys()];
+    const { data: lesRows, error: lErr } = await supabase
+      .from("lessons")
+      .insert(
+        lessonTitles.map((title, i) => ({
+          module_id: moduleId,
+          position: i,
+          title,
+          objective: lessonsMap.get(title)?.[0]?.objective || "Materi pelajaran ini.",
           estimated_minutes: 15,
           required: true,
-        })
-        .select("id")
-        .single();
-      if (lErr || !les) {
+        })),
+      )
+      .select("id,title");
+    const lessonIdByTitle = new Map<string, string>();
+    for (const l of (lesRows as { id: string; title: string }[] | null) ?? []) {
+      lessonIdByTitle.set(l.title, l.id);
+    }
+    if (lErr) errors.push(`Lesson batch di "${moduleTitle}": gagal dibuat (${lErr.message}).`);
+
+    for (const [lessonTitle, activityRows] of lessonsMap) {
+      const lessonId = lessonIdByTitle.get(lessonTitle);
+      if (!lessonId) {
         errors.push(`Lesson "${lessonTitle}": gagal dibuat.`);
         continue;
       }
       lessons++;
-      for (const act of activityRows) {
-        const { data: aLast } = await supabase
-          .from("activities")
-          .select("position")
-          .eq("lesson_id", (les as { id: string }).id)
-          .order("position", { ascending: false })
-          .limit(1);
-        const aPos = (((aLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
-        const { error: aErr } = await supabase.from("activities").insert({
-          lesson_id: (les as { id: string }).id,
-          position: aPos,
-          type: act.activityType as BulkActivityType,
-          title: act.activityTitle,
-          required: true,
-          content_json: (act.contentJson ?? {}) as Record<string, unknown>,
-        });
-        if (aErr) errors.push(`Aktivitas "${act.activityTitle}": gagal dibuat.`);
-        else activities++;
+
+      // Aktivitas per lesson: insert chunked (50), fallback per baris saat batch gagal.
+      const ACT_CHUNK = 50;
+      for (let i = 0; i < activityRows.length; i += ACT_CHUNK) {
+        const chunk = activityRows.slice(i, i + ACT_CHUNK);
+        const { error: aErr } = await supabase.from("activities").insert(
+          chunk.map((act, j) => ({
+            lesson_id: lessonId,
+            position: i + j,
+            type: act.activityType as BulkActivityType,
+            title: act.activityTitle,
+            required: true,
+            content_json: (act.contentJson ?? {}) as Record<string, unknown>,
+          })),
+        );
+        if (!aErr) {
+          activities += chunk.length;
+          continue;
+        }
+        for (let j = 0; j < chunk.length; j++) {
+          const act = chunk[j]!;
+          const { error: oneErr } = await supabase.from("activities").insert({
+            lesson_id: lessonId,
+            position: i + j,
+            type: act.activityType as BulkActivityType,
+            title: act.activityTitle,
+            required: true,
+            content_json: (act.contentJson ?? {}) as Record<string, unknown>,
+          });
+          if (oneErr) errors.push(`Aktivitas "${act.activityTitle}": gagal dibuat.`);
+          else activities++;
+        }
       }
     }
   }

@@ -7,6 +7,33 @@
  * dilaporkan per-baris (tidak menggagalkan seluruh upload).
  */
 
+// ---- Pengaman sisi server (XLSX): ukuran, MIME, kapasitas baris ----
+
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
+
+export const MAX_STUDENT_ROWS = 500;
+export const MAX_CONTENT_ROWS = 1000;
+
+const ALLOWED_XLSX_MIME = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/octet-stream",
+  "application/zip",
+]);
+
+/** Periksa file XLSX (nama/ukuran/MIME) → pesan error atau null bila aman. */
+export function xlsxFileError(file: { name: string; size: number; type: string }): string | null {
+  if (!file.name.toLowerCase().endsWith(".xlsx")) return "FILE_MUST_BE_XLSX";
+  if (file.size <= 0) return "FILE_EMPTY";
+  if (file.size > MAX_UPLOAD_BYTES) return "FILE_TOO_LARGE";
+  const mime = (file.type || "").toLowerCase();
+  if (mime && !ALLOWED_XLSX_MIME.has(mime)) return "FILE_MIME_REJECTED";
+  return null;
+}
+
+export function rowsOverCap(count: number, max: number): boolean {
+  return count > max;
+}
+
 export const ACTIVITY_TYPE_ALLOWLIST = [
   "article",
   "video_link",

@@ -1,5 +1,52 @@
 import { describe, expect, it } from "vitest";
-import { groupContentRows, parseContentRows, parseStudentRows, type ContentRow } from "@/lib/bulk-import";
+import {
+  MAX_CONTENT_ROWS,
+  MAX_STUDENT_ROWS,
+  MAX_UPLOAD_BYTES,
+  groupContentRows,
+  parseContentRows,
+  parseStudentRows,
+  rowsOverCap,
+  xlsxFileError,
+  type ContentRow,
+} from "@/lib/bulk-import";
+
+describe("xlsxFileError — pengaman file sisi server", () => {
+  const ok = {
+    name: "murid.xlsx",
+    size: 1024,
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  };
+  it("file valid → null", () => {
+    expect(xlsxFileError(ok)).toBeNull();
+  });
+  it("ekstensi non-.xlsx ditolak", () => {
+    expect(xlsxFileError({ ...ok, name: "murid.csv" })).toBe("FILE_MUST_BE_XLSX");
+    expect(xlsxFileError({ ...ok, name: "murid.xls" })).toBe("FILE_MUST_BE_XLSX");
+  });
+  it("file kosong (0 byte) ditolak", () => {
+    expect(xlsxFileError({ ...ok, size: 0 })).toBe("FILE_EMPTY");
+  });
+  it("file > 5 MB ditolak", () => {
+    expect(xlsxFileError({ ...ok, size: MAX_UPLOAD_BYTES + 1 })).toBe("FILE_TOO_LARGE");
+    expect(xlsxFileError({ ...ok, size: MAX_UPLOAD_BYTES })).toBeNull(); // pas di batas = aman
+  });
+  it("MIME mencurigakan ditolak (kecuali kosong/octet-stream/zip)", () => {
+    expect(xlsxFileError({ ...ok, type: "text/html" })).toBe("FILE_MIME_REJECTED");
+    expect(xlsxFileError({ ...ok, type: "application/x-msdownload" })).toBe("FILE_MIME_REJECTED");
+    expect(xlsxFileError({ ...ok, type: "" })).toBeNull();
+    expect(xlsxFileError({ ...ok, type: "application/octet-stream" })).toBeNull();
+  });
+});
+
+describe("rowsOverCap — batas kapasitas baris", () => {
+  it("di atas cap → true; pas/under → false", () => {
+    expect(rowsOverCap(MAX_STUDENT_ROWS + 1, MAX_STUDENT_ROWS)).toBe(true);
+    expect(rowsOverCap(MAX_STUDENT_ROWS, MAX_STUDENT_ROWS)).toBe(false);
+    expect(rowsOverCap(1, MAX_STUDENT_ROWS)).toBe(false);
+    expect(rowsOverCap(MAX_CONTENT_ROWS + 1, MAX_CONTENT_ROWS)).toBe(true);
+  });
+});
 
 describe("parseStudentRows", () => {
   it("mengenali kolom fleksibel & menormalkan email", () => {

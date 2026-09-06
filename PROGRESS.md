@@ -439,3 +439,15 @@ kebijakan. Tidak ada migration baru — skema & RLS Supabase tidak berubah.
 
 Gates: format/lint/typecheck 0 · test **235/235** (+7) · db:typecheck 0 (38
 tabel) · live-denial **79/79** · build 0. Dep baru: `xlsx` (server-side).
+
+## Catatan sesi — Pengaman server bulk upload (XLSX)
+File guard + kapasitas + insert chunked pada kedua jalur bulk impor (`bulkImportStudents`, `bulkImportContent`):
+
+- **File guard** (`lib/bulk-import.ts` `xlsxFileError`): ekstensi wajib `.xlsx`, ukuran >0, maks **5 MB**, MIME di-allowlist (spreadsheet / octet-stream / zip; MIME kosong diizinkan karena browser kadang kosong) — error dikembalikan sebelum parsing.
+- **Row cap**: **500 murid** / **1000 baris materi** (`rowsOverCap` + `ROWS_OVER_CAP` dengan `cap` di respons) — gagal cepat dengan pesan jelas, bukan parsing raksasa.
+- **Chunked inserts**:
+  - Murid: resolusi email tetap chunked (100); upsert `profiles` & `memberships` kini **batch 100**; insert `cohort_members` **batch 50** dengan fallback per-baris saat batch gagal agar error tetap diatribusikan per email.
+  - Materi: module dihitung posisinya sekali di JS lalu **insert batch** (1 request); lesson per module **insert batch** dengan `.select("id,title")`; aktivitas per lesson **chunk 50** + fallback per-baris.
+- **UI**: kedua kartu impor menampilkan hint kapasitas, validasi file client-side (pesan segera, tanpa upload), dan memetakan kode error ke kalimat jelas (`FILE_TOO_LARGE`, `ROWS_OVER_CAP`, dsb).
+
+Gates: format/lint/typecheck 0 · test **241/241** (+6: `xlsxFileError` 5 kasus + `rowsOverCap`) · db:typecheck 0 (38 tabel) · live-denial **79/79** · build 0.
