@@ -5,7 +5,8 @@ import { randomUUID } from "node:crypto";
 import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
-import { firstReviewInsertRows } from "@/lib/progress-planning";
+import { firstReviewInsertRows, nextReviewAfter, startOfNextDayInTz } from "@/lib/progress-planning";
+import { validateDraftMetadata, validateHeartbeatMetadata } from "@/lib/active-time";
 import {
   addQuestionToAssessmentSchema,
   alertIdSchema,
@@ -29,6 +30,7 @@ import {
   releaseGradesSchema,
   reissueCertificateSchema,
   reorderSiblingsSchema,
+  submitReviewSchema,
   resolveAlertSchema,
   revokeCertificateSchema,
   saveResponseSchema,
@@ -398,6 +400,21 @@ export async function recordLearningEvent(input: unknown) {
   if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
   const studentId = (claims.claims as { sub?: string }).sub;
   if (!studentId) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Validasi server: waktu aktif TIDAK dipercaya mentah dari client.
+  // heartbeat → clamp ulang (nilai non-finite/negatif/raksasa ditolak);
+  // draft_saved → hanya panjang teks yang disimpan (minimisasi data).
+  let metadata = parsed.data.metadata;
+  if (parsed.data.eventType === "heartbeat") {
+    const v = validateHeartbeatMetadata(metadata);
+    if (!v.ok) return { ok: false as const, error: "EVENT_REJECTED" };
+    metadata = { ...metadata, activeMs: v.activeMs };
+  } else if (parsed.data.eventType === "draft_saved") {
+    const v = validateDraftMetadata(metadata);
+    if (!v.ok) return { ok: false as const, error: "EVENT_REJECTED" };
+    metadata = { ...metadata, chars: v.chars };
+  }
+
   const { error } = await supabase.from("learning_events").upsert(
     {
       enrollment_id: parsed.data.enrollmentId,
@@ -406,12 +423,81 @@ export async function recordLearningEvent(input: unknown) {
       entity_type: parsed.data.entityType,
       entity_id: parsed.data.entityId,
       client_event_id: parsed.data.clientEventId,
-      metadata_json: parsed.data.metadata,
+      metadata_json: metadata,
     },
     { onConflict: "student_id,client_event_id", ignoreDuplicates: true },
   );
   if (error) return { ok: false as const, error: "EVENT_FAILED" };
   return { ok: true as const };
+}
+
+// ---------- Spaced review: confidence → reschedule (ladder 1/3/7/14 hari) ----------
+export async function submitReview(input: unknown) {
+  const parsed = submitReviewSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const studentId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!studentId) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // RLS memastikan baris milik enrollment AKTIF murid ini; baris asing → kosong.
+  const { data: itemRows } = await supabase
+    .from("review_items")
+    .select("id,enrollment_id,entity_type,entity_id,due_at,interval_idx,status")
+    .eq("id", parsed.data.reviewItemId)
+    .eq("status", "scheduled")
+    .limit(1);
+  const item = ((itemRows as
+    | {
+        id: string;
+        enrollment_id: string;
+        entity_type: string;
+        entity_id: string;
+        due_at: string;
+        interval_idx: number;
+        status: string;
+      }[]
+    | null) ?? [])[0];
+  if (!item) return { ok: false as const, error: "NOT_SCHEDULED" };
+  if (item.enrollment_id !== parsed.data.enrollmentId) {
+    return { ok: false as const, error: "FORBIDDEN" };
+  }
+
+  // Jatuh tempo: sudah lewat ATAU masih hari ini (batas 00:00 besok, tz org).
+  const now = new Date();
+  const dueLimit = startOfNextDayInTz(now);
+  if (Date.parse(item.due_at) >= dueLimit.getTime()) {
+    return { ok: false as const, error: "NOT_DUE" };
+  }
+
+  // Ladder: confidence ≥4 maju satu anak tangga, 3 ulang, ≤2 reset (lib murni).
+  const next = nextReviewAfter({
+    completedAt: now,
+    confidence: parsed.data.confidence,
+    intervalIdx: item.interval_idx,
+  });
+
+  const { error: updErr } = await supabase
+    .from("review_items")
+    .update({
+      status: "completed",
+      confidence: parsed.data.confidence,
+      completed_at: now.toISOString(),
+    })
+    .eq("id", item.id);
+  if (updErr) return { ok: false as const, error: "REVIEW_FAILED" };
+
+  const { error: insErr } = await supabase.from("review_items").insert({
+    enrollment_id: item.enrollment_id,
+    entity_type: item.entity_type,
+    entity_id: item.entity_id,
+    due_at: next.dueAt.toISOString(),
+    interval_idx: next.intervalIdx,
+    status: "scheduled",
+  });
+  if (insErr) return { ok: false as const, error: "REVIEW_FAILED" };
+
+  return { ok: true as const, nextDueAt: next.dueAt.toISOString() };
 }
 
 // ---------- Enrollment (guru, cohort sendiri — ditegakkan RLS) ----------

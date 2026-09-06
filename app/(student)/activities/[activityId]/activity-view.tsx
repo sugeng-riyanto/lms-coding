@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { recordLearningEvent, startAttempt } from "@/features/actions";
 import { makeClientEventId } from "@/lib/sync-queue";
 import { UploadBox } from "@/components/upload-box";
+import { useEngagementHeartbeat, useOfflineFlush } from "./use-sync";
+import { ReflectionBox } from "./reflection-box";
 import type { ActivityData } from "./page";
 
 export function ActivityView({ activity, enrollmentId }: { activity: ActivityData; enrollmentId: string }) {
@@ -12,6 +14,17 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const c = activity.content;
+  // Waktu belajar jujur: heartbeat hanya saat visible+aktif (di-clamp),
+  // event offline diantrekan dan di-flush saat reconnect.
+  const enabled = enrollmentId.length > 0;
+  useEngagementHeartbeat({
+    enrollmentId,
+    entityType: "activity",
+    entityId: activity.id,
+    studentKey: enrollmentId,
+    enabled,
+  });
+  useOfflineFlush({ studentKey: enrollmentId, enabled });
 
   async function markComplete() {
     if (!enrollmentId) {
@@ -157,10 +170,18 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
       </div>
     );
   }
-  // reflection & fallback
+  if (activity.type === "reflection") {
+    return (
+      <div className="mt-4">
+        <ReflectionBox activityId={activity.id} enrollmentId={enrollmentId} />
+        <div className="mt-2">{completeBtn}</div>
+      </div>
+    );
+  }
+  // fallback
   return (
     <div className="mt-4">
-      <p className="text-sm text-slate-600">Tulis refleksimu di lesson player, lalu tandai selesai.</p>
+      <p className="text-sm text-slate-600">Konten belum tersedia.</p>
       {completeBtn}
     </div>
   );

@@ -96,6 +96,16 @@ export function isSameIsoWeek(ts: Date, weekStart: string, tz: string = DISPLAY_
   return isoWeekStart(ts, tz) === weekStart;
 }
 
+/**
+ * Awal hari BERIKUTNYA (00:00 besok) dalam kalender timezone tz, sebagai
+ * instant UTC. Dipakai batas "jatuh tempo hari ini": due_at < hasil ini
+ * berarti masih boleh dikerjakan hari ini.
+ */
+export function startOfNextDayInTz(ts: Date, tz: string = DISPLAY_TIMEZONE): Date {
+  const { year, month, day } = zonedYmd(ts, tz);
+  return zonedToUtc(year, month, day + 1, 0, 0, tz);
+}
+
 export interface WeeklyRollupInput {
   /** Banyak entity yang bertransisi ke "completed" pada minggu berjalan. */
   completedThisWeek: number;

@@ -169,6 +169,13 @@ export const recordLearningEventSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+export const submitReviewSchema = z.object({
+  reviewItemId: uuidSchema,
+  enrollmentId: uuidSchema,
+  /** 1–5: 1 = tidak paham, 5 = sangat paham. */
+  confidence: z.number().int().min(1).max(5),
+});
+
 export const startAttemptSchema = z.object({
   assessmentId: uuidSchema,
   enrollmentId: uuidSchema,
