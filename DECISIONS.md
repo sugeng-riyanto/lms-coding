@@ -255,6 +255,17 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   pending/final/failed tanpa klaim "blockchain verified" sebelum final; status anchor
   dibaca publik HANYA hash/root + transaction reference (tanpa PII); ADR ini
   di-revisit saat keputusan manusia tiba.
+- Evaluasi & rekomendasi: `docs/evaluation-anchor-provider.md` (matriks skor
+  berbobot, data 2026). **Rekomendasi default (menunggu konfirmasi manusia):**
+  (1) tetap no-chain untuk production (skor tertinggi 4,20 — kebutuhan sekolah
+  terpenuhi ADR-001); (2) bila non-repudiation pihak ketiga diputuskan perlu →
+  **Algorand** (finality deterministik-irreversibel = definisi "final" tegas untuk
+  UI, ≈ $0,00015/batch, root 32 byte muat di memo, hash-only bersih untuk data
+  anak) — risiko kontinuitas ekosistem dimitigasi adapter abstrak + explorer +
+  fallback no-chain; (3) alternatif: Solana (ekosistem, finality probabilistik)
+  / Base (tooling, caveat finality L2 ~7 hari); permissioned ledger TIDAK
+  direkomendasikan (over-engineering). Keputusan final tetap manusia via checklist
+  §6 dokumen; implementasi tetap mock-only sampai itu.
 
 ## Template
 

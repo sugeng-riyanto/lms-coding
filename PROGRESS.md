@@ -660,3 +660,22 @@ dashboard.
 format 0 · lint 0 · typecheck 0 · test **343/343 +1 skip** (+6) · build 0. Tanpa migration
 baru (status anchor dari 000017; batch org dari 000018) → db:typecheck/live-denial tidak
 berubah (91/91). Verifikasi visual di preview menunggu backend hidup.
+
+## Catatan sesi — Evaluasi provider/network ADR-018 (matriks skor + rekomendasi)
+
+**`docs/evaluation-anchor-provider.md` (baru)** — matriks skor konkret berbobot untuk
+keputusan manusia ADR-018, data titik 2026 (web-sourced):
+- Kriteria+bobot: biaya (0,15), kejelasan finality (0,20), keberlanjutan ekosistem (0,20),
+  lock-in/ops (0,15), regulasi/privacy data anak (0,20), tooling/preseden (0,10).
+- Skor: **no-chain 4,20** > **Algorand 4,05** > Solana 4,00 > Stellar 3,85 > Base (L2)
+  3,70 > permissioned 3,45. Algorand unggul karena finality deterministik-irreversibel
+  (definisi "final" tegas untuk UI) + ≈$0,00015/batch + root 32 byte muat memo; risiko
+  kontinuitas (ALGO all-time-low 2026) dimitigasi hash-only + adapter abstrak + fallback.
+- **Rekomendasi default**: (1) tetap no-chain untuk production; (2) bila non-repudiation
+  pihak ketiga diputuskan perlu → Algorand; (3) alternatif Solana/Base; permissioned TIDAK
+  direkomendasikan. Checklist keputusan manusia (YA/TIDAK) + langkah aktivasi
+  (HttpChainAdapter → env → e2e) + daftar sumber untuk verifikasi ulang.
+- **DECISIONS.md ADR-018**: ditambah blok evaluasi & rekomendasi (status tetap proposed —
+  keputusan final di manusia; implementasi tetap mock-only sampai itu).
+
+Tidak ada perubahan kode; flag/implementasi tidak berubah (ADR-018 masih menunggu keputusan).
