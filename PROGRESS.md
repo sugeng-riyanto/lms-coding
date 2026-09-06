@@ -256,3 +256,40 @@ Seluruh gate dijalankan terhadap tree bersih `be7b127` (4 commit workstream: env
 | `build` | 0 | PASS (production build; dev server tetap 200) |
 
 Log per gate: `/tmp/g4-*.log`.
+
+## Catatan sesi — AI draft feedback: migration 000011 (slice migration, rencana docs/plan-ai-draft-feedback-consent.md, ADR-014/015/017)
+
+1. `supabase/migrations/20260906000011_ai_feedback_consent.sql` (baru): consent per-org `organizations.ai_feedback_consent` default FALSE (fail closed) + `ai_feedback_consent_at`; tabel `ai_feedback_drafts` (unique response_id; status draft/approved/rejected; RLS HANYA guru cohort via `teacher_cohort_ids` — select/insert/update USING+WITH CHECK, TANPA policy murid/anon, rule `no_delete_ai_drafts`); RPC definer `set_org_ai_consent` (guru teacher aktif org; audit `org.ai_consent`), `upsert_ai_draft` (satu draft per response), `apply_ai_feedback` (merge ke `feedback_json.ai_approved` + `grade_revisions` reason `ai_draft:approved` + draft approved — approval eksplisit guru, ADR-015); wrapper public + revoke PUBLIC + grant authenticated.
+2. Bug live yang migration ini ungkap: RPC consent semula menulis `updated_at = now()` — tabel `organizations` TIDAK punya kolom itu (DDL init) → error runtime hanya muncul di Postgres sungguhan; diperbaiki (hapus referensi updated_at; audit via audit_logs).
+3. Live-denial: fixture + rantai AI (soal/versi/response Murid 01, id tetap) + 11 check baru `t11_*`/`p11_*`: consent default false; guru org-1 set consent (audit ≥1); guru insert+baca draft; apply → `ai_approved` + revisi + draft approved; guru org-1 set consent org-2 → FORBIDDEN; murid set consent/upsert → FORBIDDEN; murid 0 baris draft + insert draft → 42501; guru org-2 0 baris draft.
+
+Gates: **live-denial 59/59 PASS** (migrations 000000–000011 verbatim; 48 lama + 11 baru), **test 172/172 (26 files, +5)** (`tests/integration/ai-feedback.test.ts` statis: kolom consent, tabel+status+unique, RLS teacher-only tanpa anon/delete, definer+search_path+revoke/grant, apply hanya lewat approval), typecheck 0, lint PASS, **`db:typecheck` PASS (37 tables** — AC-10 rencana). Belum (slice berikut sesuai rencana): `lib/ai-feedback.ts` (buildPrompt + provider adapter mock/http), env `AI_*` + `.env.example`, aksi request/approve/reject, UI queue, t11 sudah ada.
+
+## Catatan sesi — Provisioning HOSTED BERHASIL + 2 perbaikan root-cause
+
+**Status: PROVISIONED** — project `jspmxdzgxevtfwvldwxy` (coding999a's Project) kini punya schema + seed lengkap, diverifikasi end-to-end lewat UI.
+
+### Apa yang terjadi
+- Token PAT (`SUPABASE_ACCESS_TOKEN`, dari .env user) dipakai: `supabase link` + `supabase db push` → **12 migration (000000–000011) applied** (``Finished supabase db push.``), seed via `supabase db query --linked --file supabase/seed.sql`.
+- REST probe (service key): 16 tabel 200, seed utuh (organizations 1, profiles 5, memberships 5, cohorts 1, cohort_members 3, guardian_links 1, courses 1, course_versions 1, levels 3, enrollments 3, certificates 1).
+
+### Bug #1 — migration 000000 gagal di hosted (42P01)
+`supabase db push` gagal di statement 2: `relation "public.memberships" does not exist`.
+- **Root cause:** 3 helper `LANGUAGE sql` (`private.caller_membership_ids`, `is_teacher_of`, `teacher_cohort_ids`) dibuat SEBELUM tabel `memberships`/`cohorts` dalam file yang sama. Postgres memvalidasi body fungsi SQL saat CREATE (GUC `check_function_bodies` default **on**), jadi apply di DB kosong gagal. Harness lokal menutupinya dengan `PGOPTIONS="-c check_function_bodies=off"` di `run.sh`.
+- **Fix:** blok helper dipindah ke SETELAH semua `create table` (sebelum bagian RLS) di `20260906000000_init.sql`; komentar `run.sh` diperbarui (GUC kini defensif). Dibuktikan: semua 12 migration apply bersih dengan setting DEFAULT (tanpa GUC) di Postgres lokal, lalu push hosted sukses.
+
+### Bug #2 — akun seed tidak bisa login di hosted (500 "Database error querying schema")
+Setelah push, `guru@demo.local` dkk login → `500 unexpected_failure: Database error querying schema` (padahal user GoTrue-created bisa login).
+- **Root cause:** kolom auth.users `email_change` (+ `phone_change`) NULL pada insert SQL langsung. GoTrue me-scan kolom ini sebagai string; NULL memicu "converting NULL to string is unsupported" → 500 saat sign-in (supabase/auth#1940; docs troubleshooting). `confirmation_token`/`recovery_token`/`email_change_token_new` dll. juga ikut di-''-kan.
+- **Fix di hosted:** `update auth.users set email_change=coalesce(email_change,''), phone_change=coalesce(phone_change,''), ...` → **5/5 akun login OK** (guru, wali, murid01–03).
+- **Fix di repo:** `supabase/seed.sql` kini mengisi 8 kolom token/change = `''` eksplisit + komentar penjelas; `scripts/live-denial/00_shim.sql` menambah kolom tsb agar seed tetap jalan di harness.
+
+### Flow UI terverifikasi (hosted, seed users)
+| Alur | Hasil |
+|---|---|
+| guru@demo.local → /teacher | Dashboard kelas: Kelas 7A, 3 murid, matriks cohort, sinyal risiko |
+| murid01@demo.local → /learn | Target hari ini, peta level 3 level (Matematika Dasar), mastery 0% |
+| wali@demo.local → /guardian | Ringkasan anak: Murid 01 tertaut aktif, enrollment aktif 1 |
+
+### Gates (setelah fix)
+- `format:check` 0 · `lint` 0 · `typecheck` 0 · `test` **172/172** · `db:typecheck` 0 (37 tables, 1 view) · `live-denial` **59/59**
