@@ -20,7 +20,9 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       setStatus("done");
-      router.push("/learn");
+      // Hub peran (/dashboard) mengarahkan sesuai membership server-side:
+      // guru → /teacher, wali → /guardian, murid → /learn.
+      router.push("/dashboard");
     } catch (err) {
       setStatus("error");
       setMessage(err instanceof Error ? err.message : "Login gagal. Coba lagi.");

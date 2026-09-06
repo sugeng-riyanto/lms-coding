@@ -5,6 +5,7 @@
 -- Auth seed LOKAL (E2E/demo) — auth.users + auth.identities, idempotent.
 -- HANYA untuk `supabase db reset` lokal; data anonim, password demo non-rahasia.
 --   guru@demo.local     / DemoPass-2026!   (uuid a0000000-…-001, teacher)
+--   wali@demo.local     / DemoPass-2026!   (uuid a5000000-…-001, guardian — tertaut ke Murid 01)
 --   murid01@demo.local  / DemoPass-2026!   (uuid b0000000-…-001, student)
 --   murid02@demo.local  / DemoPass-2026!   (uuid b0000000-…-002, student)
 --   murid03@demo.local  / DemoPass-2026!   (uuid b0000000-…-003, student)
@@ -16,6 +17,10 @@ insert into auth.users
 values
   ('a0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'guru@demo.local',
+   extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
+   '{"provider":"email","providers":["email"]}', now(), now()),
+  ('a5000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
+   'authenticated', 'authenticated', 'wali@demo.local',
    extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
    '{"provider":"email","providers":["email"]}', now(), now()),
   ('b0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
@@ -39,7 +44,7 @@ select u.id::text, u.id,
        jsonb_build_object('sub', u.id::text, 'email', u.email, 'email_verified', true),
        'email', now(), now(), now()
 from auth.users u
-where u.email in ('guru@demo.local', 'murid01@demo.local', 'murid02@demo.local', 'murid03@demo.local')
+where u.email in ('guru@demo.local', 'wali@demo.local', 'murid01@demo.local', 'murid02@demo.local', 'murid03@demo.local')
 on conflict (provider, provider_id) do nothing;
 
 -- org
@@ -53,8 +58,17 @@ insert into public.profiles (id, organization_id, display_name) values
   ('a0000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Guru Demo')
 on conflict (id) do nothing;
 insert into public.memberships (organization_id, user_id, role) values
-  ('11111111-1111-1111-1111-111111111111', 'a0000000-0000-0000-0000-000000000001', 'teacher')
+  ('11111111-1111-1111-1111-111111111111', 'a0000000-0000-0000-0000-000000000001', 'teacher'),
+  ('11111111-1111-1111-1111-111111111111', 'a5000000-0000-0000-0000-000000000001', 'guardian')
 on conflict do nothing;
+insert into public.profiles (id, organization_id, display_name) values
+  ('a5000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Wali Demo')
+on conflict (id) do nothing;
+
+-- guardian link aktif: Wali Demo → Murid 01 (dashboard wali butuh ini).
+insert into public.guardian_links (guardian_id, student_id, status, consent_at) values
+  ('a5000000-0000-0000-0000-000000000001', 'b0000000-0000-0000-0000-000000000001', 'active', now())
+on conflict (guardian_id, student_id) do nothing;
 
 -- students
 insert into public.profiles (id, organization_id, display_name) values

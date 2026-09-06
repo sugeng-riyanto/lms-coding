@@ -30,6 +30,12 @@ export default function HomePage() {
         >
           Dashboard guru
         </Link>
+        <Link
+          href="/guardian"
+          className="rounded-lg border border-slate-300 px-5 py-3 font-semibold hover:bg-slate-50"
+        >
+          Ringkasan wali
+        </Link>
       </div>
       <section aria-label="Status MVP" className="mt-12 rounded-xl border p-6">
         <h2 className="text-xl font-semibold">Status MVP</h2>
