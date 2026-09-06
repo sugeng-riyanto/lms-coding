@@ -64,7 +64,7 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 - [x] Phase 0 Foundation — Next 16.3.4 + TS strict + Tailwind v4 + ESLint + Prettier + Vitest (unit/integration/component) + Playwright + CI (+format:check) + `.env.example` + shell publik/auth/murid/guru + `/api/health` + `/health` + `error.tsx`/`not-found.tsx` + `lib/time.ts` (Asia/Jakarta tampil, UTC simpan) + `supabase/config.toml` (dokumen; CLI belum ada). Exit: install bersih, build lolos, no secret — TERPENUHI per bukti di atas.
 - [x] Phase 1 Identity/RBAC — schema + RLS least-privilege + denial tests 8/8 RBAC.md + 12 tests Phase 1 (`tests/integration/phase1.test.ts`: audit trigger, wali-tertaut, cross-org denial, published-read, answer-key protection, predicate check 20+ policy, service-only jobs/anchors) + guards server (`lib/auth/guards.ts`, layout murid/guru force-dynamic) + halaman login/logout/unauthorized/inactive/profile + audit trigger memberships/profiles + policy wali/org/cohort_member + RLS content-tree + `20260906000002_phase1_hardening.sql` + db-advisor kini memindai semua migration. Exit: static PASS **+ live-DB denial TERJALAN 38/38 PASS** (`scripts/live-denial/` pada Postgres 18 tanpa Docker).
 - [x] Phase 2 Authoring/enrollment — + editor level/module/lesson/activity via UI (JSON konten tervalidasi, HTML ditolak), reorder semua sibling, preview, katalog live.
-- [x] Phase 3 Learning/progress — resume live + autosave + retry queue sync + `recomputeProgress` idempotent + unlock server-side. KURANG: target mingguan/spaced review eksplisit.
+- [x] Phase 3 Learning/progress — resume live + autosave + retry queue sync + `recomputeProgress` idempotent + unlock server-side + **target mingguan + spaced review + confidence check live** (blok target mingguan di /learn, halaman /review dengan confidence 1–5, action `submitReview` ladder 1/3/7/14 + `startOfNextDayInTz`) + **active-time jujur** (`lib/active-time.ts`: clamp heartbeat 120 s + jarak min 20 s + visibility/idle gating di player; server memvalidasi ulang metadata heartbeat/draft, bukan percaya client) + level map 4 state (locked/available/in_progress/completed) + aksesibilitas (prefers-reduced-motion di globals.css + font scaling A−/A+/reset di layout murid). Catatan sesi di bawah.
 - [x] Phase 4 Assessment — bank soal berversi + builder + limit/cooldown/timer server + sanitasi kunci + auto-grade server (service bypass) + release policy + grading queue + upload + revision audit. KURANG: AI draft feedback (butuh consent config).
 - [x] Phase 5 Analytics — live overview/matrix/detail + alerts persist + CSV export + reconciliation tests. Item analysis & misconception map: belum.
 - [x] Phase 6 Certificates — eligibility server + PDF A4 on-demand (ADR-009) + QR + revoke + chain OFF. KURANG: persist PDF ke bucket + UI reissue khusus.
@@ -293,3 +293,23 @@ Setelah push, `guru@demo.local` dkk login → `500 unexpected_failure: Database 
 
 ### Gates (setelah fix)
 - `format:check` 0 · `lint` 0 · `typecheck` 0 · `test` **172/172** · `db:typecheck` 0 (37 tables, 1 view) · `live-denial` **59/59**
+
+## Catatan sesi — Phase 2 (verifikasi) + Phase 3 gap ditutup (target mingguan, spaced review, active-time, a11y)
+
+### Phase 2 — terverifikasi TERPENUHI (bukan re-implementasi)
+Request Phase 2 diulang; bukti sudah ada: hierarchy + authoring actions lengkap (`createCourse`, draft edit, `reorderSiblings`, `archiveCourse`, `duplicateCourse`, `publishCourseVersion` + versioning), `lib/publish-validation.ts` (`validateCourseDraft` incl. prereq-cycle, answer-key, a11y, point total) + `lib/reorder.ts`, 7 tipe activity MVP, structured content blocks (JSON, HTML ditolak), enrollment/status + katalog + level map live, RLS content-tree oleh live-denial. Tidak ada implementasi baru yang diperlukan.
+
+### Phase 3 — gap yang ditutup sesi ini
+1. **Target mingguan eksplisit** — blok "Target mingguan" di `/learn`: goal dari `weekly_plans` (default 3), progress = `activity_completed` pada minggu ISO berjalan (tz Asia/Jakarta) via `weeklyRollup` (progressbar + X/Y + status achieved).
+2. **Spaced review + confidence check** — halaman `/review` (list jatuh tempo hari ini/terlambat, urut `orderedReviewQueue`), form confidence 1–5, action `submitReview` server: hanya baris enrollment sendiri (RLS) + `NOT_DUE` di luar batas `startOfNextDayInTz` + transisi scheduled→completed + baris scheduled baru via `nextReviewAfter` (≥4 maju, 3 ulang, ≤2 reset) — append-only, tanpa hapus.
+3. **Active-time jujur (jangan hitung dari halaman terbuka)** — `lib/active-time.ts` murni: clamp 120 s/heartbeat, jarak min 20 s; hook `useEngagementHeartbeat` di lesson player kirim hanya saat tab visible + aktivitas pointer/keyboard (idle 60 s berhenti); **server memvalidasi ulang** metadata heartbeat & draft (`validateHeartbeatMetadata`/`validateDraftMetadata` → `EVENT_REJECTED`; clamp server-side). Gagal online → `enqueueEvent`; `useOfflineFlush` mengirim ulang saat `online` (tanpa duplikasi via client_event_id).
+4. **Autosave draft + indikator** — `ReflectionBox`: refresh recovery dari localStorage (lazy initializer), indikator saving/saved/offline/error, max 4.000 char, minimisasi data (event hanya `chars`).
+5. **Level map 4 state** — locked / available / in_progress / completed (status snapshot + mastery), pill + label berbeda.
+6. **Aksesibilitas** — `@media (prefers-reduced-motion: reduce)` di globals.css; kontrol font scaling A−/A+/% di header layout murid (persist localStorage, terapkan di `html`).
+
+### Perbaikan infrastruktur yang ditemukan (bukan Phase 3 murni)
+- **e2e login selalu di-skip** — probe `auth/v1/health` hosted butuh header `apikey` (401 tanpa itu); `critical.spec.ts` kini mengirim anon key → test "student login → /learn" **benar-benar jalan melawan hosted & PASS** (e2e 18+1 skip → **19/19**).
+- **Hidrasi gagal di 127.0.0.1** — Next dev memblokir HMR/font dev (403) untuk host tak dikenal → JS tak terhidrasi → form login submit native (URL `/login?`). Fix: `allowedDevOrigins: ["127.0.0.1"]` di `next.config.ts`. Terbukti: login murid01@demo.local di 127.0.0.1 kini mendarat di `/learn`.
+
+### Gates (HEAD sesi ini)
+format 0 · lint 0 · typecheck 0 · test **194/194** (28 file; +12 active-time, +5 reflection-box component, +7 learning-planning submitReview statis) · db:typecheck 0 (37 tabel, 1 view — tanpa migration baru) · live-denial **59/59** · e2e **19/19** (login live-hosted) · build 0 (dev server tetap hidup).
