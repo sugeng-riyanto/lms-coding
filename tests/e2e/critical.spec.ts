@@ -15,13 +15,30 @@ import { test, expect, type Page } from "@playwright/test";
 const STUDENT_EMAIL = process.env.E2E_STUDENT_EMAIL ?? "murid01@demo.local";
 const STUDENT_PASSWORD = process.env.E2E_STUDENT_PASSWORD ?? "DemoPass-2026!";
 
-/** Backend siap bila /api/health 200 dan melaporkan env terkonfigurasi. */
+/** URL Supabase lokal (sama dengan .env.example) — dipakai untuk cek koneksi nyata. */
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
+
+/**
+ * Backend siap bila /api/health ready (env valid) DAN Supabase benar-benar
+ * terjangkau. Env placeholder (mis. hasil `cp .env.example .env` tanpa stack
+ * lokal) membuat /api/health tetap 200 — probe koneksi mencegah false-ready
+ * sehingga test login di-skip, bukan gagal.
+ */
+async function supabaseReachable(page: Page): Promise<boolean> {
+  try {
+    const res = await page.request.get(`${SUPABASE_URL}/auth/v1/health`, { timeout: 3_000 });
+    return res.ok();
+  } catch {
+    return false;
+  }
+}
+
 async function isBackendReady(page: Page): Promise<boolean> {
   try {
     const res = await page.request.get("/api/health");
     if (!res.ok()) return false;
     const body = (await res.json()) as { envConfigured?: boolean };
-    return body.envConfigured === true;
+    return body.envConfigured === true && (await supabaseReachable(page));
   } catch {
     return false;
   }
@@ -57,23 +74,26 @@ test("student login → dashboard /learn (butuh Supabase lokal + seed)", async (
 });
 
 test("public verifier demo tidak bocor PII", async ({ page }) => {
-  const backend = await isBackendReady(page);
   const res = await page.request.get("/api/public/certificates/demo-valid-certificate");
 
   // Kontrak inti: TIDAK ADA PII (email/password/answer) dalam bentuk apa pun.
   const text = await res.text();
   expect(text).not.toMatch(/email|password|answer/i);
 
-  if (!backend) {
-    // Tanpa DB, route memakai fallback demo deterministik → 200 + status valid.
+  const health = await page.request.get("/api/health");
+  const healthBody = health.ok()
+    ? ((await health.json()) as { envConfigured?: boolean })
+    : { envConfigured: false };
+
+  if (healthBody.envConfigured === false) {
+    // Tanpa env (mode demo): strict client throw → fallback demo deterministik 200.
     expect(res.status()).toBe(200);
     const body = JSON.parse(text) as { status?: string };
     expect(body.status).toBe("valid");
     return;
   }
 
-  // Dengan DB hidup: seed demo certificate (docs/e2e-setup.md) menghasilkan 200;
-  // sampai RLS anon certificates_public diperbaiki (Phase 6), anon mendapat 404
-  // tanpa PII — keduanya boleh, PII dilarang.
+  // Env terkonfigurasi (placeholder tanpa DB, atau DB hidup): 200 hanya bila row
+  // demo terbaca (seed + RLS anon Phase 6); tanpa itu 404. Keduanya tanpa PII.
   expect([200, 404]).toContain(res.status());
 });

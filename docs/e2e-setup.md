@@ -8,8 +8,9 @@ Suite membaca `GET /api/health` pada baseURL:
 
 | Mode | Deteksi | Cakupan yang dijalankan |
 |---|---|---|
-| Backend mati (sandbox/CI tanpa services) | `/api/health` ≠ 200 atau `envConfigured:false` | Smoke publik (landing, login shell, keyboard), verifier demo (fallback) — selalu hijau. Test butuh-session **di-skip** dengan alasan eksplisit. |
-| Backend hidup (Supabase lokal) | `/api/health` 200 + `envConfigured:true` | Seluruh suite: + login murid seed → dashboard `/learn`, + verifier DB. |
+| Tanpa env (mode demo) | `/api/health` `envConfigured:false` | Smoke publik + verifier (fallback demo 200) — selalu hijau. Test butuh-session **di-skip**. |
+| Env placeholder, stack mati (mis. hasil `cp .env.example .env` tanpa `supabase start`) | `envConfigured:true` tapi Supabase tidak terjangkau | Smoke publik selalu hijau; verifier menerima `200 \| 404` tanpa PII; test butuh-session **di-skip** (probe koneksi `{SUPABASE_URL}/auth/v1/health`). |
+| Backend hidup (Supabase lokal) | `envConfigured:true` **dan** `{SUPABASE_URL}/auth/v1/health` 200 | Seluruh suite: + login murid seed → dashboard `/learn`. |
 
 Runbook ini = cara mencapai mode **backend hidup** sehingga tidak ada skip.
 
@@ -38,9 +39,13 @@ npx supabase db reset     # terapkan 8 migration + supabase/seed.sql dari awal
 | Role | Email | Password | UUID (FK ke domain seed) |
 |---|---|---|---|
 | Teacher | `guru@demo.local` | `DemoPass-2026!` | `a0000000-0000-0000-0000-000000000001` |
+| Guardian (Wali) | `wali@demo.local` | `DemoPass-2026!` | `a5000000-0000-0000-0000-000000000001` |
 | Student | `murid01@demo.local` | `DemoPass-2026!` | `b0000000-0000-0000-0000-000000000001` |
 | Student | `murid02@demo.local` | `DemoPass-2026!` | `b0000000-0000-0000-0000-000000000002` |
 | Student | `murid03@demo.local` | `DemoPass-2026!` | `b0000000-0000-0000-0000-000000000003` |
+
+Wali (`wali@demo.local`) tertaut via **guardian link aktif** ke Murid 01, jadi
+login dengannya → `/dashboard` → `/guardian` (Ringkasan anak).
 
 Ubah password di clone Anda bila perlu; jangan pernah memakai akun demo ini di
 environment non-local.
@@ -90,7 +95,7 @@ E2E_STUDENT_EMAIL=murid01@demo.local E2E_STUDENT_PASSWORD='DemoPass-2026!' npm r
 | landing → login shell | — | jalan |
 | keyboard-only (skip-link fokus) | — | jalan |
 | student login → `/learn` dashboard | Supabase lokal + seed + `.env` valid | **skip** (alasan tertulis) |
-| verifier demo tidak bocor PII | — (fallback demo) | jalan; asserts `200` + `status:valid` + tanpa email/password/answer |
+| verifier demo tidak bocor PII | — | selalu jalan; tanpa PII; `200`+`valid` hanya saat `envConfigured:false` (fallback demo), selain itu toleransi `200 \| 404` |
 
 Untuk test 3 detail alurnya: `/login` (form email/password) → Supabase Auth
 (`signInWithPassword`) → redirect `/learn` → guard `requireActiveMembership(["student"])`
