@@ -170,3 +170,20 @@ Seluruh gate dijalankan terhadap HEAD `9f67999` (== origin/main, sudah di-push) 
 | `live-denial` | 0 | PASS 38/38 (migration 000000–000010 verbatim) |
 
 Catatan operasional: e2e sempat gagal karena dev server :3000 mati (terbunuh saat `next build`) dan `npm run dev` menolak start karena server next dev lain (sisa webServer playwright dari run e2e yang gagal, pid 21116@53194) memegang lock — setelah `taskkill` + start eksplisit `npm run dev -- -p 3000`, server hidup di pid 6564 dan e2e hijau. Pelajaran: `next dev` di mesin ini bisa memilih port acak bila port default bermasalah; start eksplisit `-p 3000`. Log per gate: `/tmp/g2-*.log`.
+
+## Verifikasi gate refresh — HEAD f0f7d1e (2026-09-06, tree bersih)
+
+Tree bersih di `f0f7d1e` (== state commit dad0e70 + f0f7d1e). Urutan run: read-only gates → test → db:typecheck → live-denial → e2e (server :3000 pid 6564 hidup) → build (server tetap hidup, root 200 setelah build):
+
+| Gate | Exit | Hasil |
+|---|---|---|
+| `format:check` | 0 | PASS |
+| `lint` | 0 | PASS |
+| `typecheck` | 0 | PASS |
+| `test` | 0 | PASS 151/151 (23 files) |
+| `db:typecheck` | 0 | PASS (36 tables, 1 view) |
+| `live-denial` | 0 | PASS 38/38 (migration 000000–000010 verbatim) |
+| `e2e` | 0 | PASS 18 passed / 1 skipped |
+| `build` | 0 | PASS (production build; dev server tetap 200) |
+
+Log per gate: `/tmp/g3-*.log`.
