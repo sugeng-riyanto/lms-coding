@@ -146,6 +146,28 @@ Gates slice: unit 13/13, **test 143/143 (22 files, +13)** , typecheck PASS (0 er
 
 Gates: **live-denial 38/38 PASS** (migration 000010 verbatim di atas 000000–000009), **test 143/143 (22 files)** tetap hijau, typecheck/lint PASS, `db:typecheck` OK (36 tables — tanpa tabel baru). Belum (slice lain sesuai rencana): `lib/certificate-store.ts` + persist/signed-URL route pdf, aksi & UI reissue teacher, t10_* live-denial formal.
 
+## Catatan sesi — Reissue: action server + UI dialog teacher (slice aksi/UI, rencana docs/plan-certificate-persist-reissue.md)
+
+1. `features/actions.ts`: evaluator eligibility level di-refactor dari `issueCertificate` ke helper bersama `evaluateLevelEligibility(supabase, enrollmentId, levelId)` → dipakai issueCertificate DAN reissueCertificate (ADR-013: reissue memakai evaluator TS penuh yang sama, SEBELUM revoke). Action baru `reissueCertificate({ certificateId, reason })` (schema `reissueCertificateSchema` — uuid + reason 5..2000, mirror revoke): muat cert via strict client (RLS `certs_teacher_all` — guru cohort saja) → tolak bila bukan active (`NOT_ACTIVE`) → evaluasi ulang eligibility (tak eligible → `NOT_ELIGIBLE` + alasan, TANPA efek pada cert lama) → `rpc("reissue_certificate")` (p_reason + p_idempotency_key random server-side; RPC retry-safe by state) → `REISSUE_FAILED`.
+2. UI `app/(teacher)/teacher/students/[studentId]/reissue-button.tsx` (baru): tombol "Reissue" per cert **active** di riwayat → native `<dialog>` aksesibel (`aria-labelledby`, label + textarea alasan wajib min 5, `role="status"`, `aria-busy`) → konfirmasi → action → `router.refresh()`. Alasan NOT_ELIGIBLE ditampilkan di dialog (daftar alasan), sertifikat lama tetap utuh. Halaman student-detail: select cert kini memuat `id`; status pair di daftar "Penerbitan" memakai baris TERBARU (setelah reissue satu pair punya revoked+active, jangan tampilkan tombol Terbitkan di atas yang sudah diganti); riwayat menandai cert revoked ber-pasangan-active sebagai badge "diganti" (rantai revoked → active baru).
+3. `tests/integration/certificate-reissue.test.ts` (baru, 9 test statis): schema validasi; action strict-client + NOT_ACTIVE; **urutan eligibility SEBELUM rpc reissue** di dalam tubuh action + tak memakai jalur `issue_certificate`; kedua action berbagi `evaluateLevelEligibility`; migration 000010 (drop constraint, index partial, conflict target partial di `issue_certificate`, definer/search_path/revoke-PUBLIC/audit); UI (halaman mengimpor + render hanya pada active, dialog alasan wajib + aksesibel).
+
+Gates: **test 160/160 (24 files, +9)** , typecheck 0, lint PASS, prettier PASS, format:check PASS. Masih belum (sesuai rencana): `lib/certificate-store.ts` + persist/signed-URL route pdf; verifikasi visual reissue butuh backend hidup (state matrix (c) `docs/e2e-setup.md`).
+
+## Catatan sesi — t10_* live-denial reissue sertifikat (penutup rencana Phase 6)
+
+Suite live-denial kini punya grup `t10_*`/`p10_*` formal (rencana §4 butir (a)/(b)) — SQL sungguhan melawan Postgres 18:
+
+1. `scripts/live-denial/10_fixture.sql`: rantai org-2 untuk denial lintas-org cert — course version terbit + level + enrollment Murid X + sertifikat ACTIVE ber-id tetap `33330000-…-0aa` (id dipakai denial RPC karena RLS menyembunyikan barisnya dari guru org-1, tak bisa di-select klien).
+2. `scripts/live-denial/20_denial.sql` (blok baru setelah p07; pasangan target = enrollment Murid 01 × level pos 1 yang BELUM punya cert, karena p07 sudah me-revoke demo-valid):
+   - **Positif T1 (guru org-1)**: `t10_issue_active_count_1` (issue → tepat 1 ACTIVE); `t10_reissue_history_revoked_plus_active` (reissue → riwayat pair = 2 baris: c1 revoked + c2 active baru); `t10_reissue_retry_same_active` (panggilan ulang atas c1 yang sudah revoked → mengembalikan c2 yang SAMA — retry-safe by state).
+   - **Index**: `t10_second_active_insert_denied` — insert ACTIVE kedua untuk pair sama → `duplicate key … certificates_one_active` (23505).
+   - **Lintas-org**: `t10_org2_cert_hidden` (T1 melihat 0 baris cert org-2); `t10_crossorg_reissue_denied` — RPC `reissue_certificate` atas cert org-2 (id fixture) → `FORBIDDEN`.
+   - **Murid**: `t10_reissue_by_student_denied` — A mencoba reissue cert ACTIVE miliknya sendiri → `FORBIDDEN` (hanya guru cohort).
+   - **Simetri org-2**: `p10_org2_own_cert_visible` + `p10_org2_reissue_ok` (guru org-2 lihat & reissue cert org-2 sendiri → riwayat 2, satu ACTIVE); `t10_org1_cert_hidden_from_org2` (denial simetris).
+
+Hasil: **live-denial 48/48 PASS (38 lama + 10 baru, FAIL=0)** — dijalankan `bash scripts/live-denial/run.sh` (migration 000000–000010 verbatim; DB dipertahankan untuk inspeksi). README coverage table diperbarui. Total check suite kini 48; e2e/static tak berubah (160/160).
+
 ## Catatan sesi — Hook review level-completion (ADR-011, rencana spaced-review slice)
 
 1. `lib/progress-planning.ts`: + `FirstReviewInsertRow` & `firstReviewInsertRows(enrollmentId, entityIds, now, intervals)` — baris review pertama (due = interval pertama ladder, status scheduled), id unik + urut stabil, deterministik.
@@ -187,3 +209,33 @@ Tree bersih di `f0f7d1e` (== state commit dad0e70 + f0f7d1e). Urutan run: read-o
 | `build` | 0 | PASS (production build; dev server tetap 200) |
 
 Log per gate: `/tmp/g3-*.log`.
+
+## Catatan sesi — Self-check struktural .env (guard anti-paste onboarding)
+
+Setelah kejadian `.env` ditimpa paste onboarding Supabase (key asing, duplikat, prosa tutorial), ditambahkan guard startup:
+
+1. `scripts/check-env.mjs` (baru): structural lint file env — key DUPLIKAT (last-wins, pesan sebut baris), key TAK DIKENAL (aplikasi tidak membacanya, mis. `SUPABASE_URL` polos / `host`/`port`/`database`/`user` dari halaman Connect), dan baris bukan `KEY=value` (paste/prosa). Daftar key SAH tidak di-hardcode: diambil dari `.env.example` (template = satu sumber kebenaran). File target tidak ada (CI, env dari runner) → skip, exit 0; `.env.example` hilang → error eksplisit. Nilai boleh memuat `=`/`#` (bukan garbage). Pesan kegagalan terbaca + arahan cek cepat.
+2. `package.json`: script `check:env` + pre-hook `predev`/`prebuild`/`prestart` → gagal cepat sebelum `next dev`/`build`/`start` jalan (e2e `npm run dev` ikut ter-guard via predev).
+3. `.env.example`: header ATURAN STRUKTUR + checklist key + perintah verifikasi (edisi sebelumnya).
+
+Tests: `tests/unit/env-file-check.test.ts` (baru, 7 test — fixture temp dir, spawn nyata script): bersih lolos; duplikat → exit 1 + pesan last-wins; key asing `SUPABASE_URL`/`host` → exit 1; prosa tutorial → exit 1; tanpa `.env` → skip exit 0; tanpa `.env.example` → error; nilai ber-`=`/`#` bukan garbage.
+
+Gates: **test 167/167 (25 files, +7)** , typecheck 0, lint PASS, prettier PASS. Bukti nyata: `node scripts/check-env.mjs` pada `.env` bersih saat ini → `check-env OK` (exit 0).
+
+## Catatan sesi — Wiring env hosted + smoke test sign-in (status: BLOCKER provisioning)
+
+Bukti wiring aplikasi → project Supabase HOSTED (`jspmxdzgxevtfwvldwxy`, nilai dari paste pengguna; `.env` dibersihkan 14 baris, tanpa placeholder; guard struktural `scripts/check-env.mjs` + predev/prebuild/prestart aktif — lihat catatan check-env):
+
+1. **Env & restart**: `next dev` restart (pid 4760, `-p 3000`) — log memuat `predev → npm run check:env` sebelum boot. `/api/health` → `{"status":"ready","envConfigured":true,"validationError":null}`.
+2. **Auth hosted hidup**: `GET <url>/auth/v1/health` (apikey publishable) → `{"version":"v2.196.0","name":"GoTrue"}`.
+3. **Smoke sign-in via UI** (`/login`, server action SSR): submit `guru@demo.local` / `DemoPass-2026!` → balasan GoTrue ditampilkan verbatim `Invalid login credentials` (role=alert) — membuktikan jalur SSR auth→GoTrue hosted benar; penolakan murni karena seed user belum ada. Mode demo (`isDemoBackend`) OFF (env ada) → `/learn`,`/teacher`,`/guardian` tanpa session redirect `/login` (terverifikasi).
+4. **BLOCKER provisioning**: public schema project masih KOSONG — REST probe (service key) `organizations/profiles/memberships/cohorts/courses/enrollments/certificates/alerts/roblox_receipts/weekly_plans/review_items` → semua `404 PGRST205` (berulang, beberapa menit jeda; bukan lag cache). Setelah klaim user "db push + seed selesai" → probe ulang tetap 404. Belum ada kredensial DB (password project) untuk verifikasi/eksekusi mandiri (opsi: koneksi Session pooler `--db-url` atau `supabase link` + password).
+5. **Dry-run hosted-compat** (000001 storage + seed + migration set): TIDAK ada blocker keras. Catatan: `create policy on storage.objects` sah (postgres superuser); seed `auth.users`/`auth.identities` kompatibel dua varian layout identities (composite PK vs surrogate id + unique pair); pgcrypto via `extensions.crypt`; butuh Email provider ON; **5 akun demo ber-password publik `DemoPass-2026!`** — hanya utk preview, rotasi/hapus sebelum produksi. `cat supabase/.temp/project-ref` harus `jspmxdzgxevtfwvldwxy` (kalau beda, push mendarat di project lain).
+
+Langkah selanjutnya saat blocker terangkat: re-probe tabel + seed, lalu sign-in guru→`/teacher`, murid01→`/learn`, wali→`/guardian`.
+
+### UPDATE — Provisioning hosted DITUNDA (2026-09-06)
+
+Diputuskan menunda track hosted sampai ada bukti/artefak nyata. Probe berulang (ke-6, termasuk OpenAPI PostgREST dengan 0 path tabel) tetap `404 PGRST205` pada `jspmxdzgxevtfwvldwxy` meski ada klaim "db push + seed selesai". Semua pesan lanjutan berisi teks placeholder dari suggestion-card (bukan koneksi string/terminal output/project-ref asli) — tidak ada kredensial DB yang valid untuk verifikasi atau eksekusi mandiri. Lihat bagian "Wiring env hosted + smoke test sign-in" di atas untuk bukti lengkap.
+
+Kriteria lanjut (salah satu, dikirim sebagai teks biasa, bukan klik card): (1) `cat supabase/.temp/project-ref` = `jspmxdzgxevtfwvldwxy`; atau (2) tail output `npx supabase db push` yang berakhir `Finished supabase db push.`; atau (3) URL Session pooler ber-password asli. Setelah itu: `npx supabase db push --db-url <url>` + `psql <url> -f supabase/seed.sql` → re-probe → sign-in guru/murid/wali.
