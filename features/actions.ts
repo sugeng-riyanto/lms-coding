@@ -14,6 +14,7 @@ import {
   createRubricSchema,
   finalizeResponseGradesSchema,
   saveCriterionGradeSchema,
+  updateRubricSchema,
   createActivitySchema,
   createAssessmentSchema,
   createCohortSchema,
@@ -642,6 +643,21 @@ export async function createRubricVersion(input: unknown) {
     .eq("id", parsed.data.questionVersionId);
   if (linkErr) return { ok: false as const, error: "CREATE_FAILED" };
   return { ok: true as const, rubricId };
+}
+
+export async function updateRubricVersion(input: unknown) {
+  const parsed = updateRubricSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data, error } = await supabase.rpc("update_rubric_version", {
+    p_rubric_id: parsed.data.rubricId,
+    p_title: parsed.data.title,
+    p_criteria: parsed.data.criteria.map((c) => ({ title: c.title, maxPoints: c.maxPoints })),
+  });
+  if (error) return { ok: false as const, error: "UPDATE_FAILED" };
+  return { ok: true as const, version: (data as number | null) ?? null };
 }
 
 export async function saveCriterionGrade(input: unknown) {

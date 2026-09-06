@@ -889,6 +889,143 @@ end $$;
 
 set role postgres;
 
+-- ============ t14: RE-VERSI RUBRIK — bump version + salin kriteria (migration 000015) ============
+-- Guru org-1 menaikkan rubrik fixture ...030 (v1: 2 kriteria) menjadi v2 (3 kriteria).
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+declare
+  v int;
+begin
+  v := public.update_rubric_version(
+    'a1000000-0000-0000-0000-000000000030', 'Rubrik Versi 2',
+    '[{"title":"Ketepatan konsep","maxPoints":50},{"title":"Struktur \u0026 alur","maxPoints":30},{"title":"Kebersihan kode","maxPoints":20}]'::jsonb);
+  insert into public.harness_results (check_id, passed, detail)
+  select 't14_reversion_bumps_to_v2',
+         v = 2 and r.version = 2 and r.title = 'Rubrik Versi 2',
+         'returned=' || v || ' version=' || r.version
+  from public.rubrics r where r.id = 'a1000000-0000-0000-0000-000000000030';
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_reversion_bumps_to_v2', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Kriteria lama (v1) dipertahankan; criteria baru v2 tersimpan terpisah.
+do $$
+declare
+  v1 int; v2 int; old_kept boolean;
+begin
+  select count(*) into v1 from public.rubric_criteria
+  where rubric_id = 'a1000000-0000-0000-0000-000000000030' and version = 1;
+  select count(*) into v2 from public.rubric_criteria
+  where rubric_id = 'a1000000-0000-0000-0000-000000000030' and version = 2;
+  select exists (select 1 from public.rubric_criteria where id = 'a1000000-0000-0000-0000-000000000031')
+    into old_kept;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_old_criteria_preserved_new_versioned',
+          v1 = 2 and v2 = 3 and old_kept, 'v1=' || v1 || ' v2=' || v2 || ' old_kept=' || old_kept);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_old_criteria_preserved_new_versioned', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Response ...012 sudah final di v1 (86) → setelah re-versi, finalize wajib
+-- memakai kriteria v2 yang belum dinilai → DRAFT_INCOMPLETE.
+do $$
+begin
+  perform public.finalize_response_grades('a1000000-0000-0000-0000-000000000012');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_finalize_uses_active_version', false, 'RPC TIDAK menuntut skor versi aktif!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_finalize_uses_active_version', sqlerrm like '%DRAFT_INCOMPLETE%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+-- Draf skor pada kriteria v2 lalu finalize → skor baru berbasis v2 (50+30+20).
+do $$
+declare
+  c1 uuid; c2 uuid; c3 uuid;
+begin
+  select id into c1 from public.rubric_criteria
+  where rubric_id = 'a1000000-0000-0000-0000-000000000030' and version = 2
+  order by position limit 1 offset 0;
+  select id into c2 from public.rubric_criteria
+  where rubric_id = 'a1000000-0000-0000-0000-000000000030' and version = 2
+  order by position limit 1 offset 1;
+  select id into c3 from public.rubric_criteria
+  where rubric_id = 'a1000000-0000-0000-0000-000000000030' and version = 2
+  order by position limit 1 offset 2;
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012', c1, 45, '', false);
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012', c2, 25, '', false);
+  perform public.save_criterion_grade('a1000000-0000-0000-0000-000000000012', c3, 20, '', false);
+  perform public.finalize_response_grades('a1000000-0000-0000-0000-000000000012');
+  insert into public.harness_results (check_id, passed, detail)
+  select 't14_v2_finalize_score', manual_score = 90, 'manual=' || manual_score
+  from public.responses where id = 'a1000000-0000-0000-0000-000000000012';
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_v2_finalize_score', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Guru org-2: re-versi rubrik org-1 → FORBIDDEN.
+set role postgres;
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a2000000-0000-0000-0000-000000000002","role":"authenticated"}', false);
+
+do $$
+begin
+  perform public.update_rubric_version(
+    'a1000000-0000-0000-0000-000000000030', 'X', '[{"title":"a","maxPoints":1}]'::jsonb);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_cross_org_reversion_denied', false, 'RPC TIDAK menolak guru org lain!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_cross_org_reversion_denied', sqlerrm like '%FORBIDDEN%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+-- Murid: re-versi rubrik → FORBIDDEN.
+set role postgres;
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+begin
+  perform public.update_rubric_version(
+    'a1000000-0000-0000-0000-000000000030', 'X', '[{"title":"a","maxPoints":1}]'::jsonb);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_student_reversion_denied', false, 'RPC TIDAK menolak murid!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_student_reversion_denied', sqlerrm like '%FORBIDDEN%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+-- Payload kriteria invalid → INVALID_CRITERIA (guru org-1).
+set role postgres;
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+begin
+  perform public.update_rubric_version(
+    'a1000000-0000-0000-0000-000000000030', 'X', '[]'::jsonb);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_invalid_criteria_rejected', false, 'RPC TIDAK menolak kriteria kosong!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t14_invalid_criteria_rejected', sqlerrm like '%INVALID_CRITERIA%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+set role postgres;
+
 -- Hasil (dibaca runner).
 set role postgres;
 select check_id || '|' || case when passed then 'PASS' else 'FAIL' end as result

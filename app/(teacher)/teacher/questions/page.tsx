@@ -54,16 +54,19 @@ async function getBank(userId: string) {
       : [];
     const rubricById = new Map<string, RubricInfo>();
     if (rubricIds.length > 0) {
-      const { data: rubrics } = await supabase.from("rubrics").select("id,title").in("id", rubricIds);
-      for (const rb of (rubrics as { id: string; title: string }[] | null) ?? []) {
+      const { data: rubrics } = await supabase.from("rubrics").select("id,title,version").in("id", rubricIds);
+      for (const rb of (rubrics as { id: string; title: string; version: number }[] | null) ?? []) {
+        // Kriteria VERSI AKTIF saja (re-versioning menyimpan versi lama).
         const { data: crits } = await supabase
           .from("rubric_criteria")
           .select("id,title,max_points")
           .eq("rubric_id", rb.id)
+          .eq("version", rb.version)
           .order("position");
         rubricById.set(rb.id, {
           id: rb.id,
           title: rb.title,
+          version: rb.version,
           criteria: ((crits as { id: string; title: string; max_points: number }[] | null) ?? []).map(
             (c) => ({ criterionId: c.id, title: c.title, maxPoints: Number(c.max_points) }),
           ),

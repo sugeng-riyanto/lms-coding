@@ -222,6 +222,20 @@ export const createRubricSchema = z.object({
     .max(20),
 });
 
+export const updateRubricSchema = z.object({
+  rubricId: uuidSchema,
+  title: z.string().min(3).max(200),
+  criteria: z
+    .array(
+      z.object({
+        title: z.string().min(1).max(200),
+        maxPoints: z.coerce.number().min(1).max(1000),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+
 export const saveCriterionGradeSchema = z.object({
   responseId: uuidSchema,
   criterionId: uuidSchema,

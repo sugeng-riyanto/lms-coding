@@ -10,6 +10,7 @@ import { RubricEditor } from "@/components/rubric-editor";
 export interface RubricInfo {
   id: string;
   title: string;
+  version: number;
   criteria: { criterionId: string; title: string; maxPoints: number }[];
 }
 

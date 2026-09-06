@@ -388,3 +388,13 @@ Backend rubrik (migration 000013 + actions + RPC + t13) kini ter-wire ke antarmu
 - **Antrian penilaian** (`/teacher/grading`): `QueueItem` kini membawa `rubric` (kriteria + skor/feedback/draf yang sudah ada) bila question_version terikat rubrik. `components/rubric-grade-panel.tsx`: input skor per kriteria (0..maks, readonly bila final) + feedback per kriteria, tombol **Simpan sebagai draf** (draft=true) dan **Finalize nilai** (semua kriteria draft=false → RPC menghitung manual_score + grade_revisions + audit); badge status draf/final. Tanpa rubrik → form skor tunggal lama tetap.
 
 Gates: format 0 · lint 0 · typecheck 0 · test **228/228** · build 0. Schema/denial tidak berubah (live-denial tetap 72/72 sesi ini).
+
+## Catatan sesi — Re-versi rubrik (migration 000015): edit rubrik terpasang tanpa versi soal baru
+
+Mengedit rubrik yang SUDAH terpasang kini cukup menaikkan versi (tidak wajib membuat versi soal baru):
+- **Schema**: `rubric_criteria.version`; `finalize_response_grades` ditulis ulang agar hanya memakai kriteria **versi aktif** rubrik (v_prev audit/revision tetap).
+- **RPC atomik** `public.update_rubric_version(rubric_id, title, criteria jsonb)`: validasi guru-owner org (`FORBIDDEN`), payload kriteria (>=1, 0<max<=1000, judul <=200 → `INVALID_CRITERIA`), kunci baris + `version+1`, tulis kriteria baru ber-version; **kriteria lama dipertahankan** (riwayat & FK criterion_scores aman).
+- **UI** `RubricEditor`: ringkasan rubrik terpasang kini punya tombol **"Edit → versi N+1"** dengan form ter-prefill (judul+kriteria); simpan memanggil `updateRubricVersion`; data bank soal & antrian nilai memfilter kriteria versi aktif.
+- **t14 live-denial +7 (79 total)**: bump v1→v2 (return 2), kriteria lama dipertahankan + baru ter-version (2/3), finalize menuntut skor versi aktif (DRAFT_INCOMPLETE pada response yang sudah final v1), skor v2 = 90/100, guru org-2 FORBIDDEN, murid FORBIDDEN, kriteria kosong INVALID_CRITERIA.
+
+Gates: format/lint/typecheck 0 · test **228/228** · db:typecheck 0 (38 tabel) · live-denial **79/79** (+7) · build 0. Migration 000015 belum di-push ke hosted (outage).

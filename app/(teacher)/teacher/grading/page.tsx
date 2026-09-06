@@ -94,11 +94,17 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
       const rubricId = (r.question_versions as { rubric_id: string | null } | null)?.rubric_id ?? null;
       let rubric: QueueRubric | null = null;
       if (rubricId) {
-        const { data: rub } = await supabase.from("rubrics").select("id,title").eq("id", rubricId).single();
+        const { data: rub } = await supabase
+          .from("rubrics")
+          .select("id,title,version")
+          .eq("id", rubricId)
+          .single();
+        const currentVersion = (rub as { version: number } | null)?.version ?? 1;
         const { data: crits } = await supabase
           .from("rubric_criteria")
           .select("id,title,max_points")
           .eq("rubric_id", rubricId)
+          .eq("version", currentVersion)
           .order("position");
         const { data: scores } = await supabase
           .from("criterion_scores")
