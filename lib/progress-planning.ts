@@ -164,6 +164,40 @@ export function nextReviewAfter(input: {
   return { intervalIdx: next, dueAt: addDays(input.completedAt, intervals[next - 1]!) };
 }
 
+export interface FirstReviewInsertRow {
+  enrollment_id: string;
+  entity_type: "level";
+  entity_id: string;
+  /** ISO UTC timestamptz. */
+  due_at: string;
+  interval_idx: number;
+  status: "scheduled";
+}
+
+/**
+ * Baris review PERTAMA utk level yang baru selesai (hook aplikasi ADR-011):
+ * interval ladder pertama sejak `now`. Id unik + urutan stabil (sort) agar
+ * deterministik; caller mem-filter entity yang sudah punya baris review agar
+ * recompute ulang tidak menggandakan (index parsial jadi jaminan terakhir).
+ */
+export function firstReviewInsertRows(
+  enrollmentId: string,
+  entityIds: string[],
+  now: Date = new Date(),
+  intervals: readonly [number, ...number[]] = DEFAULT_REVIEW_INTERVALS_DAYS,
+): FirstReviewInsertRow[] {
+  const due = firstReviewDue(now, intervals);
+  const uniqueIds = [...new Set(entityIds)].sort();
+  return uniqueIds.map((entityId) => ({
+    enrollment_id: enrollmentId,
+    entity_type: "level",
+    entity_id: entityId,
+    due_at: due.dueAt.toISOString(),
+    interval_idx: due.intervalIdx,
+    status: "scheduled",
+  }));
+}
+
 export interface ReviewQueueCandidate {
   id: string;
   title: string;

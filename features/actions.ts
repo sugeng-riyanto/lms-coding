@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
+import { firstReviewInsertRows } from "@/lib/progress-planning";
 import {
   addQuestionToAssessmentSchema,
   alertIdSchema,
@@ -1011,7 +1012,33 @@ export async function recomputeProgress(input: unknown) {
     );
   }
 
-  return { ok: true as const, lessonsDone, lessonsTotal, levels: levelResults };
+  // Hook aplikasi (ADR-011): level yang selesai menjadwalkan review pertamanya
+  // (+interval pertama). Hanya bila pasangan (enrollment, level) BELUM punya
+  // baris review apa pun — recompute ulang tidak menggandakan dan review yang
+  // sudah completed/dismissed tidak dijadwalkan ulang; index parsial
+  // review_items_one_active menjaga anti-duplikat scheduled.
+  let reviewScheduled = 0;
+  const doneLevelIds = levelResults.filter((l) => l.done).map((l) => l.id);
+  if (doneLevelIds.length > 0) {
+    const { data: existingRows } = await supabase
+      .from("review_items")
+      .select("entity_id")
+      .eq("enrollment_id", enr.id)
+      .eq("entity_type", "level")
+      .in("entity_id", doneLevelIds);
+    const alreadyReviewed = new Set(
+      ((existingRows as { entity_id: string }[] | null) ?? []).map((r) => r.entity_id),
+    );
+    const rows = firstReviewInsertRows(enr.id, doneLevelIds);
+    const fresh = rows.filter((r) => !alreadyReviewed.has(r.entity_id));
+    if (fresh.length > 0) {
+      const { error } = await supabase.from("review_items").insert(fresh);
+      if (error) return { ok: false as const, error: "REVIEW_SCHEDULE_FAILED" };
+      reviewScheduled = fresh.length;
+    }
+  }
+
+  return { ok: true as const, lessonsDone, lessonsTotal, levels: levelResults, reviewScheduled };
 }
 
 // ---------- Question bank (guru org; versioned; answer key tak pernah ke murid) ----------

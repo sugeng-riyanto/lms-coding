@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REVIEW_INTERVALS_DAYS,
   firstReviewDue,
+  firstReviewInsertRows,
   isoWeekStart,
   isSameIsoWeek,
   nextReviewAfter,
@@ -104,6 +105,32 @@ describe("jadwal review: ladder 1/3/7/14 (LEARNING_ENGINE.md)", () => {
 
   it("interval default sama dengan konstanta ladder", () => {
     expect([...DEFAULT_REVIEW_INTERVALS_DAYS]).toEqual([1, 3, 7, 14]);
+  });
+});
+
+describe("firstReviewInsertRows: hook level-completion (ADR-011)", () => {
+  const now = new Date("2026-09-07T03:00:00Z");
+
+  it("satu baris per level, due +1 hari (interval pertama), status scheduled", () => {
+    const rows = firstReviewInsertRows("enr-1", ["lv-b", "lv-a"], now);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual({
+      enrollment_id: "enr-1",
+      entity_type: "level",
+      entity_id: "lv-a",
+      due_at: "2026-09-08T03:00:00.000Z",
+      interval_idx: 1,
+      status: "scheduled",
+    });
+  });
+
+  it("id unik + urut stabil (duplikat dihapus, sort naik)", () => {
+    const rows = firstReviewInsertRows("enr-1", ["lv-b", "lv-a", "lv-b"], now);
+    expect(rows.map((r) => r.entity_id)).toEqual(["lv-a", "lv-b"]);
+  });
+
+  it("list kosong → tidak ada baris", () => {
+    expect(firstReviewInsertRows("enr-1", [], now)).toEqual([]);
   });
 });
 
