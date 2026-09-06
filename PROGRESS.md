@@ -380,3 +380,11 @@ Home publik, login, header murid ("Area Belajar Murid"), dasbor guru ("Dasbor Ke
 format 0 · lint 0 · typecheck 0 · test **228/228** (31 file; +6 media-embed: isSafeHttpUrl/youtube parse termasuk host-allowlist) · db:typecheck 0 (38 tabel) · live-denial **72/72** (000014 apply bersih) · build 0.
 
 Migration `20260906000014_coding_media_activities.sql` belum di-push ke hosted (outage) — bersama 000012 & 000013, `supabase db push` saat pulih.
+
+## Catatan sesi — Wiring rubrik ke UI guru (builder + panel nilai per kriteria)
+
+Backend rubrik (migration 000013 + actions + RPC + t13) kini ter-wire ke antarmuka:
+- **Bank soal** (`/teacher/questions`): data server menambah rubrik per versi soal (bulk fetch rubrics + criteria; tanpa N+1 per kriteria). `components/rubric-editor.tsx` di baris soal essay/file — buat rubrik (judul + kriteria dinamis + poin maks) via `createRubricVersion` ke versi terbaru; bila sudah terpasang → ringkasan + keterangan berversi. Tipe non-manual tidak menampilkan panel.
+- **Antrian penilaian** (`/teacher/grading`): `QueueItem` kini membawa `rubric` (kriteria + skor/feedback/draf yang sudah ada) bila question_version terikat rubrik. `components/rubric-grade-panel.tsx`: input skor per kriteria (0..maks, readonly bila final) + feedback per kriteria, tombol **Simpan sebagai draf** (draft=true) dan **Finalize nilai** (semua kriteria draft=false → RPC menghitung manual_score + grade_revisions + audit); badge status draf/final. Tanpa rubrik → form skor tunggal lama tetap.
+
+Gates: format 0 · lint 0 · typecheck 0 · test **228/228** · build 0. Schema/denial tidak berubah (live-denial tetap 72/72 sesi ini).

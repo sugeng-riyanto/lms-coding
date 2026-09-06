@@ -3,6 +3,21 @@ import { GradeQueue } from "./grade-queue";
 
 export const dynamic = "force-dynamic";
 
+export interface QueueRubricCriterion {
+  criterionId: string;
+  title: string;
+  maxPoints: number;
+  draft: boolean;
+  score: number | null;
+  feedback: string;
+}
+
+export interface QueueRubric {
+  id: string;
+  title: string;
+  criteria: QueueRubricCriterion[];
+}
+
 export interface QueueItem {
   responseId: string;
   attemptId: string;
@@ -14,6 +29,7 @@ export interface QueueItem {
   answer: unknown;
   autoScore: number | null;
   manualScore: number | null;
+  rubric: QueueRubric | null;
   revisions: { previous: number | null; new: number | null; reason: string; at: string }[];
 }
 
@@ -50,7 +66,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
     const { data: responses } = await supabase
       .from("responses")
       .select(
-        "id,question_version_id,answer_json,auto_score,manual_score,question_versions(question_id,questions(type,prompt_json))",
+        "id,question_version_id,answer_json,auto_score,manual_score,question_versions(rubric_id,question_id,questions(type,prompt_json))",
       )
       .eq("attempt_id", a.id)
       .is("manual_score", null);
@@ -74,6 +90,42 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
         .select("previous_score,new_score,reason,created_at")
         .eq("attempt_id", a.id)
         .order("created_at");
+      // Rubrik penilaian (jika soal diikat): kriteria + skor draf yang sudah ada.
+      const rubricId = (r.question_versions as { rubric_id: string | null } | null)?.rubric_id ?? null;
+      let rubric: QueueRubric | null = null;
+      if (rubricId) {
+        const { data: rub } = await supabase.from("rubrics").select("id,title").eq("id", rubricId).single();
+        const { data: crits } = await supabase
+          .from("rubric_criteria")
+          .select("id,title,max_points")
+          .eq("rubric_id", rubricId)
+          .order("position");
+        const { data: scores } = await supabase
+          .from("criterion_scores")
+          .select("criterion_id,score,feedback,draft")
+          .eq("response_id", r.id);
+        const scoreMap = new Map(
+          (
+            (scores as { criterion_id: string; score: number; feedback: string; draft: boolean }[] | null) ??
+            []
+          ).map((s) => [s.criterion_id, s]),
+        );
+        rubric = {
+          id: (rub as { id: string } | null)?.id ?? rubricId,
+          title: (rub as { title: string } | null)?.title ?? "Rubrik",
+          criteria: ((crits as { id: string; title: string; max_points: number }[] | null) ?? []).map((c) => {
+            const s = scoreMap.get(c.id);
+            return {
+              criterionId: c.id,
+              title: c.title,
+              maxPoints: Number(c.max_points),
+              draft: s?.draft ?? true,
+              score: s?.score ?? null,
+              feedback: s?.feedback ?? "",
+            };
+          }),
+        };
+      }
       out.push({
         responseId: r.id,
         attemptId: a.id,
@@ -85,6 +137,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
         answer: r.answer_json,
         autoScore: r.auto_score,
         manualScore: r.manual_score,
+        rubric,
         revisions: (
           (revs as
             | {

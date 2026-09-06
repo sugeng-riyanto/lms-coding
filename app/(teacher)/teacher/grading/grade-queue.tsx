@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { gradeResponse } from "@/features/actions";
 import type { QueueItem } from "./page";
+import { RubricGradePanel } from "@/components/rubric-grade-panel";
 
 export function GradeQueue({ initialItems }: { initialItems: QueueItem[] }) {
   const router = useRouter();
@@ -59,41 +60,47 @@ export function GradeQueue({ initialItems }: { initialItems: QueueItem[] }) {
               ))}
             </ul>
           )}
-          <div className="mt-3 grid gap-2 md:grid-cols-3">
-            <div>
-              <label htmlFor={`s-${it.responseId}`} className="text-sm font-semibold">
-                Skor manual (0–100)
-              </label>
-              <input
-                id={`s-${it.responseId}`}
-                type="number"
-                min={0}
-                max={100}
-                value={scores[it.responseId] ?? ""}
-                onChange={(e) => setScores((s) => ({ ...s, [it.responseId]: e.target.value }))}
-                className="mt-1 w-full rounded-lg border px-3 py-2"
-              />
-            </div>
-            <div className="md:col-span-2">
-              <label htmlFor={`f-${it.responseId}`} className="text-sm font-semibold">
-                Feedback
-              </label>
-              <input
-                id={`f-${it.responseId}`}
-                value={feedbacks[it.responseId] ?? ""}
-                onChange={(e) => setFeedbacks((s) => ({ ...s, [it.responseId]: e.target.value }))}
-                maxLength={5000}
-                className="mt-1 w-full rounded-lg border px-3 py-2"
-              />
-            </div>
-          </div>
-          <button
-            onClick={() => onGrade(it)}
-            disabled={busy !== null}
-            className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
-          >
-            {busy === it.responseId ? "Menyimpan…" : "Simpan nilai"}
-          </button>
+          {it.rubric ? (
+            <RubricGradePanel responseId={it.responseId} rubric={it.rubric} />
+          ) : (
+            <>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <div>
+                  <label htmlFor={`s-${it.responseId}`} className="text-sm font-semibold">
+                    Skor manual (0–100)
+                  </label>
+                  <input
+                    id={`s-${it.responseId}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={scores[it.responseId] ?? ""}
+                    onChange={(e) => setScores((s) => ({ ...s, [it.responseId]: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label htmlFor={`f-${it.responseId}`} className="text-sm font-semibold">
+                    Feedback
+                  </label>
+                  <input
+                    id={`f-${it.responseId}`}
+                    value={feedbacks[it.responseId] ?? ""}
+                    onChange={(e) => setFeedbacks((s) => ({ ...s, [it.responseId]: e.target.value }))}
+                    maxLength={5000}
+                    className="mt-1 w-full rounded-lg border px-3 py-2"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => onGrade(it)}
+                disabled={busy !== null}
+                className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+              >
+                {busy === it.responseId ? "Menyimpan…" : "Simpan nilai"}
+              </button>
+            </>
+          )}
         </section>
       ))}
     </div>

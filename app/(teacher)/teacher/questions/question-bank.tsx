@@ -5,13 +5,20 @@ import { useRouter } from "next/navigation";
 import { createQuestion, publishQuestionVersion } from "@/features/actions";
 import { buildGradingRule } from "@/lib/attempt";
 import type { QuestionType } from "@/lib/grading";
+import { RubricEditor } from "@/components/rubric-editor";
+
+export interface RubricInfo {
+  id: string;
+  title: string;
+  criteria: { criterionId: string; title: string; maxPoints: number }[];
+}
 
 export interface BankQuestion {
   id: string;
   type: string;
   promptText: string;
   difficulty: string;
-  versions: { id: string; version: number; points: number }[];
+  versions: { id: string; version: number; points: number; rubric: RubricInfo | null }[];
 }
 
 const TYPES: QuestionType[] = [
@@ -187,18 +194,29 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
         {initialQuestions.length === 0 && (
           <p className="rounded-xl border p-4 text-slate-600">Bank masih kosong.</p>
         )}
-        {initialQuestions.map((q) => (
-          <div key={q.id} className="rounded-xl border p-3 text-sm">
-            <p>
-              <strong>{q.type}</strong> · {q.promptText}
-            </p>
-            <p className="text-slate-500">
-              {q.versions.length === 0
-                ? "belum ada versi"
-                : q.versions.map((v) => `v${v.version} (${v.points}p)`).join(", ")}
-            </p>
-          </div>
-        ))}
+        {initialQuestions.map((q) => {
+          const last = q.versions[q.versions.length - 1] ?? null;
+          return (
+            <div key={q.id} className="rounded-xl border p-3 text-sm">
+              <p>
+                <strong>{q.type}</strong> · {q.promptText}
+              </p>
+              <p className="text-slate-500">
+                {q.versions.length === 0
+                  ? "belum ada versi"
+                  : q.versions.map((v) => `v${v.version} (${v.points}p)`).join(", ")}
+              </p>
+              {last && (
+                <RubricEditor
+                  questionType={q.type}
+                  versionId={last.id}
+                  versionNumber={last.version}
+                  existing={last.rubric}
+                />
+              )}
+            </div>
+          );
+        })}
       </section>
     </div>
   );
