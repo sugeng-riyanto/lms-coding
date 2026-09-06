@@ -1,8 +1,15 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { archiveCourse, duplicateCourse, publishCourseVersion, reorderSiblings } from "@/features/actions";
+import {
+  archiveCourse,
+  createLevel,
+  duplicateCourse,
+  publishCourseVersion,
+  reorderSiblings,
+} from "@/features/actions";
 import type { PublishIssue } from "@/lib/publish-validation";
 
 export interface ManageLevel {
@@ -26,6 +33,27 @@ export function ManageCourse({
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [issues, setIssues] = useState<PublishIssue[]>([]);
   const [slug, setSlug] = useState("");
+  const [levelTitle, setLevelTitle] = useState("");
+  const [levelObjective, setLevelObjective] = useState("");
+
+  async function onAddLevel(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy("add-level");
+    const res = await createLevel({
+      courseVersionId: versionId,
+      title: levelTitle,
+      objective: levelObjective,
+    });
+    setBusy(null);
+    if (!res.ok) {
+      setNotice({ kind: "err", text: `Gagal tambah level: ${res.error}` });
+    } else {
+      setLevelTitle("");
+      setLevelObjective("");
+      setNotice({ kind: "ok", text: "Level ditambahkan." });
+      router.refresh();
+    }
+  }
 
   async function move(index: number, dir: -1 | 1) {
     const next = [...levels];
@@ -105,6 +133,46 @@ export function ManageCourse({
 
       <section aria-label="Susunan level" className="rounded-xl border p-5">
         <h2 className="font-semibold">Susunan level</h2>
+        <form
+          onSubmit={onAddLevel}
+          aria-label="Tambah level"
+          className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3"
+        >
+          <div>
+            <label htmlFor="lv-title" className="text-sm font-semibold">
+              Judul level
+            </label>
+            <input
+              id="lv-title"
+              required
+              value={levelTitle}
+              onChange={(e) => setLevelTitle(e.target.value)}
+              minLength={3}
+              maxLength={200}
+              className="mt-1 block rounded-lg border px-3 py-2"
+            />
+          </div>
+          <div className="min-w-52 flex-1">
+            <label htmlFor="lv-obj" className="text-sm font-semibold">
+              Objective (min 10 karakter)
+            </label>
+            <input
+              id="lv-obj"
+              required
+              value={levelObjective}
+              onChange={(e) => setLevelObjective(e.target.value)}
+              minLength={10}
+              maxLength={2000}
+              className="mt-1 block w-full rounded-lg border px-3 py-2"
+            />
+          </div>
+          <button
+            disabled={busy !== null}
+            className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+          >
+            + Level
+          </button>
+        </form>
         {levels.length === 0 ? (
           <p className="mt-2 text-slate-600">Belum ada level. Tambahkan via database/authoring lanjutan.</p>
         ) : (
@@ -114,7 +182,13 @@ export function ManageCourse({
                 <span>
                   <strong>{i + 1}.</strong> {l.title}
                 </span>
-                <span className="flex gap-1">
+                <span className="flex items-center gap-1">
+                  <Link
+                    href={`/teacher/courses/${courseId}/levels/${l.id}`}
+                    className="rounded border px-2 py-1 text-sm text-blue-700 underline"
+                  >
+                    Kelola isi
+                  </Link>
                   <button
                     disabled={busy !== null || i === 0}
                     onClick={() => move(i, -1)}

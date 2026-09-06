@@ -41,6 +41,85 @@ export const duplicateCourseSchema = z.object({
     .regex(/^[a-z0-9-]+$/),
 });
 
+export const createLevelSchema = z.object({
+  courseVersionId: uuidSchema,
+  title: z.string().min(3).max(200),
+  objective: z.string().min(10).max(2000),
+});
+
+export const createModuleSchema = z.object({
+  levelId: uuidSchema,
+  title: z.string().min(3).max(200),
+});
+
+export const createLessonSchema = z.object({
+  moduleId: uuidSchema,
+  title: z.string().min(3).max(200),
+  objective: z.string().min(10).max(2000),
+  estimatedMinutes: z.coerce.number().int().min(1).max(600).default(15),
+});
+
+export const activityTypeSchema = z.enum([
+  "article",
+  "video_link",
+  "resource",
+  "reflection",
+  "quiz",
+  "assignment_upload",
+  "roblox_challenge",
+]);
+
+export const createActivitySchema = z.object({
+  lessonId: uuidSchema,
+  type: activityTypeSchema,
+  title: z.string().min(3).max(200),
+  content: z.record(z.string(), z.unknown()).default({}),
+});
+
+export const recomputeProgressSchema = z.object({
+  enrollmentId: uuidSchema,
+});
+
+export const questionTypeSchema = z.enum([
+  "single_choice",
+  "multiple_choice",
+  "true_false",
+  "numeric_tolerance",
+  "short_text",
+  "essay_manual",
+  "file_manual",
+]);
+
+export const createQuestionSchema = z.object({
+  type: questionTypeSchema,
+  promptText: z.string().min(3).max(5000),
+  difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+});
+
+export const publishQuestionVersionSchema = z.object({
+  questionId: uuidSchema,
+  points: z.coerce.number().min(0).max(1000),
+  grading: z.record(z.string(), z.unknown()),
+});
+
+export const createAssessmentSchema = z.object({
+  activityId: uuidSchema,
+  maxAttempts: z.coerce.number().int().min(1).max(20).default(3),
+  cooldownSeconds: z.coerce.number().int().min(0).max(86400).default(0),
+  durationSeconds: z.coerce.number().int().min(0).max(86400).default(0),
+  release: z.enum(["immediate", "manual"]).default("immediate"),
+});
+
+export const addQuestionToAssessmentSchema = z.object({
+  assessmentId: uuidSchema,
+  questionVersionId: uuidSchema,
+  points: z.coerce.number().min(0).max(1000),
+});
+
+export const releaseGradesSchema = z.object({
+  assessmentId: uuidSchema,
+});
+
 export const enrollStudentSchema = z.object({
   courseId: uuidSchema,
   studentId: uuidSchema,

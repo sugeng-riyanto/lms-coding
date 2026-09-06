@@ -128,7 +128,7 @@ export default async function CatalogPage() {
                 ))}
               </ol>
               <Link
-                href="/learn"
+                href={`/learn?enrollment=${c.enrollmentId}`}
                 className="mt-3 inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
               >
                 Lanjutkan belajar
