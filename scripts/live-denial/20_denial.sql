@@ -305,6 +305,179 @@ end $$;
 
 set role postgres;
 
+-- ============ t10_* REISSUE SERTIFIKAT (Phase 6, migration 000010) ============
+-- Guru org-1 (T1): issue → reissue atas enrollment-level YANG SAMA = riwayat
+-- 2 baris (revoked + active) dan index `certificates_one_active` menolak
+-- insert ACTIVE kedua; lintas-org tetap 0 baris; RPC reissue menolak guru
+-- org lain dan murid. Selesai pasca p07 (demo cert sudah revoked di blok
+-- sebelumnya), jadi t10 memakai pasangan enrollment Murid 01 × level pos 1
+-- yang BELUM punya baris cert apa pun.
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000001"}', false);
+
+do $$
+declare
+  v_enr uuid;
+  v_lv uuid := 'f0000000-0000-0000-0000-000000000002';
+  v_c1 uuid;
+  v_c2 uuid;
+  r uuid;
+  active_cnt int;
+  hist int;
+  revoked_cnt int;
+begin
+  select id into v_enr from public.enrollments
+  where student_id = 'b0000000-0000-0000-0000-000000000001'
+    and course_id = 'd0000000-0000-0000-0000-000000000001'
+  limit 1;
+
+  -- (a) issue → tepat satu ACTIVE.
+  select public.issue_certificate(v_enr, v_lv, 't10-issue-1') into v_c1;
+  select count(*) into active_cnt from public.certificates
+  where enrollment_id = v_enr and level_id = v_lv and status = 'active';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t10_issue_active_count_1', v_c1 is not null and active_cnt = 1,
+          'c1=' || coalesce(v_c1::text, 'null') || ' active=' || active_cnt);
+
+  -- (b) reissue → riwayat pair = 2 baris: c1 revoked + c2 active baru.
+  select public.reissue_certificate(v_c1, 'alasan t10 formal', 't10-reissue-1') into v_c2;
+  select count(*) into hist from public.certificates
+  where enrollment_id = v_enr and level_id = v_lv;
+  select count(*) into active_cnt from public.certificates
+  where enrollment_id = v_enr and level_id = v_lv and status = 'active';
+  select count(*) into revoked_cnt from public.certificates
+  where enrollment_id = v_enr and level_id = v_lv and status = 'revoked';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t10_reissue_history_revoked_plus_active',
+          hist = 2 and active_cnt = 1 and revoked_cnt = 1,
+          'hist=' || hist || ' active=' || active_cnt || ' revoked=' || revoked_cnt
+          || ' c1=' || v_c1::text || ' c2=' || v_c2::text);
+
+  -- (c) retry-safe by state: panggilan lagi atas c1 (sudah revoked) → c2 sama.
+  begin
+    select public.reissue_certificate(v_c1, 't10 retry', 't10-reissue-2') into r;
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_reissue_retry_same_active', r = v_c2,
+            'retry=' || coalesce(r::text, 'null') || ' expect=' || coalesce(v_c2::text, 'null'));
+  end;
+
+  -- (d) index partial: insert ACTIVE kedua untuk pair sama → duplicate key.
+  begin
+    insert into public.certificates
+      (public_id, enrollment_id, level_id, serial_no, status, payload_json, payload_hash)
+    values ('t10-dup-active', v_enr, v_lv, 'DUP-0001', 'active', '{}', lpad('', 64, '0'));
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_second_active_insert_denied', false,
+            'INSERT active kedua TIDAK diblokir index!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_second_active_insert_denied', sqlstate = '23505',
+            'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+end $$;
+
+do $$
+declare n int;
+begin
+  -- (e) lintas-org: guru org-1 tetap 0 baris cert org-2.
+  insert into public.harness_results (check_id, passed, detail)
+  select 't10_org2_cert_hidden', count(*) = 0, 'rows=' || count(*)
+  from public.certificates c
+  join public.enrollments e on e.id = c.enrollment_id
+  join public.cohorts ch on ch.id = e.cohort_id
+  where ch.organization_id = '22222222-2222-2222-2222-222222222222';
+
+  -- (f) RPC reissue atas cert org-2 (id fixture tetap; tak terbaca RLS) → FORBIDDEN.
+  begin
+    perform public.reissue_certificate('33330000-0000-0000-0000-0000000000aa',
+                                       'cross org', 't10-cross-org');
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_crossorg_reissue_denied', false, 'RPC reissue TIDAK menolak guru org lain!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_crossorg_reissue_denied', sqlerrm like '%FORBIDDEN%',
+            'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+end $$;
+
+set role postgres;
+
+-- ============ t10: MURID A tidak bisa reissue (hanya guru cohort) ============
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001"}', false);
+
+do $$
+declare v_own uuid;
+begin
+  -- cert ACTIVE milik A sendiri (c2 dari pasangan level pos 1).
+  select c.id into v_own from public.certificates c
+  join public.enrollments e on e.id = c.enrollment_id
+  where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+    and c.status = 'active'
+  limit 1;
+  begin
+    perform public.reissue_certificate(v_own, 'self reissue', 't10-self');
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_reissue_by_student_denied', false, 'RPC reissue TIDAK menolak murid!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t10_reissue_by_student_denied',
+            v_own is not null and sqlerrm like '%FORBIDDEN%',
+            'own=' || coalesce(v_own::text, 'null') || ' sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+end $$;
+
+set role postgres;
+
+-- ============ t10 simetri org-2: guru org-2 lihat & reissue cert sendiri ============
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a2000000-0000-0000-0000-000000000002"}', false);
+
+do $$
+declare
+  c_org2 uuid;
+  v_enr uuid;
+  v_lv uuid;
+  r uuid;
+  hist int;
+  active_cnt int;
+begin
+  -- Positif: cert org-2 terbaca oleh guru org-2 (id + pasangan).
+  select c.id, c.enrollment_id, c.level_id into c_org2, v_enr, v_lv
+  from public.certificates c
+  join public.enrollments e on e.id = c.enrollment_id
+  join public.cohorts ch on ch.id = e.cohort_id
+  where ch.organization_id = '22222222-2222-2222-2222-222222222222'
+    and c.status = 'active'
+  limit 1;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p10_org2_own_cert_visible', c_org2 is not null,
+          'c=' || coalesce(c_org2::text, 'null'));
+
+  -- Reissue cert org-2 sendiri → revoked + new active (riwayat pair = 2).
+  select public.reissue_certificate(c_org2, 'reissue org2', 't10-org2-reissue') into r;
+  select count(*) into hist from public.certificates
+  where enrollment_id = v_enr and level_id = v_lv;
+  select count(*) into active_cnt from public.certificates
+  where id = r and status = 'active';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p10_org2_reissue_ok', r is not null and hist = 2 and active_cnt = 1,
+          'new=' || coalesce(r::text, 'null') || ' hist=' || hist || ' active=' || active_cnt);
+
+  -- Simetri denial: cert org-1 (pair demo) tak terbaca guru org-2.
+  insert into public.harness_results (check_id, passed, detail)
+  select 't10_org1_cert_hidden_from_org2', count(*) = 0, 'rows=' || count(*)
+  from public.certificates c
+  join public.enrollments e on e.id = c.enrollment_id
+  join public.cohorts ch on ch.id = e.cohort_id
+  where ch.organization_id = '11111111-1111-1111-1111-111111111111';
+end $$;
+
+set role postgres;
+
 -- Hasil (dibaca runner).
 set role postgres;
 select check_id || '|' || case when passed then 'PASS' else 'FAIL' end as result

@@ -34,6 +34,31 @@ insert into public.courses (id, organization_id, owner_id, slug, title, status) 
    'a2000000-0000-0000-0000-000000000002', 'fisika-lain', 'Fisika Lain', 'draft')
 on conflict (id) do nothing;
 
+-- Rantai org-2 untuk denial sertifikat lintas organisasi (t10_*): course
+-- version terbit + level + enrollment Murid X + sertifikat ACTIVE ber-id tetap
+-- (dipakai denial RPC lintas org; id dibutuhkan karena RLS menyembunyikan
+-- barisnya dari guru org-1, jadi tidak bisa di-select dari sisi klien).
+insert into public.course_versions (id, course_id, version, published_at) values
+  ('e2000000-0000-0000-0000-000000000002', 'd2000000-0000-0000-0000-000000000002', 1, now())
+on conflict (id) do nothing;
+insert into public.levels (id, course_version_id, position, title) values
+  ('f2000000-0000-0000-0000-000000000002', 'e2000000-0000-0000-0000-000000000002', 0, 'Level Fisika Lain')
+on conflict (id) do nothing;
+insert into public.enrollments (course_id, student_id, cohort_id, status) values
+  ('d2000000-0000-0000-0000-000000000002', 'b2000000-0000-0000-0000-000000000009',
+   'c2000000-0000-0000-0000-000000000002', 'active')
+on conflict (course_id, student_id, cohort_id) do nothing;
+insert into public.certificates
+  (id, public_id, enrollment_id, level_id, serial_no, status, payload_json, payload_hash)
+select '33330000-0000-0000-0000-0000000000aa', 'org2-valid-certificate', e.id,
+       'f2000000-0000-0000-0000-000000000002', 'ORG2-0001', 'active',
+       jsonb_build_object('publicId', 'org2-valid-certificate'), lpad('', 64, '0')
+from public.enrollments e
+where e.student_id = 'b2000000-0000-0000-0000-000000000009'
+  and e.course_id = 'd2000000-0000-0000-0000-000000000002'
+limit 1
+on conflict (id) do nothing;
+
 -- Wali (guardian) aktif tertaut ke Murid 01 (A); Murid 03 (C) TIDAK tertaut.
 insert into auth.users (id) values
   ('aaaaaaaa-0000-0000-0000-0000000000aa')

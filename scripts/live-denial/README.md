@@ -58,6 +58,7 @@ DB tidak di-drop sesudahnya agar bisa diinspeksi:
 | Anonim | `t05_*` | anon: 0 baris pada tabel privat, verifier view tetap jalan (minimal PII), insert ditolak |
 | PII minimal | `t06_view_minimal_pii` | view verifier tidak membocorkan PII |
 | Sertifikat & storage | `p07_*`, `t07_*`, `p08_*`, `t08_*` | guru revoke cert cohort sendiri; murid tak bisa revoke; upload folder sendiri OK; tulis folder murid lain ditolak |
+| Reissue sertifikat (migration 000010) | `t10_*`, `p10_*` | issue → reissue pair sama = riwayat revoked + active (2 baris) + retry balas active sama; index `certificates_one_active` menolak ACTIVE kedua; guru org-1 0 baris cert org-2 & RPC reissue lintas-org `FORBIDDEN`; murid tak bisa reissue; simetri org-2 (lihat + reissue sendiri) |
 
 ## Bug nyata yang suite ini temukan (migration `…000008_rls_recursion_fix.sql`)
 
