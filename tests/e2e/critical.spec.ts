@@ -15,8 +15,10 @@ import { test, expect, type Page } from "@playwright/test";
 const STUDENT_EMAIL = process.env.E2E_STUDENT_EMAIL ?? "murid01@demo.local";
 const STUDENT_PASSWORD = process.env.E2E_STUDENT_PASSWORD ?? "DemoPass-2026!";
 
-/** URL Supabase lokal (sama dengan .env.example) — dipakai untuk cek koneksi nyata. */
+/** URL Supabase (sama dengan .env.example) — dipakai untuk cek koneksi nyata. */
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
+/** Hosted GoTrue menolak probe tanpa header apikey (401); lokal mengabaikannya. */
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
 
 /**
  * Backend siap bila /api/health ready (env valid) DAN Supabase benar-benar
@@ -26,7 +28,10 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:5
  */
 async function supabaseReachable(page: Page): Promise<boolean> {
   try {
-    const res = await page.request.get(`${SUPABASE_URL}/auth/v1/health`, { timeout: 3_000 });
+    const res = await page.request.get(`${SUPABASE_URL}/auth/v1/health`, {
+      timeout: 3_000,
+      headers: SUPABASE_ANON_KEY ? { apikey: SUPABASE_ANON_KEY } : undefined,
+    });
     return res.ok();
   } catch {
     return false;

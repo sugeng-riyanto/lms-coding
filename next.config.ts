@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // E2E/Playwright memakai 127.0.0.1; tanpanya Next dev memblokir HMR/font
+  // dev (403) sehingga halaman tidak terhidrasi dan interaksi gagal.
+  allowedDevOrigins: ["127.0.0.1"],
   async headers() {
     return [
       {
