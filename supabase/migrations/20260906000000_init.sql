@@ -7,49 +7,6 @@
 
 create extension if not exists "pgcrypto";
 
--- ============ helpers: caller role (server-controlled, bukan user_metadata) ============
-create schema if not exists private;
-
-create or replace function private.caller_membership_ids()
-returns table (organization_id uuid, role text)
-language sql stable security definer
-set search_path = private, public, pg_temp
-as $$
-  select m.organization_id, m.role
-  from public.memberships m
-  where m.user_id = auth.uid() and m.status = 'active';
-$$;
-
-create or replace function private.is_teacher_of(org uuid)
-returns boolean
-language sql stable security definer
-set search_path = private, public, pg_temp
-as $$
-  select exists (
-    select 1 from public.memberships m
-    where m.user_id = auth.uid() and m.organization_id = org
-      and m.role = 'teacher' and m.status = 'active'
-  );
-$$;
-
--- teacher cohorts yang diajar
-create or replace function private.teacher_cohort_ids()
-returns setof uuid
-language sql stable security definer
-set search_path = private, public, pg_temp
-as $$
-  select c.id from public.cohorts c
-  join public.memberships m on m.organization_id = c.organization_id
-  where m.user_id = auth.uid() and m.role = 'teacher' and m.status = 'active'
-    and c.teacher_id = auth.uid();
-$$;
-
-revoke all on schema private from public;
-revoke all on function private.caller_membership_ids() from public;
-revoke all on function private.is_teacher_of(uuid) from public;
-revoke all on function private.teacher_cohort_ids() from public;
-grant usage on schema private to authenticated;
-
 -- ============ identity & tenancy ============
 create table public.organizations (
   id uuid primary key default gen_random_uuid(),
@@ -399,6 +356,52 @@ create table public.audit_logs (
   ip_hash text,
   created_at timestamptz not null default now()
 );
+
+-- ============ helpers: caller role (server-controlled, bukan user_metadata) ============
+-- DIBUAT SETELAH SEMUA TABEL: fungsi LANGUAGE sql divalidasi saat CREATE FUNCTION
+-- (check_function_bodies default on pada supabase db push), jadi tabel yang
+-- direferensikan harus sudah ada lebih dulu dalam file migration yang sama.
+create schema if not exists private;
+
+create or replace function private.caller_membership_ids()
+returns table (organization_id uuid, role text)
+language sql stable security definer
+set search_path = private, public, pg_temp
+as $$
+  select m.organization_id, m.role
+  from public.memberships m
+  where m.user_id = auth.uid() and m.status = 'active';
+$$;
+
+create or replace function private.is_teacher_of(org uuid)
+returns boolean
+language sql stable security definer
+set search_path = private, public, pg_temp
+as $$
+  select exists (
+    select 1 from public.memberships m
+    where m.user_id = auth.uid() and m.organization_id = org
+      and m.role = 'teacher' and m.status = 'active'
+  );
+$$;
+
+-- teacher cohorts yang diajar
+create or replace function private.teacher_cohort_ids()
+returns setof uuid
+language sql stable security definer
+set search_path = private, public, pg_temp
+as $$
+  select c.id from public.cohorts c
+  join public.memberships m on m.organization_id = c.organization_id
+  where m.user_id = auth.uid() and m.role = 'teacher' and m.status = 'active'
+    and c.teacher_id = auth.uid();
+$$;
+
+revoke all on schema private from public;
+revoke all on function private.caller_membership_ids() from public;
+revoke all on function private.is_teacher_of(uuid) from public;
+revoke all on function private.teacher_cohort_ids() from public;
+grant usage on schema private to authenticated;
 
 -- ============ RLS: enable everywhere ============
 alter table public.organizations enable row level security;

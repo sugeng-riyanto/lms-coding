@@ -18,8 +18,9 @@ export PGUSER="${PGUSER:-postgres}"
 export PGPASSWORD="${PGPASSWORD:-postgres}"
 export PGDATABASE=postgres
 export PGCLIENTENCODING=UTF8
-# Migration mendefinisikan fungsi SQL sebelum tabelnya dibuat (urutan normal di
-# Supabase). Cegah validasi-body saat CREATE FUNCTION: check_function_bodies=off.
+# Migration sudah diurutkan agar fungsi SQL dibuat setelah tabel yang direferensikan
+# (valid dengan check_function_bodies default on, sama seperti supabase db push).
+# GUC ini dipertahankan sebagai pengaman bila migration baru kembali memakai pola lama.
 export PGOPTIONS="-c check_function_bodies=off"
 
 PSQL="${PSQL:-}"
