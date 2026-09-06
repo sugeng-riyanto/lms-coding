@@ -33,6 +33,7 @@ import {
   uuidSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
+import { checkEligibility } from "@/lib/eligibility";
 import { normalizeOrder } from "@/lib/reorder";
 import { validateCourseDraft, type DraftLevel, type DraftPrereq } from "@/lib/publish-validation";
 import { checkRateLimit } from "@/lib/ratelimit";
@@ -438,13 +439,72 @@ export async function gradeResponse(input: unknown) {
   return { ok: true as const };
 }
 
-// ---------- Certificates ----------
+// ---------- Certificates (eligibility dievaluasi server sebelum issuance) ----------
 export async function issueCertificate(input: unknown) {
   const parsed = issueCertificateSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Kumpulkan bukti: snapshots lesson + attempts summative + rule level.
+  const { data: enrollment } = await supabase
+    .from("enrollments")
+    .select("id,course_id")
+    .eq("id", parsed.data.enrollmentId)
+    .single();
+  const enr = enrollment as { id: string; course_id: string } | null;
+  if (!enr) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  const { data: level } = await supabase
+    .from("levels")
+    .select("id,passing_score,mastery_threshold")
+    .eq("id", parsed.data.levelId)
+    .single();
+  const lv = level as { id: string; passing_score: number; mastery_threshold: number } | null;
+  if (!lv) return { ok: false as const, error: "NOT_FOUND" };
+
+  const { data: snaps } = await supabase
+    .from("progress_snapshots")
+    .select("entity_id,status,percent,mastery")
+    .eq("enrollment_id", enr.id)
+    .eq("entity_type", "lesson");
+  const ss =
+    (snaps as { entity_id: string; status: string; percent: number; mastery: number }[] | null) ?? [];
+  // Required lessons pada level ini: telusuri modules → lessons (required).
+  const { data: moduleRows } = await supabase.from("modules").select("id").eq("level_id", lv.id);
+  const requiredIds: string[] = [];
+  for (const md of (moduleRows as { id: string }[] | null) ?? []) {
+    const { data: lessonRows } = await supabase.from("lessons").select("id,required").eq("module_id", md.id);
+    for (const le of (lessonRows as { id: string; required: boolean }[] | null) ?? []) {
+      if (le.required) requiredIds.push(le.id);
+    }
+  }
+  const completedIds = ss.filter((s) => s.status === "completed").map((s) => s.entity_id);
+  const levelPercent = ss.length > 0 ? ss.reduce((a, s) => a + Number(s.percent), 0) / ss.length : 0;
+  const avgMastery = ss.length > 0 ? ss.reduce((a, s) => a + Number(s.mastery), 0) / ss.length : 0;
+  const { data: atts } = await supabase
+    .from("attempts")
+    .select("final_score,status")
+    .eq("enrollment_id", enr.id)
+    .neq("status", "in_progress");
+  const passed = ((atts as { final_score: number | null; status: string }[] | null) ?? []).some(
+    (a) => (a.final_score ?? 0) >= Number(lv.passing_score),
+  );
+  const verdict = checkEligibility({
+    requiredLessonIds: requiredIds,
+    completedLessonIds: completedIds,
+    levelPercent,
+    summativePassed: passed,
+    mastery: new Map([["__level_avg__", avgMastery]]),
+    rule: {
+      passingScore: Number(lv.passing_score),
+      masteryThreshold: Number(lv.mastery_threshold),
+      criticalCompetencies: [],
+      weights: { formative: 30, summative: 50, project: 20 },
+    },
+  });
+  if (!verdict.eligible) return { ok: false as const, error: "NOT_ELIGIBLE", reasons: verdict.reasons };
+
   const { error } = await supabase.rpc("issue_certificate", {
     p_enrollment_id: parsed.data.enrollmentId,
     p_level_id: parsed.data.levelId,

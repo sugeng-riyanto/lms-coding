@@ -56,6 +56,13 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
 - Decision: tidak ada role `owner` di `memberships.role` (CHECK tetap teacher/student/guardian). Kepemilikan diekspresikan via `courses.owner_id`; seluruh policy content-tree join ke owner tersebut.
 - Consequences: bila dibutuhkan org-admin kelak, buat ADR baru + migration CHECK + policy org-wide; jangan menafsirkan ulang teacher sebagai admin.
 
+## ADR-009 — PDF sertifikat on-demand + permission check
+
+- Status: accepted
+- Context: Prompt 08 meminta PDF A4 + private Storage + short-lived download. Tanpa backend live, persistensi bucket tak terverifikasi.
+- Decision: PDF dirender on-demand (pdfkit, A4 landscape) dengan permission check RLS (murid pemilik / guru cohort); revoked → 410. Persist ke private bucket + signed URL menjadi backlog terverifikasi-belakangan.
+- Consequences: tidak ada file PDF tersimpan; setiap unduhan melewati otorisasi — setara atau lebih ketat dari signed URL.
+
 ## Template
 
 ```text
