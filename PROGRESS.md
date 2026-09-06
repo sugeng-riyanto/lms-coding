@@ -356,3 +356,27 @@ Sudah live & teruji (unit + t10 + UI): eligibility evaluator server (`lib/eligib
 format 0 · lint 0 · typecheck 0 · test **222/222** (30 file) · db:typecheck 0 (**38 tabel** — +`criterion_scores`) · live-denial **72/72** (+8 t13) · build 0.
 
 Migration `20260906000012_objective_assessment.sql` DAN `20260906000013_rubric_grading.sql` **belum di-push ke hosted** (outage) — `supabase db push` saat project pulih.
+
+## Catatan sesi — UI standard LMS: dark/light mode + konten LMS coding (code board & media embed)
+
+Permintaan "perbaiki redaksional, responsif semua device, dark/light mode, LMS coding dengan menu copy-board code & embed pdf/audio/youtube/files" → dibedah menjadi 3 paket:
+
+### 1. Tema terang/gelap (seluruh aplikasi)
+- `globals.css`: `@custom-variant dark` (class strategy) + `color-scheme` per mode + **peta override palet netral** ter-scope `.dark` (permukaan `bg-white/slate-50/100/200`, teks `text-slate-300…900`, batas/pemisah, input/textarea, badge semantik 100↔900, zebra `odd:bg-white`) — semua halaman (~51 file) ikut gelap tanpa menyentuh tiap file; aksen biru & tombol solid dipertahankan.
+- `app/layout.tsx`: script init tanpa FOUC (localStorage `lms-theme` → fallback `prefers-color-scheme`), `suppressHydrationWarning`.
+- `components/theme-toggle.tsx`: tombol ikon (CSS-switch, tanpa setState-dalam-effect agar lint/hydration bersih) — dipasang di home publik, login, header murid, dasbor guru, portal wali.
+
+### 2. Konten LMS coding (migration 000014) — activity types baru
+`code_board`, `embed_youtube`, `embed_pdf`, `embed_audio`, `embed_file`:
+- DB: CHECK `activities.type` diperluas (000014).
+- Authoring guru: daftar tipe + hint JSON per tipe di level-manager.
+- Render murid di activity-view: `components/code-block.tsx` (blok kode monospace, scroll-x baris panjang, **tombol Salin** + status Tersalin, clipboard API + fallback) dan `components/media-embed.tsx` (YouTube iframe **youtube-nocookie** dengan src di-rebuild dari id & host allowlist eksplisit — host lain/`notyoutube.com` ditolak; PDF/Audio/File https-only; transkrip untuk audio & code).
+- Tidak ada HTML arbitrer: field yang dibaca hanya `code/language/url/title/transcript`, URL dibatasi http(s).
+
+### 3. Redaksional & standar sekolah (fokus permukaan bersama)
+Home publik, login, header murid ("Area Belajar Murid"), dasbor guru ("Dasbor Kelas"), portal wali (menghapus sapaan informal/emoji, keterangan kebijakan akses), metadata/title situs "Coding School LMS". Penyapuan penuh 51 file dicatat sebagai pekerjaan lanjutan bertahap (tiap halaman).
+
+### Bukti gates
+format 0 · lint 0 · typecheck 0 · test **228/228** (31 file; +6 media-embed: isSafeHttpUrl/youtube parse termasuk host-allowlist) · db:typecheck 0 (38 tabel) · live-denial **72/72** (000014 apply bersih) · build 0.
+
+Migration `20260906000014_coding_media_activities.sql` belum di-push ke hosted (outage) — bersama 000012 & 000013, `supabase db push` saat pulih.
