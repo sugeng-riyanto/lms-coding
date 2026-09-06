@@ -14,7 +14,7 @@ const validation = readFileSync("lib/validation.ts", "utf8");
 
 describe("level completion → jadwal review pertama (hook aplikasi)", () => {
   it("recomputeProgress memakai firstReviewInsertRows dari lib", () => {
-    expect(actions).toMatch(/import \{ firstReviewInsertRows/);
+    expect(actions).toMatch(/import \{\n  clampGoalForUnit,\n  firstReviewInsertRows,/);
   });
 
   it("hook hanya menjadwalkan level yang selesai & belum punya baris review", () => {

@@ -1,7 +1,16 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computeUnlock, nextBestAction } from "@/lib/progress";
-import { DEFAULT_WEEKLY_GOAL, isSameIsoWeek, isoWeekStart, weeklyRollup } from "@/lib/progress-planning";
+import {
+  DEFAULT_WEEKLY_GOAL_MINUTES,
+  formatActiveMinutes,
+  isSameIsoWeek,
+  isoWeekStart,
+  weeklyActiveMinutes,
+  weeklyRollupForUnit,
+  type WeeklyGoalUnit,
+} from "@/lib/progress-planning";
+import { WeeklyGoalForm } from "./weekly-goal-form";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +25,21 @@ interface LiveLevel {
   lastActivityDaysAgo: number | null;
 }
 
+interface WeeklyInfo {
+  unit: WeeklyGoalUnit;
+  goal: number;
+  completed: number;
+  pct: number;
+  achieved: boolean;
+  status: "active" | "completed";
+}
+
 /** Dashboard murid live: enrollment aktif pertama + snapshot + prereq → rekomendasi. */
 async function getDashboard(userId: string): Promise<{
   levels: LiveLevel[];
   courseTitle: string;
   enrollmentId: string;
-  weekly: ReturnType<typeof weeklyRollup>;
+  weekly: WeeklyInfo;
 } | null> {
   const supabase = await createClient();
   const { data: enrollments } = await supabase
@@ -47,7 +65,7 @@ async function getDashboard(userId: string): Promise<{
       levels: [],
       courseTitle: enr.courses.title,
       enrollmentId: enr.id,
-      weekly: weeklyRollup({ completedThisWeek: 0, goalValue: DEFAULT_WEEKLY_GOAL }),
+      weekly: { unit: "minutes", ...weeklyRollupForUnit("minutes", 0, DEFAULT_WEEKLY_GOAL_MINUTES) },
     };
   }
 
@@ -70,26 +88,41 @@ async function getDashboard(userId: string): Promise<{
     ).map((s) => [s.entity_id, s]),
   );
 
-  // Target mingguan (KURANG Phase 3): goal dari weekly_plans (default bila
-  // belum ada), progress = aktivitas selesai pada minggu ISO berjalan (tz org).
+  // Target mingguan unit-aware (flip ADR-010): goal dari weekly_plans; bila
+  // belum ada baris → default 'minutes' (target menit kini jujur: write path
+  // study_sessions sudah ada). Progress dihitung per unit baris target:
+  // completions = event activity_completed; minutes = study_sessions minggu ini.
   const weekStart = isoWeekStart(new Date());
   const { data: planRows } = await supabase
     .from("weekly_plans")
-    .select("goal_value")
+    .select("goal_unit,goal_value")
     .eq("enrollment_id", enr.id)
     .eq("week_start", weekStart)
     .limit(1);
-  const goalValue =
-    ((planRows as { goal_value: number }[] | null) ?? [])[0]?.goal_value ?? DEFAULT_WEEKLY_GOAL;
-  const { data: weekEvents } = await supabase
-    .from("learning_events")
-    .select("created_at")
-    .eq("enrollment_id", enr.id)
-    .eq("event_type", "activity_completed");
-  const completedThisWeek = ((weekEvents as { created_at: string }[] | null) ?? []).filter((e) =>
-    isSameIsoWeek(new Date(e.created_at), weekStart),
-  ).length;
-  const weekly = weeklyRollup({ completedThisWeek, goalValue });
+  const plan = ((planRows as { goal_unit: WeeklyGoalUnit; goal_value: number }[] | null) ?? [])[0];
+  const unit: WeeklyGoalUnit = plan?.goal_unit ?? "minutes";
+  const goalValue = plan?.goal_value ?? DEFAULT_WEEKLY_GOAL_MINUTES;
+  let measured = 0;
+  if (unit === "minutes") {
+    const { data: sessionRows } = await supabase
+      .from("study_sessions")
+      .select("started_at,active_seconds")
+      .eq("enrollment_id", enr.id);
+    measured = weeklyActiveMinutes(
+      (sessionRows as { started_at: string; active_seconds: number }[] | null) ?? [],
+      weekStart,
+    );
+  } else {
+    const { data: weekEvents } = await supabase
+      .from("learning_events")
+      .select("created_at")
+      .eq("enrollment_id", enr.id)
+      .eq("event_type", "activity_completed");
+    measured = ((weekEvents as { created_at: string }[] | null) ?? []).filter((e) =>
+      isSameIsoWeek(new Date(e.created_at), weekStart),
+    ).length;
+  }
+  const weekly: WeeklyInfo = { unit, ...weeklyRollupForUnit(unit, measured, goalValue) };
 
   const { data: prereqs } = await supabase.from("prerequisites").select("target_id,required_id");
   const edges = new Map<string, string[]>();
@@ -125,6 +158,20 @@ async function getDashboard(userId: string): Promise<{
     };
   });
   return { levels, courseTitle: enr.courses.title, enrollmentId: enr.id, weekly };
+}
+
+function weeklyLabel(weekly: WeeklyInfo, unit: WeeklyGoalUnit): string {
+  if (unit === "minutes") {
+    return `${formatActiveMinutes(weekly.completed)} dari ${formatActiveMinutes(weekly.goal)} menit aktif`;
+  }
+  return `${weekly.completed}/${weekly.goal} selesai`;
+}
+
+function weeklyRemaining(weekly: WeeklyInfo, unit: WeeklyGoalUnit): string {
+  if (unit === "minutes") {
+    return `${formatActiveMinutes(Math.max(0, weekly.goal - weekly.completed))} lagi untuk mencapai target minggu ini.`;
+  }
+  return `${weekly.goal - weekly.completed} aktivitas lagi untuk mencapai target minggu ini.`;
 }
 
 export default async function LearnPage() {
@@ -174,9 +221,7 @@ export default async function LearnPage() {
           >
             <div className="flex items-baseline justify-between gap-2">
               <h2 className="font-semibold">Target mingguan</h2>
-              <p className="text-sm text-slate-600">
-                {live.weekly.completed}/{live.weekly.goal} selesai
-              </p>
+              <p className="text-sm text-slate-600">{weeklyLabel(live.weekly, live.weekly.unit)}</p>
             </div>
             <div
               role="progressbar"
@@ -191,8 +236,13 @@ export default async function LearnPage() {
             <p className="mt-2 text-sm text-slate-600">
               {live.weekly.achieved
                 ? "Target minggu ini tercapai 🎉"
-                : `${live.weekly.goal - live.weekly.completed} aktivitas lagi untuk mencapai target minggu ini.`}
+                : weeklyRemaining(live.weekly, live.weekly.unit)}
             </p>
+            <WeeklyGoalForm
+              enrollmentId={live.enrollmentId}
+              unit={live.weekly.unit}
+              goal={live.weekly.goal}
+            />
           </section>
 
           <h2 className="mt-8 text-xl font-semibold">Peta level</h2>

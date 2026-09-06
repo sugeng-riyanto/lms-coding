@@ -2,8 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_DRAFT_CHARS,
   MAX_HEARTBEAT_ACTIVE_MS,
+  MAX_SESSION_ACTIVE_SECONDS,
   MIN_HEARTBEAT_INTERVAL_MS,
+  SESSION_CONTINUATION_GAP_MS,
   clampActiveMs,
+  clampSessionActiveSeconds,
+  isSessionContinuation,
   nextHeartbeatAllowed,
   validateDraftMetadata,
   validateHeartbeatMetadata,
@@ -23,6 +27,25 @@ describe("clampActiveMs", () => {
     expect(clampActiveMs(Number.NaN)).toBe(0);
     expect(clampActiveMs(Number.POSITIVE_INFINITY)).toBe(0);
     expect(clampActiveMs("bukan angka")).toBe(0);
+  });
+});
+
+describe("isSessionContinuation", () => {
+  const now = 1_000_000_000_000;
+  it("dalam gap → lanjutan; tepat di gap → lanjutan; lewat → sesi baru", () => {
+    expect(isSessionContinuation(now - 60_000, now)).toBe(true);
+    expect(isSessionContinuation(now - SESSION_CONTINUATION_GAP_MS, now)).toBe(true);
+    expect(isSessionContinuation(now - SESSION_CONTINUATION_GAP_MS - 1, now)).toBe(false);
+  });
+});
+
+describe("clampSessionActiveSeconds", () => {
+  it("clamp ke 0..MAX; non-finite/negatif → 0", () => {
+    expect(clampSessionActiveSeconds(1_800)).toBe(1_800);
+    expect(clampSessionActiveSeconds(MAX_SESSION_ACTIVE_SECONDS + 999)).toBe(MAX_SESSION_ACTIVE_SECONDS);
+    expect(clampSessionActiveSeconds(-3)).toBe(0);
+    expect(clampSessionActiveSeconds(Number.NaN)).toBe(0);
+    expect(clampSessionActiveSeconds(Number.POSITIVE_INFINITY)).toBe(0);
   });
 });
 

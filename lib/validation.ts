@@ -185,6 +185,13 @@ export const submitReviewSchema = z.object({
   confidence: z.number().int().min(1).max(5),
 });
 
+export const setWeeklyGoalSchema = z.object({
+  enrollmentId: uuidSchema,
+  unit: z.enum(["completions", "minutes"]),
+  /** Clamp per unit di server (completions 1..50, minutes 1..2000). */
+  value: z.number().int().min(1).max(2000),
+});
+
 export const startAttemptSchema = z.object({
   assessmentId: uuidSchema,
   enrollmentId: uuidSchema,

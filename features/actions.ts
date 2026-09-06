@@ -5,7 +5,13 @@ import { randomUUID } from "node:crypto";
 import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
-import { firstReviewInsertRows, nextReviewAfter, startOfNextDayInTz } from "@/lib/progress-planning";
+import {
+  clampGoalForUnit,
+  firstReviewInsertRows,
+  isoWeekStart,
+  nextReviewAfter,
+  startOfNextDayInTz,
+} from "@/lib/progress-planning";
 import { validateDraftMetadata, validateHeartbeatMetadata } from "@/lib/active-time";
 import {
   addQuestionToAssessmentSchema,
@@ -38,6 +44,7 @@ import {
   resolveAlertSchema,
   revokeCertificateSchema,
   saveResponseSchema,
+  setWeeklyGoalSchema,
   suspendEnrollmentSchema,
   updateContentSchema,
   updateProfileSchema,
@@ -460,10 +467,12 @@ export async function recordLearningEvent(input: unknown) {
   // heartbeat → clamp ulang (nilai non-finite/negatif/raksasa ditolak);
   // draft_saved → hanya panjang teks yang disimpan (minimisasi data).
   let metadata = parsed.data.metadata;
+  let heartbeatActiveMs: number | null = null;
   if (parsed.data.eventType === "heartbeat") {
     const v = validateHeartbeatMetadata(metadata);
     if (!v.ok) return { ok: false as const, error: "EVENT_REJECTED" };
     metadata = { ...metadata, activeMs: v.activeMs };
+    heartbeatActiveMs = v.activeMs;
   } else if (parsed.data.eventType === "draft_saved") {
     const v = validateDraftMetadata(metadata);
     if (!v.ok) return { ok: false as const, error: "EVENT_REJECTED" };
@@ -483,7 +492,49 @@ export async function recordLearningEvent(input: unknown) {
     { onConflict: "student_id,client_event_id", ignoreDuplicates: true },
   );
   if (error) return { ok: false as const, error: "EVENT_FAILED" };
+
+  // Write path study_sessions (ADR-010): heartbeat yang diterima (sudah
+  // diverifikasi + di-clamp server) menambah active seconds ke sesi belajar
+  // via jalur PRIVILEGED (service client → fungsi definer; murid TIDAK punya
+  // policy tulis study_sessions). Best-effort: kegagalan agregasi tidak boleh
+  // menggagalkan event (event tetap jadi ledger yang bisa dijumlah ulang).
+  if (parsed.data.eventType === "heartbeat" && heartbeatActiveMs !== null) {
+    const svc = createServiceClient();
+    await svc.rpc("append_study_session", {
+      p_enrollment_id: parsed.data.enrollmentId,
+      p_active_ms: heartbeatActiveMs,
+    });
+  }
   return { ok: true as const };
+}
+
+// ---------- Target mingguan: set goal (unit completions|minutes) ----------
+export async function setWeeklyGoal(input: unknown) {
+  const parsed = setWeeklyGoalSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const studentId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!studentId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const goalValue = clampGoalForUnit(parsed.data.unit, parsed.data.value);
+  // RLS weekly_plans_student_insert/update membatasi ke enrollment AKTIF milik
+  // murid; upsert (enrollment_id, week_start) = get-or-create lazy per minggu.
+  const { data: rows, error } = await supabase
+    .from("weekly_plans")
+    .upsert(
+      {
+        enrollment_id: parsed.data.enrollmentId,
+        week_start: isoWeekStart(new Date()),
+        goal_unit: parsed.data.unit,
+        goal_value: goalValue,
+      },
+      { onConflict: "enrollment_id,week_start" },
+    )
+    .select("id,goal_unit,goal_value");
+  if (error || ((rows as { id: string }[] | null) ?? []).length === 0) {
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  }
+  return { ok: true as const, unit: parsed.data.unit, goal: goalValue };
 }
 
 // ---------- Spaced review: confidence → reschedule (ladder 1/3/7/14 hari) ----------

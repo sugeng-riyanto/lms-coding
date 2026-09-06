@@ -1024,6 +1024,192 @@ exception when others then
           'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
 end $$;
 
+-- ============ t16: study_sessions write path (ADR-010) + goal menit ============
+-- (migration 000016: RLS read-only utk murid, RPC append definer dengan clamp,
+--  CHECK goal unit-aware; DB fresh per run oleh run.sh)
+set role postgres;
+
+-- Fixture: sesi belajar per murid dengan status "latest" yang deterministik:
+--   …016 Murid 01 (60 s, berakhir 4 mnt lalu) → uji lanjutan sesi;
+--   …017 Murid 02 (0 s, berakhir 2 mnt lalu)  → uji clamp delta;
+--   …018 Murid 03 (60 s, berakhir 15 mnt lalu) → uji sesi baru (gap > 10 mnt);
+--   …01c Murid 02 (21500 s, berakhir 1 mnt lalu) → uji cap sesi (setelah …017).
+insert into public.study_sessions (id, enrollment_id, started_at, ended_at, active_seconds)
+select 'b1000000-0000-0000-0000-000000000016', e.id, now() - interval '6 minutes', now() - interval '4 minutes', 60
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1;
+insert into public.study_sessions (id, enrollment_id, started_at, ended_at, active_seconds)
+select 'b1000000-0000-0000-0000-000000000017', e.id, now() - interval '3 minutes', now() - interval '2 minutes', 0
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000002'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1;
+insert into public.study_sessions (id, enrollment_id, started_at, ended_at, active_seconds)
+select 'b1000000-0000-0000-0000-000000000018', e.id, now() - interval '20 minutes', now() - interval '15 minutes', 60
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000003'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1;
+
+-- Lanjutan sesi: 30000 ms = 30 s → active_seconds 60 + 30 = 90 (bukan 30060!).
+do $$
+declare v int;
+begin
+  perform public.append_study_session(
+    (select e.id from public.enrollments e
+      where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+        and e.course_id = 'd0000000-0000-0000-0000-000000000001' limit 1),
+    30000, now());
+  select active_seconds into v from public.study_sessions where id = 'b1000000-0000-0000-0000-000000000016';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_append_continuation', v = 90, 'active_seconds=' || v);
+end $$;
+
+-- Gap > 10 mnt (sesi terakhir berakhir 15 mnt lalu) → sesi BARU untuk Murid 03.
+do $$
+declare n int; v int; enr uuid;
+begin
+  select e.id into enr from public.enrollments e
+  where e.student_id = 'b0000000-0000-0000-0000-000000000003'
+    and e.course_id = 'd0000000-0000-0000-0000-000000000001' limit 1;
+  perform public.append_study_session(enr, 30000, now());
+  select count(*) into n from public.study_sessions where enrollment_id = enr;
+  select active_seconds into v from public.study_sessions where id = 'b1000000-0000-0000-0000-000000000018';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_append_new_session', n = 2 and v = 60, 'sessions=' || n || ', old=' || v);
+end $$;
+
+-- Delta per panggilan di-clamp: 999999 ms → 120 s; sesi 0 + 120 = 120.
+do $$
+declare v int;
+begin
+  perform public.append_study_session(
+    (select e.id from public.enrollments e
+      where e.student_id = 'b0000000-0000-0000-0000-000000000002'
+        and e.course_id = 'd0000000-0000-0000-0000-000000000001' limit 1),
+    999999, now());
+  select active_seconds into v from public.study_sessions where id = 'b1000000-0000-0000-0000-000000000017';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_append_delta_clamped', v = 120, 'active_seconds=' || v);
+end $$;
+
+-- Cap keamanan sesi: sesi 21500 + delta 120 → 21600 (6 jam), bukan 21620.
+-- (enrollment org-2 milik murid b20…009 — tidak dipakai uji lain.)
+do $$
+declare v int; enr uuid;
+begin
+  select e.id into enr from public.enrollments e
+  where e.student_id = 'b2000000-0000-0000-0000-000000000009'
+    and e.course_id = 'd2000000-0000-0000-0000-000000000002' limit 1;
+  insert into public.study_sessions (id, enrollment_id, started_at, ended_at, active_seconds)
+  values ('b1000000-0000-0000-0000-00000000001c', enr, now() - interval '2 minutes', now() - interval '1 minute', 21500);
+  perform public.append_study_session(enr, 999999, now());
+  select active_seconds into v from public.study_sessions where id = 'b1000000-0000-0000-0000-00000000001c';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_append_session_capped', v = 21600, 'active_seconds=' || v);
+end $$;
+
+-- weekly_plans: goal menit 180 diterima; completions 2000 ditolak CHECK.
+do $$
+begin
+  insert into public.weekly_plans (enrollment_id, week_start, goal_unit, goal_value)
+  select e.id, '2099-01-05', 'minutes', 180 from public.enrollments e
+  where e.student_id = 'b0000000-0000-0000-0000-000000000001' limit 1;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_goal_minutes_ok', true, 'goal 180 menit diterima');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_goal_minutes_ok', false, 'goal menit ditolak: ' || sqlerrm);
+end $$;
+
+do $$
+begin
+  insert into public.weekly_plans (enrollment_id, week_start, goal_unit, goal_value)
+  select e.id, '2099-01-06', 'completions', 2000 from public.enrollments e
+  where e.student_id = 'b0000000-0000-0000-0000-000000000001' limit 1;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_goal_completions_bound_rejected', false, 'CHECK TIDAK menolak goal completions 2000!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_goal_completions_bound_rejected', true, 'sqlstate=' || sqlstate);
+end $$;
+
+-- Fixture enrollment org-2 milik Murid 02 (id tetap) utk uji RLS set-goal
+-- lintas murid (subselect biasa akan kosong karena RLS select enrollments).
+insert into public.enrollments (id, course_id, student_id, cohort_id, status)
+values ('b1000000-0000-0000-0000-0000000000ff', 'd2000000-0000-0000-0000-000000000002',
+        'b0000000-0000-0000-0000-000000000002', 'c2000000-0000-0000-0000-000000000002', 'active');
+
+-- ============ Murid A: baca sesi sendiri, sesi Murid B tersembunyi, tulis langsung ditolak ============
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001"}', false);
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.study_sessions
+  where enrollment_id in (select id from public.enrollments where student_id = 'b0000000-0000-0000-0000-000000000001');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p16_student_own_session_visible', n = 1, 'rows=' || n);
+  select count(*) into n from public.study_sessions
+  where enrollment_id in (select id from public.enrollments where student_id = 'b0000000-0000-0000-0000-000000000002');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_cross_student_session_hidden', n = 0, 'rows=' || n);
+end $$;
+
+do $$
+begin
+  insert into public.study_sessions (enrollment_id, active_seconds)
+  select e.id, 999999 from public.enrollments e
+  where e.student_id = 'b0000000-0000-0000-0000-000000000001' limit 1;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_student_insert_denied', false, 'insert langsung TIDAK ditolak!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_student_insert_denied', true, 'sqlstate=' || sqlstate);
+end $$;
+
+do $$
+begin
+  perform public.append_study_session(
+    (select e.id from public.enrollments e
+      where e.student_id = 'b0000000-0000-0000-0000-000000000001' limit 1),
+    30000, now());
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_student_rpc_denied', false, 'RPC publik TIDAK ditolak untuk murid!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_student_rpc_denied', true, 'sqlstate=' || sqlstate);
+end $$;
+
+-- Set goal: murid set target sendiri OK; goal enrollment murid lain DITOLAK RLS
+-- (WITH CHECK dievaluasi: enrollment eksis tapi student_id ≠ auth.uid()).
+do $$
+begin
+  insert into public.weekly_plans (enrollment_id, week_start, goal_unit, goal_value)
+  select e.id, '2099-01-12', 'minutes', 90 from public.enrollments e
+  where e.student_id = 'b0000000-0000-0000-0000-000000000001' limit 1;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p16_set_goal_own_enrollment_ok', true, 'goal sendiri diterima');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p16_set_goal_own_enrollment_ok', false, 'ditolak: ' || sqlerrm);
+end $$;
+
+do $$
+begin
+  insert into public.weekly_plans (enrollment_id, week_start, goal_unit, goal_value)
+  values ('b1000000-0000-0000-0000-0000000000ff', '2099-01-19', 'minutes', 60);
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_set_goal_other_enrollment_denied', false, 'RLS TIDAK menolak goal murid lain!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t16_set_goal_other_enrollment_denied', true, 'sqlstate=' || sqlstate);
+end $$;
+
 set role postgres;
 
 -- Hasil (dibaca runner).

@@ -464,3 +464,50 @@ Implementasi slice 1 `docs/plan-offline-local-bridge.md` (AC-1/AC-2/AC-6 parsial
 Gates: format/lint/typecheck 0 · test **248/248 +1 skip** (+7) · build 0 (db:typecheck & live-denial tak tersentuh — tanpa migration).
 
 **Temuan (dilaporkan, bukan diubah di slice ini)**: saat benar-benar offline, `requireActiveMembership` di layout murid memanggil `getClaims` + query profiles/memberships → keduanya 504 terhadap hosted yang down → redirect `/login`/`/account-inactive` SEBELUM halaman activity sempat render. Artinya AC-2 end-to-end masih terblokir sampai slice auth-offline (D4) membuat guard toleran terhadap error DB saat session valid (deny-role-unknown tetap aman; cache hanya berisi data RLS-passing). Terverifikasi: `GET /activities/…` → 307 setelah ±63s.
+
+## Catatan sesi — Write path study_sessions + target mingguan menit (tutup ADR-010)
+Menutup penundaan ADR-010: `study_sessions` kini punya write path dan target
+mingguan bisa diukur dalam menit belajar aktif yang jujur.
+
+- **Migration 000016** (`20260906000016_study_sessions_write_path.sql`):
+  1) RLS `study_sessions` diubah read-only utk murid (drop `sessions_student_rw`
+     → `sessions_student_select`; policy guru cohort tetap) — murid TIDAK bisa
+     menulis sesi langsung (anti pemalsuan menit);
+  2) fungsi definer `private.append_study_session(enrollment_id, active_ms,
+     occurred_at)` — delta per panggilan di-clamp (≤120 s, milidetik →
+     detik), sesi lanjutan bila gap ≤ 10 mnt (`for update` atomik), sesi baru
+     bila gap lewat, `active_seconds` per sesi di-cap 6 jam, occurred_at
+     di-clamp ke jendela ±24 jam; wrapper publik di-revoke dari anon/
+     authenticated (server-only);
+  3) `weekly_plans.goal_value` kini unit-aware: completions 1..50, minutes
+     1..2000 (CHECK lama 1..50 memblokir target menit — butuh migration
+     tambahan di luar konsekuensi asli ADR-010).
+- **Server action** `recordLearningEvent`: heartbeat yang DIVALIDASI server
+  (clamp ulang + tolak raksasa) kini memanggil `append_study_session` via
+  service client (privileged; best-effort — event tetap jadi ledger). Action
+  baru `setWeeklyGoal` (zod; clamp per unit; upsert lazy per
+  `(enrollment_id, week_start)`; RLS student membatasi enrollment miliknya).
+- **lib**: `weeklyActiveMinutes` (Σ active_seconds di-clamp per sesi untuk
+  sesi yang mulai di minggu ISO tz org, floor → menit), `clampGoalForUnit`
+  (minutes 1..2000 — goal 180 TIDAK ter-clamp ke 50), `weeklyRollupForUnit`,
+  `formatActiveMinutes` ("2 j 5 m"); konstanta gap sesi (10 mnt) + cap sesi
+  (6 jam) di `lib/active-time.ts`.
+- **UI `/learn`**: blok target mingguan unit-aware — default BARU `minutes`
+  (goal 120 mnt) bila belum ada baris weekly_plans (flip ADR-010); label
+  menit ("X dari Y menit aktif") vs completions; form kecil `WeeklyGoalForm`
+  untuk set target sendiri (satuan + nilai).
+- **Tests**: unit +10 (sesi/gap/clamp, weeklyActiveMinutes boundary tz WIB,
+  clampGoal, rollup kedua unit, format); integration `study-sessions.test.ts`
+  (8, statis: RLS read-only, RPC definer+clamp, revoke wrapper, CHECK
+  unit-aware, wiring action+append, setWeeklyGoal); **live-denial t16 (+12 →
+  91/91)** membuktikan di Postgres nyata: lanjutan sesi 60→90 s, sesi baru
+  saat gap > 10 mnt, delta 999999 ms → 120 s (bug unit ms/detik yang
+  terungkap harness: semula menambah 30000 "detik" → cap 21600), cap sesi
+  21500+120 → 21600, goal menit 180 diterima / completions 2000 ditolak
+  CHECK, murid baca sesi sendiri / sesi murid lain tersembunyi, insert
+  langsung 42501, RPC publik 42501, set-goal sendiri OK / enrollment murid
+  lain 42501.
+
+Gates: format 0 · lint 0 · typecheck 0 · test **271/271 +1 skip** (34 files;
++23) · db:typecheck 0 (38 tabel — tanpa tabel baru) · live-denial **91/91**
+(+12) · build 0. Migration 000016 belum di-push ke hosted (outage).

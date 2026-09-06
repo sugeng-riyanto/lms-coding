@@ -7,11 +7,15 @@
  * "hari ini" dihitung dalam timezone org (Asia/Jakarta default via lib/time).
  */
 import { DISPLAY_TIMEZONE } from "@/lib/time";
+import { clampSessionActiveSeconds } from "@/lib/active-time";
 
 export const DEFAULT_REVIEW_INTERVALS_DAYS = [1, 3, 7, 14] as const;
 export const DEFAULT_WEEKLY_GOAL = 3;
 export const WEEKLY_GOAL_MIN = 1;
 export const WEEKLY_GOAL_MAX = 50;
+/** Default target menit per minggu (flip ADR-010; ~2 jam belajar aktif). */
+export const DEFAULT_WEEKLY_GOAL_MINUTES = 120;
+export const WEEKLY_GOAL_MAX_MINUTES = 2000;
 
 export type WeeklyGoalUnit = "completions" | "minutes";
 
@@ -125,6 +129,63 @@ export interface WeeklyRollup {
 export function weeklyRollup(input: WeeklyRollupInput): WeeklyRollup {
   const completed = Math.max(0, Math.floor(input.completedThisWeek));
   const goal = Math.min(WEEKLY_GOAL_MAX, Math.max(WEEKLY_GOAL_MIN, Math.floor(input.goalValue)));
+  const achieved = completed >= goal;
+  const pct = Math.min(100, Math.round((completed / goal) * 100));
+  return { completed, goal, pct, achieved, status: achieved ? "completed" : "active" };
+}
+
+/**
+ * Clamp goal sesuai unit (ADR-010 / rencana minutes): completions 1..50,
+ * minutes 1..2000 (~33 jam/minggu). Goal menit TIDAK boleh ter-clamp ke 50.
+ */
+export function clampGoalForUnit(unit: WeeklyGoalUnit, goalValue: number): number {
+  const v = Math.floor(goalValue);
+  if (!Number.isFinite(v)) return unit === "minutes" ? DEFAULT_WEEKLY_GOAL_MINUTES : DEFAULT_WEEKLY_GOAL;
+  if (unit === "minutes") return Math.min(WEEKLY_GOAL_MAX_MINUTES, Math.max(WEEKLY_GOAL_MIN, v));
+  return Math.min(WEEKLY_GOAL_MAX, Math.max(WEEKLY_GOAL_MIN, v));
+}
+
+export interface StudySessionRow {
+  /** timestamptz ISO. */
+  started_at: string;
+  active_seconds: number;
+}
+
+/**
+ * Menit aktif dalam minggu ISO (tz org) dari baris study_sessions: jumlah
+ * active_seconds (di-clamp per sesi) untuk sesi yang MULAI di minggu itu,
+ * dibagi 60.000 lalu di-floor. Sesi panjang yang menyeberang tengah malam
+ * dibukukan ke minggu mulai-nya (definisi didokumentasikan; delta per
+ * heartbeat sudah di-clamp server di write path).
+ */
+export function weeklyActiveMinutes(
+  sessions: StudySessionRow[],
+  weekStart: string,
+  tz: string = DISPLAY_TIMEZONE,
+): number {
+  let totalSec = 0;
+  for (const s of sessions) {
+    if (!isSameIsoWeek(new Date(s.started_at), weekStart, tz)) continue;
+    totalSec += clampSessionActiveSeconds(s.active_seconds);
+  }
+  return Math.floor(totalSec / 60);
+}
+
+/** Format menit ramah-murid: "5 m", "125 m" → "2 j 5 m". */
+export function formatActiveMinutes(mins: number): string {
+  const m = Math.max(0, Math.floor(mins));
+  if (m < 60) return `${m} m`;
+  return `${Math.floor(m / 60)} j ${m % 60} m`;
+}
+
+/**
+ * Rollup unit-aware: `measured` = jumlah completions ATAU menit aktif.
+ * Field `completed` pada hasil dipakai sebagai nilai terukur (back-compat
+ * dengan struktur WeeklyRollup yang dipakai UI /learn).
+ */
+export function weeklyRollupForUnit(unit: WeeklyGoalUnit, measured: number, goalValue: number): WeeklyRollup {
+  const completed = Math.max(0, Math.floor(measured));
+  const goal = clampGoalForUnit(unit, goalValue);
   const achieved = completed >= goal;
   const pct = Math.min(100, Math.round((completed / goal) * 100));
   return { completed, goal, pct, achieved, status: achieved ? "completed" : "active" };

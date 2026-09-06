@@ -16,6 +16,11 @@ export const MAX_HEARTBEAT_ACTIVE_MS = 120_000;
 export const MIN_HEARTBEAT_INTERVAL_MS = 20_000;
 export const MAX_DRAFT_CHARS = 4_000;
 
+/** Gap antar heartbeat yang masih dianggap satu sesi belajar (10 menit). */
+export const SESSION_CONTINUATION_GAP_MS = 10 * 60_000;
+/** Batas keamanan active_seconds per sesi (6 jam) — clamp anti-gaming. */
+export const MAX_SESSION_ACTIVE_SECONDS = 21_600;
+
 /** Coerce + clamp durasi aktif (ms) ke rentang sah [0, MAX]. Non-finite → 0. */
 export function clampActiveMs(ms: unknown): number {
   const n = typeof ms === "number" ? ms : Number(ms);
@@ -45,6 +50,22 @@ export function nextHeartbeatAllowed(
 ): boolean {
   if (lastSentAtMs === null) return true;
   return nowMs - lastSentAtMs >= minIntervalMs;
+}
+
+/** Heartbeat pada `nowMs` melanjutkan sesi yang berakhir `lastEndedAtMs`? */
+export function isSessionContinuation(
+  lastEndedAtMs: number,
+  nowMs: number,
+  gapMs: number = SESSION_CONTINUATION_GAP_MS,
+): boolean {
+  return nowMs - lastEndedAtMs <= gapMs;
+}
+
+/** Clamp active_seconds sesi ke rentang sah [0, MAX]. Non-finite → 0. */
+export function clampSessionActiveSeconds(sec: number): number {
+  const n = typeof sec === "number" ? sec : Number(sec);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(MAX_SESSION_ACTIVE_SECONDS, Math.floor(n));
 }
 
 /**

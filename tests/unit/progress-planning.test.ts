@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_REVIEW_INTERVALS_DAYS,
+  DEFAULT_WEEKLY_GOAL_MINUTES,
+  WEEKLY_GOAL_MAX,
+  WEEKLY_GOAL_MAX_MINUTES,
+  clampGoalForUnit,
   firstReviewDue,
   firstReviewInsertRows,
+  formatActiveMinutes,
   isoWeekStart,
   isSameIsoWeek,
   nextReviewAfter,
   orderedReviewQueue,
+  weeklyActiveMinutes,
   weeklyRollup,
+  weeklyRollupForUnit,
 } from "@/lib/progress-planning";
 
 describe("isoWeekStart: minggu ISO dalam timezone org", () => {
@@ -175,5 +182,89 @@ describe("orderedReviewQueue: overdue → hari ini → berikutnya", () => {
     const items = [mk("z", "2026-09-07T02:00:00Z")];
     orderedReviewQueue(items, { now });
     expect(items).toHaveLength(1);
+  });
+});
+
+describe("weeklyActiveMinutes — menit dari study_sessions (write path ADR-010)", () => {
+  const week = "2026-09-07"; // Senin
+  it("60 detik = 1 menit; 90 s = 1 menit (floor); 125 s = 2 menit", () => {
+    expect(weeklyActiveMinutes([{ started_at: "2026-09-07T02:00:00Z", active_seconds: 60 }], week)).toBe(1);
+    expect(weeklyActiveMinutes([{ started_at: "2026-09-07T02:00:00Z", active_seconds: 90 }], week)).toBe(1);
+    expect(weeklyActiveMinutes([{ started_at: "2026-09-07T02:00:00Z", active_seconds: 125 }], week)).toBe(2);
+  });
+  it("sesi di luar minggu tidak terhitung; beberapa sesi dijumlah", () => {
+    const sessions = [
+      { started_at: "2026-09-06T20:00:00Z", active_seconds: 60 }, // Minggu UTC, Senin WIB → masuk minggu ini
+      { started_at: "2026-09-08T03:00:00Z", active_seconds: 120 },
+      { started_at: "2026-09-14T03:00:00Z", active_seconds: 3600 }, // Senin pekan berikutnya
+    ];
+    expect(weeklyActiveMinutes(sessions, week)).toBe(3);
+    expect(weeklyActiveMinutes(sessions, week, "UTC")).toBe(2); // yang Minggu 20:00Z di UTC = minggu lalu
+  });
+  it("clamp per sesi (batas 6 jam) diterapkan sebelum dijumlah", () => {
+    const sessions = [
+      { started_at: "2026-09-07T01:00:00Z", active_seconds: 100_000 }, // ~27 jam
+    ];
+    expect(weeklyActiveMinutes(sessions, week)).toBe(21_600 / 60);
+  });
+  it("nilai negatif/non-finite diabaikan (0)", () => {
+    const sessions = [
+      { started_at: "2026-09-07T01:00:00Z", active_seconds: -5 },
+      { started_at: "2026-09-07T02:00:00Z", active_seconds: Number.NaN },
+    ];
+    expect(weeklyActiveMinutes(sessions, week)).toBe(0);
+  });
+});
+
+describe("clampGoalForUnit — goal unit-aware", () => {
+  it("completions: clamp 1..50", () => {
+    expect(clampGoalForUnit("completions", 3)).toBe(3);
+    expect(clampGoalForUnit("completions", 0)).toBe(1);
+    expect(clampGoalForUnit("completions", 5000)).toBe(WEEKLY_GOAL_MAX);
+  });
+  it("minutes: clamp 1..2000 — goal 180 TIDAK ter-clamp ke 50", () => {
+    expect(clampGoalForUnit("minutes", 180)).toBe(180);
+    expect(clampGoalForUnit("minutes", 0)).toBe(1);
+    expect(clampGoalForUnit("minutes", 9999)).toBe(WEEKLY_GOAL_MAX_MINUTES);
+    expect(clampGoalForUnit("minutes", Number.NaN)).toBe(DEFAULT_WEEKLY_GOAL_MINUTES);
+  });
+});
+
+describe("weeklyRollupForUnit — rollup unit-aware", () => {
+  it("minutes: 125 dari goal 180 → 69%, active", () => {
+    expect(weeklyRollupForUnit("minutes", 125, 180)).toMatchObject({
+      completed: 125,
+      goal: 180,
+      pct: 69,
+      achieved: false,
+      status: "active",
+    });
+  });
+  it("minutes: mencapai goal → completed 100%", () => {
+    expect(weeklyRollupForUnit("minutes", 180, 180)).toMatchObject({
+      pct: 100,
+      achieved: true,
+      status: "completed",
+    });
+  });
+  it("completions: perilaku sama seperti weeklyRollup (regresi)", () => {
+    expect(weeklyRollupForUnit("completions", 2, 3)).toMatchObject({
+      completed: 2,
+      goal: 3,
+      pct: 67,
+      achieved: false,
+      status: "active",
+    });
+    expect(weeklyRollupForUnit("completions", 5, 3)).toMatchObject({ achieved: true, status: "completed" });
+  });
+});
+
+describe("formatActiveMinutes", () => {
+  it('"5 m", "59 m", "2 j 5 m", "0 m"', () => {
+    expect(formatActiveMinutes(5)).toBe("5 m");
+    expect(formatActiveMinutes(59)).toBe("59 m");
+    expect(formatActiveMinutes(125)).toBe("2 j 5 m");
+    expect(formatActiveMinutes(0)).toBe("0 m");
+    expect(formatActiveMinutes(-3)).toBe("0 m");
   });
 });
