@@ -27,6 +27,7 @@ import {
   recordLearningEventSchema,
   recomputeProgressSchema,
   releaseGradesSchema,
+  reissueCertificateSchema,
   reorderSiblingsSchema,
   resolveAlertSchema,
   revokeCertificateSchema,
@@ -447,28 +448,32 @@ export async function gradeResponse(input: unknown) {
 }
 
 // ---------- Certificates (eligibility dievaluasi server sebelum issuance) ----------
-export async function issueCertificate(input: unknown) {
-  const parsed = issueCertificateSchema.safeParse(input);
-  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
-  const supabase = await createClient();
-  const { data: claims } = await supabase.auth.getClaims();
-  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
-
+// Evaluator eligibility level dipakai issueCertificate DAN reissueCertificate
+// (ADR-013: reissue mengevaluasi ulang dengan logika yang sama, sebelum revoke).
+async function evaluateLevelEligibility(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  enrollmentId: string,
+  levelId: string,
+): Promise<
+  | { status: "NOT_FOUND_OR_FORBIDDEN" }
+  | { status: "NOT_FOUND" }
+  | { status: "OK"; eligible: boolean; reasons: string[] }
+> {
   // Kumpulkan bukti: snapshots lesson + attempts summative + rule level.
   const { data: enrollment } = await supabase
     .from("enrollments")
     .select("id,course_id")
-    .eq("id", parsed.data.enrollmentId)
+    .eq("id", enrollmentId)
     .single();
   const enr = enrollment as { id: string; course_id: string } | null;
-  if (!enr) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  if (!enr) return { status: "NOT_FOUND_OR_FORBIDDEN" };
   const { data: level } = await supabase
     .from("levels")
     .select("id,passing_score,mastery_threshold")
-    .eq("id", parsed.data.levelId)
+    .eq("id", levelId)
     .single();
   const lv = level as { id: string; passing_score: number; mastery_threshold: number } | null;
-  if (!lv) return { ok: false as const, error: "NOT_FOUND" };
+  if (!lv) return { status: "NOT_FOUND" };
 
   const { data: snaps } = await supabase
     .from("progress_snapshots")
@@ -510,7 +515,20 @@ export async function issueCertificate(input: unknown) {
       weights: { formative: 30, summative: 50, project: 20 },
     },
   });
-  if (!verdict.eligible) return { ok: false as const, error: "NOT_ELIGIBLE", reasons: verdict.reasons };
+  return { status: "OK", eligible: verdict.eligible, reasons: verdict.reasons };
+}
+
+export async function issueCertificate(input: unknown) {
+  const parsed = issueCertificateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  const ev = await evaluateLevelEligibility(supabase, parsed.data.enrollmentId, parsed.data.levelId);
+  if (ev.status === "NOT_FOUND_OR_FORBIDDEN") return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  if (ev.status === "NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" };
+  if (!ev.eligible) return { ok: false as const, error: "NOT_ELIGIBLE", reasons: ev.reasons };
 
   const { error } = await supabase.rpc("issue_certificate", {
     p_enrollment_id: parsed.data.enrollmentId,
@@ -518,6 +536,42 @@ export async function issueCertificate(input: unknown) {
     p_idempotency_key: parsed.data.idempotencyKey,
   });
   if (error) return { ok: false as const, error: "ISSUE_FAILED" };
+  return { ok: true as const };
+}
+
+// Reissue = revoke + issue baru dalam SATU transaksi (RPC reissue_certificate,
+// migration 000010). Eligibility dievaluasi ulang penuh SEBELUM revoke: bila
+// murid tak lagi eligible, sertifikat lama TETAP active dan tidak ada efek
+// (ADR-013); bila cert bukan milik cohort guru / bukan active → tolak.
+export async function reissueCertificate(input: unknown) {
+  const parsed = reissueCertificateSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Muat sertifikat via strict client: RLS (certs_teacher_all) membatasi baca
+  // ke guru dari cohort enrollment terkait.
+  const { data: cert } = await supabase
+    .from("certificates")
+    .select("id,status,enrollment_id,level_id")
+    .eq("id", parsed.data.certificateId)
+    .single();
+  const row = cert as { id: string; status: string; enrollment_id: string; level_id: string } | null;
+  if (!row) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  if (row.status !== "active") return { ok: false as const, error: "NOT_ACTIVE" };
+
+  const ev = await evaluateLevelEligibility(supabase, row.enrollment_id, row.level_id);
+  if (ev.status === "NOT_FOUND_OR_FORBIDDEN") return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  if (ev.status === "NOT_FOUND") return { ok: false as const, error: "NOT_FOUND" };
+  if (!ev.eligible) return { ok: false as const, error: "NOT_ELIGIBLE", reasons: ev.reasons };
+
+  const { error } = await supabase.rpc("reissue_certificate", {
+    p_certificate_id: parsed.data.certificateId,
+    p_reason: parsed.data.reason,
+    p_idempotency_key: randomUUID(),
+  });
+  if (error) return { ok: false as const, error: "REISSUE_FAILED" };
   return { ok: true as const };
 }
 

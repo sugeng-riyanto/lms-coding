@@ -203,6 +203,11 @@ export const revokeCertificateSchema = z.object({
   reason: z.string().min(5).max(2000),
 });
 
+export const reissueCertificateSchema = z.object({
+  certificateId: uuidSchema,
+  reason: z.string().min(5).max(2000),
+});
+
 export const robloxCompletionSchema = z.object({
   event_id: z.string().min(1).max(100),
   place_id: z.string().min(1).max(50),

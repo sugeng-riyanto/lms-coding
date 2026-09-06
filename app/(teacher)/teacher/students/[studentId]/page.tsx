@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { IssueCertificateButton } from "./issue-button";
+import { ReissueCertificateButton } from "./reissue-button";
 
 export const dynamic = "force-dynamic";
 
@@ -74,14 +75,21 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
   }
   const { data: certs } = await supabase
     .from("certificates")
-    .select("serial_no,status,issued_at,enrollment_id,level_id")
+    .select("id,serial_no,status,issued_at,enrollment_id,level_id")
     .in(
       "enrollment_id",
       enrs.map((e) => e.id),
     );
   const certRows =
     (certs as
-      | { serial_no: string; status: string; issued_at: string; enrollment_id: string; level_id: string }[]
+      | {
+          id: string;
+          serial_no: string;
+          status: string;
+          issued_at: string;
+          enrollment_id: string;
+          level_id: string;
+        }[]
       | null) ?? [];
 
   // Approval penerbitan: level per enrollment + status sertifikat + tombol issue.
@@ -108,7 +116,13 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
       .eq("course_version_id", v.id)
       .order("position");
     for (const lv of (levelRows as { id: string; title: string }[] | null) ?? []) {
-      const existing = certRows.find((c) => c.enrollment_id === e.id && c.level_id === lv.id);
+      // Setelah reissue (migration 000010) satu pair bisa punya banyak baris
+      // (revoked + active). Status yang dipakai = baris TERBARU, agar tidak
+      // menampilkan tombol "Terbitkan" di atas sertifikat yang sudah diganti.
+      const pairRows = certRows
+        .filter((c) => c.enrollment_id === e.id && c.level_id === lv.id)
+        .sort((a, b) => (a.issued_at < b.issued_at ? 1 : a.issued_at > b.issued_at ? -1 : 0));
+      const existing = pairRows[0];
       issuable.push({
         enrollmentId: e.id,
         courseTitle: e.courses?.title ?? e.course_id,
@@ -149,6 +163,12 @@ export default async function StudentDetailPage({
     );
   }
   if (!data) notFound();
+
+  // Rantai reissue: cert revoked yang pasangan (enrollment, level)-nya kini punya
+  // cert active ditandai "diganti" — historinya tertaut ke baris active baru.
+  const activePairKeys = new Set(
+    data.certs.filter((c) => c.status === "active").map((c) => `${c.enrollment_id}:${c.level_id}`),
+  );
 
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
@@ -204,11 +224,33 @@ export default async function StudentDetailPage({
         <p className="mt-2 text-sm text-slate-500">Belum ada sertifikat.</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
-          {data.certs.map((c) => (
-            <li key={c.serial_no} className="rounded border px-3 py-2">
-              {c.serial_no} · {c.status} · {c.issued_at}
-            </li>
-          ))}
+          {data.certs.map((c) => {
+            const replaced = c.status === "revoked" && activePairKeys.has(`${c.enrollment_id}:${c.level_id}`);
+            return (
+              <li
+                key={c.serial_no}
+                className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2"
+              >
+                <span>
+                  {c.serial_no} ·{" "}
+                  {c.status === "active" ? (
+                    <span className="font-semibold text-green-800">active</span>
+                  ) : (
+                    <span className="font-semibold text-red-700">revoked</span>
+                  )}
+                  {replaced && (
+                    <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                      diganti
+                    </span>
+                  )}{" "}
+                  · {c.issued_at}
+                </span>
+                {c.status === "active" && (
+                  <ReissueCertificateButton certificateId={c.id} serialNo={c.serial_no} />
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
