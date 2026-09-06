@@ -137,3 +137,36 @@ Slice fungsi murni + unit test selesai (tanpa migration/policy baru — baca lin
 2. `tests/unit/analytics-item.test.ts` (baru, 13 test) — eligibilitas draft, exact-match termasuk subset MC, difficulty/omit, discrimination positif & null (cohort kecil), cluster distractor (single_choice/true_false + MC, kosong dikecualikan), determinisme, reconciliation hitung-manual dari baris raw.
 
 Gates slice: unit 13/13, **test 143/143 (22 files, +13)** , typecheck PASS (0 error), lint PASS, prettier PASS. Belum: halaman `/teacher/analytics` + link dashboard, export `kind=item-analysis` (D2), t10_* live-denial opsional — sesuai rencana.
+
+## Catatan sesi — Phase 6 reissue: migration 000010 (slice migration, rencana docs/plan-certificate-persist-reissue.md)
+
+1. `supabase/migrations/20260906000010_certificate_reissue.sql` (baru): drop `certificates_enrollment_id_level_id_key` (unique LINTAS STATUS — sumber reissue impossible) → partial unique index `certificates_one_active (enrollment_id, level_id) where status='active'` (satu ACTIVE per pair; riwayat revoked boleh banyak). Fungsi baru `private.reissue_certificate(cert_id, reason, idempotency_key)` definer + search_path + caller check: revoke lama + issue baru + SATU audit `certificate.reissued` (old/new/reason) dalam satu transaksi; retry-safe — panggilan kedua saat lama sudah revoked mengembalikan active yang ada utk pair sama; status TETAP active/revoked (verifier view/RLS tak berubah, D1 rencana). Wrapper public + grant authenticated.
+2. **Bug live yang migration ini ungkap**: drop constraint lama memutus `issue_certificate` — `on conflict (enrollment_id, level_id)` tak bisa match index PARTIAL tanpa predikat → amandemen `private.issue_certificate` di migration yang sama: `on conflict (enrollment_id, level_id) where status='active' do nothing` (issuance biasa skip hanya bila ada ACTIVE; issue ulang pasca-revoke kini sah). Hanya muncul di Postgres sungguhan.
+3. Bukti live (Postgres 18, lms_rls_test, identitas guru a00…001 / murid b00…001): reissue → old revoked + new1 aktif, `retry_same=t` (panggilan ulang balas id sama), `active_count=1`; insert active kedua → `duplicate key ... certificates_one_active`; reissue oleh murid → `FORBIDDEN`.
+
+Gates: **live-denial 38/38 PASS** (migration 000010 verbatim di atas 000000–000009), **test 143/143 (22 files)** tetap hijau, typecheck/lint PASS, `db:typecheck` OK (36 tables — tanpa tabel baru). Belum (slice lain sesuai rencana): `lib/certificate-store.ts` + persist/signed-URL route pdf, aksi & UI reissue teacher, t10_* live-denial formal.
+
+## Catatan sesi — Hook review level-completion (ADR-011, rencana spaced-review slice)
+
+1. `lib/progress-planning.ts`: + `FirstReviewInsertRow` & `firstReviewInsertRows(enrollmentId, entityIds, now, intervals)` — baris review pertama (due = interval pertama ladder, status scheduled), id unik + urut stabil, deterministik.
+2. `features/actions.ts` `recomputeProgress`: hook aplikasi setelah loop level — level `done` dijadwalkan HANYA bila pasangan (enrollment, level) belum punya baris review apa pun (recompute ulang tidak menggandakan; review completed/dismissed tidak dijadwalkan ulang); insert gagal → `REVIEW_SCHEDULE_FAILED` (recompute idempotent, retry menyusul). Hasil kini memuat `reviewScheduled`. Index parsial `review_items_one_active` (migration 000009) sebagai jaminan DB terakhir.
+3. `tests/unit/progress-planning.test.ts` +3 (builder: due +1 hari, dedupe/sort, kosong); `tests/integration/learning-planning.test.ts` (baru, 5 test statis): wiring import + filter existing + insert tanpa delete di scope recompute + migration partial index/status + ekspor builder.
+
+Gates: unit 20/20, **test 151/151 (23 files, +5)** , typecheck 0, lint PASS, prettier PASS. Bukti live perilaku penuh menunggu Supabase (recompute adalah TS + HTTP); index & tabel sudah live-verified 38/38.
+
+## Verifikasi gate ulang — HEAD 9f67999 (2026-09-06, tree + uncommitted Phase 6/hook)
+
+Seluruh gate dijalankan terhadap HEAD `9f67999` (== origin/main, sudah di-push) + 7 path uncommitted di working tree (migration 000010, hook review, ADR-012/013, PROGRESS):
+
+| Gate | Exit | Hasil |
+|---|---|---|
+| `format:check` | 0 | PASS |
+| `lint` | 0 | PASS (`--max-warnings=0`) |
+| `typecheck` | 0 | PASS (`tsc --noEmit`) |
+| `test` | 0 | PASS 151/151 (23 files) |
+| `build` | 0 | PASS (production build) |
+| `db:typecheck` | 0 | PASS (DB advisor: 36 tables, 1 view) |
+| `e2e` | 0 | PASS 18 passed / 1 skipped |
+| `live-denial` | 0 | PASS 38/38 (migration 000000–000010 verbatim) |
+
+Catatan operasional: e2e sempat gagal karena dev server :3000 mati (terbunuh saat `next build`) dan `npm run dev` menolak start karena server next dev lain (sisa webServer playwright dari run e2e yang gagal, pid 21116@53194) memegang lock — setelah `taskkill` + start eksplisit `npm run dev -- -p 3000`, server hidup di pid 6564 dan e2e hijau. Pelajaran: `next dev` di mesin ini bisa memilih port acak bila port default bermasalah; start eksplisit `-p 3000`. Log per gate: `/tmp/g2-*.log`.

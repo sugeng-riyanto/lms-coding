@@ -107,6 +107,48 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   boleh diperkenalkan kembali via migration baru + test + live-denial, dan
   index unik parsial tetap melindungi dari duplikat apa pun jalurnya.
 
+## ADR-012 — Reissue sertifikat = revoke + issue baru (tanpa nilai status 'reissued')
+
+- Status: accepted
+- Context: rencana `docs/plan-certificate-persist-reissue.md` (D1).
+  `prompts.md` Prompt 08 menyebut status `active/revoked/reissued`, tetapi
+  menambah nilai status berarti mengubah CHECK `certificates.status`,
+  filter verifier view `certificates_public` (`status in ('active','revoked')`),
+  dan permukaan anon/RLS. Migration `20260906000010` sudah mengganti unique
+  lintas status dengan partial unique index `certificates_one_active`.
+- Decision: `'reissued'` TIDAK menjadi nilai status. Reissue = baris lama
+  di-revoke (alasan dicatat) + baris baru `active` dalam satu transaksi
+  (`private.reissue_certificate`, audit `certificate.reissued` berisi
+  old/new/reason). Status tetap `('active','revoked')`; verifier view & RLS
+  tidak berubah. Satu ACTIVE per `(enrollment_id, level_id)` dijamin partial
+  unique index; riwayat revoked boleh banyak (append-only, `no_delete_certs`).
+- Alternatives: (a) nilai status `'reissued'` — ubah CHECK + view verifier +
+  logika anon; (b) satu baris mutable dengan kolom superseded — bertentangan
+  dengan audit append-only.
+- Consequences: UI/riwayat menyebut sertifikat lama sebagai revoked dengan
+  alasan (mis. "diganti"); verifier tetap menampilkan revoked + tanggal tanpa
+  perubahan; PDF lama tidak diunduh sebagai valid (perilaku existing 410).
+
+## ADR-013 — Reissue mengevaluasi ulang eligibility (TS) sebelum RPC DB
+
+- Status: accepted
+- Context: rencana `docs/plan-certificate-persist-reissue.md` (D2). Evaluator
+  eligibility PENUH hidup di TS (`lib/eligibility.ts` + `issueCertificate`);
+  RPC DB `issue_certificate` sengaja disederhanakan (komentar init: "full
+  evaluator di lib/mastery + job"). TS tidak punya policy insert
+  `audit_logs`, sehingga audit reissue ditulis di dalam fungsi definer.
+- Decision: reissue memakai evaluator eligibility yang SAMA dengan issuance
+  biasa (TS) dan dijalankan SEBELUM memanggil RPC `reissue_certificate`;
+  bila tak lagi eligible → tolak dengan alasan, tanpa efek apa pun. RPC DB
+  tidak mengecek ulang eligibility.
+- Alternatives: (a) reissue bebas syarat eligibility (koreksi administratif
+  guru) — dapat menerbitkan sertifikat walau murid tak lagi eligible;
+  (b) menduplikasi evaluator di dalam DB — dua sumber kebenaran.
+- Consequences: ada celah TOCTOU kecil antara evaluasi TS dan eksekusi RPC
+  (eligibility berubah di antara dua langkah) — diterima untuk MVP dan
+  dicatat di risiko rencana; koreksi data tanpa evaluasi ulang penuh tetap
+  mungkin via issue biasa dengan alasan audit.
+
 ## Template
 
 ```text
