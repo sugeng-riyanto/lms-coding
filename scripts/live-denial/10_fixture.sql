@@ -92,6 +92,23 @@ where e.student_id = 'b0000000-0000-0000-0000-000000000001'
 limit 1
 on conflict (idempotency_key) do nothing;
 
+-- Rantai AI draft (t11_*): soal + versi + response milik Murid 01 pada attempt
+-- fixture — bahan uji RLS draft teacher-only (draft butuh response_id valid).
+insert into public.questions (id, organization_id, type, prompt_json, difficulty) values
+  ('a1000000-0000-0000-0000-000000000010', '11111111-1111-1111-1111-111111111111', 'essay_manual',
+   '{"text": "Jelaskan konsepnya"}', 'medium')
+on conflict (id) do nothing;
+insert into public.question_versions (id, question_id, version, grading_json, points) values
+  ('a1000000-0000-0000-0000-000000000011', 'a1000000-0000-0000-0000-000000000010', 1, '{}', 10)
+on conflict (id) do nothing;
+insert into public.responses (id, attempt_id, question_version_id, answer_json, manual_score)
+select 'a1000000-0000-0000-0000-000000000012', a.id, 'a1000000-0000-0000-0000-000000000011',
+       '{"text": "jawaban demo murid 01"}', 70
+from public.attempts a
+where a.idempotency_key = 'fixture-attempt-A'
+limit 1
+on conflict (attempt_id, question_version_id) do nothing;
+
 -- Tabel hasil denial (tanpa RLS; grant luas agar semua role bisa mencatat hasil).
 create table if not exists public.harness_results (
   id serial primary key,

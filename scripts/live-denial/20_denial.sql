@@ -478,6 +478,139 @@ end $$;
 
 set role postgres;
 
+-- ============ t11_* AI DRAFT FEEDBACK (migration 000011, ADR-014/015) ============
+-- Consent default FALSE (fail closed); hanya guru teacher aktif org bisa set
+-- (audit org.ai_consent); draft teacher-only: murid 0 baris, guru org lain
+-- 0 baris, murid tak bisa insert/upsert; apply menulis feedback + revisi audit.
+set role postgres;
+do $$
+declare c boolean;
+begin
+  select ai_feedback_consent into c from public.organizations
+  where id = '22222222-2222-2222-2222-222222222222';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t11_consent_default_false', c = false, 'consent=' || coalesce(c::text, 'null'));
+end $$;
+
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000001"}', false);
+
+do $$
+declare
+  v_resp uuid;
+  n int;
+  audit_n int;
+  fb jsonb;
+  rev_n int;
+  draft_status text;
+begin
+  select id into v_resp from public.responses
+  where id = 'a1000000-0000-0000-0000-000000000012';
+
+  -- (a) guru org-1 set consent org-1 → audit 'org.ai_consent' tercatat.
+  perform public.set_org_ai_consent('11111111-1111-1111-1111-111111111111', true);
+  select count(*) into audit_n from public.audit_logs
+  where action = 'org.ai_consent' and organization_id = '11111111-1111-1111-1111-111111111111';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p11_consent_set_by_teacher', audit_n >= 1, 'audit=' || audit_n);
+
+  -- (b) guru insert draft (RLS) + baca draft miliknya.
+  insert into public.ai_feedback_drafts (response_id, body, model, status, created_by)
+  select v_resp, 'draf AI mock', 'mock', 'draft', 'a0000000-0000-0000-0000-000000000001'
+  where v_resp is not null;
+  get diagnostics n = row_count;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p11_teacher_draft_insert', n = 1, 'rows=' || n);
+  select count(*) into n from public.ai_feedback_drafts where response_id = v_resp;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p11_teacher_draft_select', n = 1, 'rows=' || n);
+
+  -- (c) approve: feedback_json ber-ai_approved + grade_revisions audit + draft approved.
+  perform public.apply_ai_feedback(v_resp, 'feedback final dari draft AI');
+  select feedback_json into fb from public.responses where id = v_resp;
+  select count(*) into rev_n from public.grade_revisions
+  where attempt_id = (select attempt_id from public.responses where id = v_resp)
+    and reason = 'ai_draft:approved';
+  select status into draft_status from public.ai_feedback_drafts where response_id = v_resp;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p11_apply_ai_feedback', fb ? 'ai_approved' and rev_n = 1 and draft_status = 'approved',
+          'ai_approved=' || (fb ? 'ai_approved') || ' revisions=' || rev_n || ' status=' || draft_status);
+
+  -- (d) guru org-1 TIDAK bisa set consent org-2.
+  begin
+    perform public.set_org_ai_consent('22222222-2222-2222-2222-222222222222', true);
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_org2_consent_denied', false, 'RPC consent TIDAK menolak guru org lain!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_org2_consent_denied', sqlerrm like '%FORBIDDEN%',
+            'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+end $$;
+
+set role postgres;
+
+-- ============ t11: MURID A tak bisa set consent / lihat draft / insert ============
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001"}', false);
+
+do $$
+declare n int;
+begin
+  begin
+    perform public.set_org_ai_consent('11111111-1111-1111-1111-111111111111', true);
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_student_consent_denied', false, 'RPC consent TIDAK menolak murid!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_student_consent_denied', sqlerrm like '%FORBIDDEN%',
+            'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+
+  insert into public.harness_results (check_id, passed, detail)
+  select 't11_student_draft_hidden', count(*) = 0, 'rows=' || count(*)
+  from public.ai_feedback_drafts;
+
+  begin
+    insert into public.ai_feedback_drafts (response_id, body, model, status, created_by) values
+      ('a1000000-0000-0000-0000-000000000012', 'x', 'mock', 'draft', auth.uid());
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_student_draft_insert_denied', false, 'INSERT draft TIDAK diblokir!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_student_draft_insert_denied', sqlstate = '42501',
+            'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+
+  begin
+    perform public.upsert_ai_draft('a1000000-0000-0000-0000-000000000012', 'x', 'mock');
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_student_upsert_denied', false, 'RPC upsert TIDAK menolak murid!');
+  exception when others then
+    insert into public.harness_results (check_id, passed, detail)
+    values ('t11_student_upsert_denied', sqlerrm like '%FORBIDDEN%',
+            'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+  end;
+end $$;
+
+set role postgres;
+
+-- ============ t11: guru org-2 tidak melihat draft org-1 ============
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a2000000-0000-0000-0000-000000000002"}', false);
+
+do $$
+begin
+  insert into public.harness_results (check_id, passed, detail)
+  select 't11_org2_teacher_draft_hidden', count(*) = 0, 'rows=' || count(*)
+  from public.ai_feedback_drafts;
+end $$;
+
+set role postgres;
+
 -- Hasil (dibaca runner).
 set role postgres;
 select check_id || '|' || case when passed then 'PASS' else 'FAIL' end as result
