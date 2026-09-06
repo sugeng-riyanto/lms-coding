@@ -239,3 +239,20 @@ Langkah selanjutnya saat blocker terangkat: re-probe tabel + seed, lalu sign-in 
 Diputuskan menunda track hosted sampai ada bukti/artefak nyata. Probe berulang (ke-6, termasuk OpenAPI PostgREST dengan 0 path tabel) tetap `404 PGRST205` pada `jspmxdzgxevtfwvldwxy` meski ada klaim "db push + seed selesai". Semua pesan lanjutan berisi teks placeholder dari suggestion-card (bukan koneksi string/terminal output/project-ref asli) — tidak ada kredensial DB yang valid untuk verifikasi atau eksekusi mandiri. Lihat bagian "Wiring env hosted + smoke test sign-in" di atas untuk bukti lengkap.
 
 Kriteria lanjut (salah satu, dikirim sebagai teks biasa, bukan klik card): (1) `cat supabase/.temp/project-ref` = `jspmxdzgxevtfwvldwxy`; atau (2) tail output `npx supabase db push` yang berakhir `Finished supabase db push.`; atau (3) URL Session pooler ber-password asli. Setelah itu: `npx supabase db push --db-url <url>` + `psql <url> -f supabase/seed.sql` → re-probe → sign-in guru/murid/wali.
+
+## Verifikasi gate refresh — HEAD be7b127 (2026-09-06, tree bersih)
+
+Seluruh gate dijalankan terhadap tree bersih `be7b127` (4 commit workstream: env guard, reissue action/UI, t10 suite, bukti sesi). Urutan aman: e2e SEBELUM build (hindari kontensi `.next`); dev server tetap hidup setelah build.
+
+| Gate | Exit | Hasil |
+|---|---|---|
+| `format:check` | 0 | PASS |
+| `lint` | 0 | PASS |
+| `typecheck` | 0 | PASS |
+| `test` | 0 | PASS 167/167 (25 files) |
+| `db:typecheck` | 0 | PASS (36 tables, 1 view) |
+| `live-denial` | 0 | PASS **48/48** (migrations 000000–000010 verbatim) |
+| `e2e` | 0 | PASS 18 passed / 1 skipped |
+| `build` | 0 | PASS (production build; dev server tetap 200) |
+
+Log per gate: `/tmp/g4-*.log`.
