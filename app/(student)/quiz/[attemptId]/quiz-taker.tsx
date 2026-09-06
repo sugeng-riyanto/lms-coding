@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAttemptResult, saveResponse, submitAttempt } from "@/features/actions";
+import { UploadBox } from "@/components/upload-box";
 import { makeClientEventId } from "@/lib/sync-queue";
 import type { SanitizedQuestion } from "@/lib/attempt";
 
@@ -110,15 +111,29 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
     }
     if (q.type === "essay_manual" || q.type === "file_manual") {
       return (
-        <textarea
-          rows={4}
-          disabled={disabled}
-          aria-label={q.promptText}
-          value={typeof v === "string" ? v : ""}
-          onChange={(e) => setAnswer(q.questionVersionId, e.target.value)}
-          placeholder={q.type === "essay_manual" ? "Tulis jawabanmu…" : "Deskripsikan file proyekmu…"}
-          className="mt-2 w-full rounded-lg border px-3 py-2"
-        />
+        <div>
+          <textarea
+            rows={4}
+            disabled={disabled}
+            aria-label={q.promptText}
+            value={typeof v === "string" ? v : ""}
+            onChange={(e) => setAnswer(q.questionVersionId, e.target.value)}
+            placeholder={q.type === "essay_manual" ? "Tulis jawabanmu…" : "Deskripsikan file proyekmu…"}
+            className="mt-2 w-full rounded-lg border px-3 py-2"
+          />
+          {q.type === "file_manual" && !disabled && (
+            <UploadBox
+              onUploaded={(path) =>
+                setAnswer(q.questionVersionId, { filePath: path, note: typeof v === "string" ? v : "" })
+              }
+            />
+          )}
+          {typeof v === "object" && v !== null && "filePath" in v && (
+            <p className="mt-1 text-sm text-green-700">
+              File terunggah: {String((v as { filePath: string }).filePath)}
+            </p>
+          )}
+        </div>
       );
     }
     return (

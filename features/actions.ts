@@ -1054,16 +1054,14 @@ export async function saveResponse(input: unknown) {
   if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
   const supabase = await createClient();
   if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
-  const { error } = await supabase
-    .from("responses")
-    .upsert(
-      {
-        attempt_id: parsed.data.attemptId,
-        question_version_id: parsed.data.questionVersionId,
-        answer_json: parsed.data.answer,
-      },
-      { onConflict: "attempt_id,question_version_id" },
-    );
+  const { error } = await supabase.from("responses").upsert(
+    {
+      attempt_id: parsed.data.attemptId,
+      question_version_id: parsed.data.questionVersionId,
+      answer_json: parsed.data.answer,
+    },
+    { onConflict: "attempt_id,question_version_id" },
+  );
   if (error) return { ok: false as const, error: "SAVE_FAILED" };
   return { ok: true as const };
 }

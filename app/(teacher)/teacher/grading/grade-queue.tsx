@@ -1,0 +1,101 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { gradeResponse } from "@/features/actions";
+import type { QueueItem } from "./page";
+
+export function GradeQueue({ initialItems }: { initialItems: QueueItem[] }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+  const [scores, setScores] = useState<Record<string, string>>({});
+  const [feedbacks, setFeedbacks] = useState<Record<string, string>>({});
+
+  async function onGrade(item: QueueItem) {
+    setBusy(item.responseId);
+    const res = await gradeResponse({
+      responseId: item.responseId,
+      manualScore: Number(scores[item.responseId] ?? "0"),
+      feedback: feedbacks[item.responseId] ?? "",
+    });
+    setBusy(null);
+    setNotice(res.ok ? "Nilai tersimpan (revisi tercatat)." : `Gagal: ${res.error}`);
+    if (res.ok) router.refresh();
+  }
+
+  if (initialItems.length === 0) {
+    return (
+      <p className="mt-6 rounded-xl border p-5" role="status">
+        Antrian kosong. 🎉
+      </p>
+    );
+  }
+
+  return (
+    <div className="mt-6 space-y-4">
+      {notice && (
+        <p role="status" className="rounded-lg bg-slate-100 p-3 text-sm">
+          {notice}
+        </p>
+      )}
+      {initialItems.map((it) => (
+        <section key={it.responseId} aria-label={`Nilai ${it.studentName}`} className="rounded-xl border p-4">
+          <p className="font-semibold">
+            {it.studentName} · attempt #{it.attemptNo} ({it.attemptStatus})
+          </p>
+          <p className="mt-1 text-sm">
+            <strong>Soal [{it.qtype}]:</strong> {it.promptText}
+          </p>
+          <p className="mt-1 rounded bg-slate-50 p-2 text-sm">
+            Jawaban: {JSON.stringify(it.answer)?.slice(0, 500)}
+          </p>
+          {it.revisions.length > 0 && (
+            <ul className="mt-1 text-xs text-slate-500">
+              {it.revisions.map((r, i) => (
+                <li key={i}>
+                  Revisi: {r.previous ?? "—"} → {r.new ?? "—"} · {r.reason} · {r.at}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="mt-3 grid gap-2 md:grid-cols-3">
+            <div>
+              <label htmlFor={`s-${it.responseId}`} className="text-sm font-semibold">
+                Skor manual (0–100)
+              </label>
+              <input
+                id={`s-${it.responseId}`}
+                type="number"
+                min={0}
+                max={100}
+                value={scores[it.responseId] ?? ""}
+                onChange={(e) => setScores((s) => ({ ...s, [it.responseId]: e.target.value }))}
+                className="mt-1 w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label htmlFor={`f-${it.responseId}`} className="text-sm font-semibold">
+                Feedback
+              </label>
+              <input
+                id={`f-${it.responseId}`}
+                value={feedbacks[it.responseId] ?? ""}
+                onChange={(e) => setFeedbacks((s) => ({ ...s, [it.responseId]: e.target.value }))}
+                maxLength={5000}
+                className="mt-1 w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+          </div>
+          <button
+            onClick={() => onGrade(it)}
+            disabled={busy !== null}
+            className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+          >
+            {busy === it.responseId ? "Menyimpan…" : "Simpan nilai"}
+          </button>
+        </section>
+      ))}
+    </div>
+  );
+}
