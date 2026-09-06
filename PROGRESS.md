@@ -451,3 +451,16 @@ File guard + kapasitas + insert chunked pada kedua jalur bulk impor (`bulkImport
 - **UI**: kedua kartu impor menampilkan hint kapasitas, validasi file client-side (pesan segera, tanpa upload), dan memetakan kode error ke kalimat jelas (`FILE_TOO_LARGE`, `ROWS_OVER_CAP`, dsb).
 
 Gates: format/lint/typecheck 0 · test **241/241** (+6: `xlsxFileError` 5 kasus + `rowsOverCap`) · db:typecheck 0 (38 tabel) · live-denial **79/79** · build 0.
+
+## Catatan sesi — Offline plan slice 1: read-cache IndexedDB + banner offline
+Implementasi slice 1 `docs/plan-offline-local-bridge.md` (AC-1/AC-2/AC-6 parsial):
+
+- **`lib/offline-cache.ts`** — cache-baca IndexedDB (`lms-offline-cache`/`pages`): TTL 24 jam, budget 5 MB dengan **eviction LRU** (`evictToBudget` murni), estimasi ukuran, kunci per entitas (`activity:`/`lesson:`/`level:`), dan **fail-soft total** (no-op/null di Node, private-mode, atau error apa pun — cache tak pernah memecahkan render). Hanya menyimpan data dari respons yang sudah lolos RLS (AC-6).
+- **Komponen**: `OfflineBanner` (status online/offline via event + "salinan tersimpan" dengan waktu cache, teks+ikon bukan warna saja), `ActivityCacheSeed` (simpan activity yang berhasil dimuat → AC-1), `OfflineActivityFallback` (fetch gagal → baca cache → render `ActivityView` dari salinan + banner, atau pesan jelas "belum pernah dibuka" → AC-2).
+- **Wiring** di `app/(student)/activities/[activityId]/page.tsx`: seed saat sukses; catch → fallback cache.
+- **Unit test** `offline-cache.test.ts`: kunci, `estimateSize`, `isExpired`, `evictToBudget` (LRU, deterministik, entri > budget) + blok IndexedDB yang di-skip di Node.
+- **Verifikasi browser (preview localhost:58519)**: tulis+baca entri cache nyata di IndexedDB halaman dengan skema app (key/value/size/cachedAt/TTL) → OK; lalu dibersihkan.
+
+Gates: format/lint/typecheck 0 · test **248/248 +1 skip** (+7) · build 0 (db:typecheck & live-denial tak tersentuh — tanpa migration).
+
+**Temuan (dilaporkan, bukan diubah di slice ini)**: saat benar-benar offline, `requireActiveMembership` di layout murid memanggil `getClaims` + query profiles/memberships → keduanya 504 terhadap hosted yang down → redirect `/login`/`/account-inactive` SEBELUM halaman activity sempat render. Artinya AC-2 end-to-end masih terblokir sampai slice auth-offline (D4) membuat guard toleran terhadap error DB saat session valid (deny-role-unknown tetap aman; cache hanya berisi data RLS-passing). Terverifikasi: `GET /activities/…` → 307 setelah ±63s.

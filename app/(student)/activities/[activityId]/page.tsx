@@ -1,6 +1,9 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { ActivityView } from "./activity-view";
+import { OfflineBanner } from "@/components/offline-banner";
+import { ActivityCacheSeed } from "@/components/activity-cache-seed";
+import { OfflineActivityFallback } from "@/components/offline-activity-fallback";
 
 export const dynamic = "force-dynamic";
 
@@ -48,15 +51,18 @@ export default async function ActivityPage({
   try {
     data = await getActivity(activityId);
   } catch {
+    // Offline / DB tidak terjangkau → fallback dari cache IndexedDB (slice 1).
     return (
       <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-        <p role="alert">Activity tidak dapat dimuat.</p>
+        <OfflineActivityFallback activityId={activityId} enrollmentId={enrollment ?? ""} />
       </main>
     );
   }
   if (!data) notFound();
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
+      <OfflineBanner />
+      <ActivityCacheSeed activity={data} />
       <p className="text-sm text-slate-500">{data.type}</p>
       <h1 className="text-3xl font-bold">{data.title}</h1>
       <ActivityView activity={data} enrollmentId={enrollment ?? ""} />
