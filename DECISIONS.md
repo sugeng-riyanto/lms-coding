@@ -216,6 +216,46 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   `AI_PROVIDER_BASE_URL`/`AI_PROVIDER_API_KEY` (semua server-only, masuk
   `.env.example` → daftar sah check-env otomatis).
 
+## ADR-018 — Blockchain anchor: keputusan provider/network DITUNDA, implementasi mock-only
+
+- Status: proposed
+- Context: baseline sertifikat (ADR-001: DB + SHA-256 + QR verifier) sudah lulus seluruh
+  test. Prompt 09 meminta anchoring opsional dengan evaluasi sebelum memilih provider;
+  provider/network BELUM ditetapkan dan keputusan ada di manusia (owner/ops sekolah).
+  Evaluasi tiga opsi per dimensi yang diminta:
+
+  1. **No-chain (baseline)**: verifikasi DB deterministik + SHA-256 + QR. Biaya 0;
+     finality instan (tapi bukan third-party non-repudiation); uptime = infrastruktur
+     sendiri; tanpa vendor lock-in; regulasi nihil; privacy penuh (tidak ada data ke
+     pihak ketiga); operasional minimal. Kekurangan: verifier publik hanya mempercayai
+     penerbit (single source of truth) — cukup untuk skenario sekolah.
+  2. **Public low-cost chain** (kandidat: Solana, Algorand, Stellar, Base, Polygon):
+     biaya per-anchor sangat rendah dengan batching Merkle (satu transaksi = banyak
+     sertifikat); finality detik–menit tapi probabilistik (butuh konfirmasi, risiko
+     reorg kecil); uptime tinggi namun bergantung jaringan publik + RPC provider;
+     vendor lock-in rendah (protokol terbuka) tapi ketergantungan RPC/funding wallet;
+     regulasi: data menjadi publik PERMANEN — hanya aman karena payload = hash/root
+     tanpa PII (tetap perlu kebijakan hash + pengawasan data anak); operasional: funding
+     wallet + monitoring finality + retry.
+  3. **Permissioned ledger** (Hyperledger Fabric / Besu private / L2 internal): biaya
+     internal (infra); finality cepat/instan; uptime = vendor/internal; vendor lock-in
+     TINGGI (stack spesifik, ops terlatih); regulasi terkontrol penuh; privacy penuh
+     (hanya peserta jaringan); operasional: infra tambahan + perawatan berkelanjutan.
+
+- Decision: TIDAK memilih provider/network sekarang. Keputusan manusia diperlukan
+  dengan bobot: (a) apakah non-repudiation pihak ketiga benar dibutuhkan (no-chain
+  mungkin cukup untuk verifikasi sekolah); (b) regulasi data anak — publik permanen
+  hanya diterima jika hash-only disetujui; (c) operasional — siapa memegang funding
+  wallet / infra. Sampai keputusan: `BLOCKCHAIN_ANCHOR_ENABLED=false` (default),
+  provider NYATA ditolak runtime (fallback noop — tidak mengarang kredensial atau
+  transaksi), dan hanya `MockChainAdapter` yang aktif untuk tests/verifikasi.
+- Alternatives: (a) langsung pilih public chain — melanggar prinsip "minta keputusan
+  manusia"; (b) langsung permissioned — over-engineering tanpa kebutuhan terkonfirmasi.
+- Consequences: interface `anchor/getStatus/verify` + Merkle batch + UI status
+  pending/final/failed tanpa klaim "blockchain verified" sebelum final; status anchor
+  dibaca publik HANYA hash/root + transaction reference (tanpa PII); ADR ini
+  di-revisit saat keputusan manusia tiba.
+
 ## Template
 
 ```text

@@ -37,7 +37,7 @@
 - [ ] Hash deterministik dan perubahan payload terdeteksi.
 - [ ] Public verifier tidak membocorkan PII/score detail.
 - [ ] Revocation dan reissue bekerja.
-- [ ] UI tidak mengklaim blockchain verified saat anchor belum final.
+- [x] UI tidak mengklaim blockchain verified saat anchor belum final.
 
 ## Quality
 

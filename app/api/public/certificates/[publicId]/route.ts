@@ -24,7 +24,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     const { data, error } = await supabase
       .from("certificates_public")
       .select(
-        "status, display_name, course_title, level_title, issued_at, serial_no, payload_hash, chain_anchored",
+        "status, display_name, course_title, level_title, issued_at, serial_no, payload_hash, chain_anchored, chain_anchor_status",
       )
       .eq("public_id", parsed.data.publicId)
       .single();
@@ -35,6 +35,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     if (row["status"] === "revoked") {
       return NextResponse.json({ status: "revoked", issuedAt: row["issued_at"] });
     }
+    const rawAnchorStatus = row["chain_anchor_status"];
+    const anchorStatus: "none" | "pending" | "final" | "failed" =
+      rawAnchorStatus === "pending" || rawAnchorStatus === "final" || rawAnchorStatus === "failed"
+        ? rawAnchorStatus
+        : "none";
     return NextResponse.json({
       status: "valid",
       displayName: row["display_name"],
@@ -47,6 +52,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
           ? String(row["payload_hash"]).slice(0, 12).toUpperCase()
           : undefined,
       chainAnchored: row["chain_anchored"] === true,
+      chainAnchor: { status: anchorStatus },
     });
   } catch {
     // Fallback demo deterministik agar halaman /verify tidak 500 saat DB belum tersedia.
@@ -60,6 +66,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
         serialNo: "DEMO-0001",
         fingerprint: "DEMO9FINGERPR",
         chainAnchored: false,
+        chainAnchor: { status: "none" },
       });
     }
     return NextResponse.json(

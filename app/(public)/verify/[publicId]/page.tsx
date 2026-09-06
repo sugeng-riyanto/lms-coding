@@ -15,6 +15,7 @@ async function fetchVerification(publicId: string, baseUrl: string) {
     serialNo?: string;
     fingerprint?: string;
     chainAnchored?: boolean;
+    chainAnchor?: { status: "none" | "pending" | "final" | "failed" };
   };
 }
 
@@ -74,8 +75,8 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
         )}
         {data.fingerprint && (
           <div className="flex justify-between">
-            <dt className="text-slate-500">Fingerprint</dt>
-            <dd className="font-mono">{data.fingerprint}</dd>
+            <dt className="text-slate-500">Payload hash</dt>
+            <dd className="font-mono">cocok ({data.fingerprint})</dd>
           </div>
         )}
         <div className="flex justify-between">
@@ -85,7 +86,19 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
         <div className="flex justify-between">
           <dt className="text-slate-500">Blockchain</dt>
           <dd className="font-semibold">
-            {data.chainAnchored ? "anchored" : "tidak di-anchor (verifikasi tetap kriptografis)"}
+            {data.chainAnchor?.status === "final" ? (
+              <span className="text-emerald-700 dark:text-emerald-300">
+                terverifikasi di blockchain (anchor final)
+              </span>
+            ) : data.chainAnchor?.status === "pending" ? (
+              <span className="text-amber-700 dark:text-amber-300">
+                anchor pending — belum final; tidak diklaim terverifikasi blockchain
+              </span>
+            ) : data.chainAnchor?.status === "failed" ? (
+              <span className="text-red-700 dark:text-red-300">anchor gagal — hubungi penerbit</span>
+            ) : (
+              "tidak di-anchor (verifikasi tetap kriptografis)"
+            )}
           </dd>
         </div>
       </dl>

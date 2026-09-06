@@ -551,3 +551,46 @@ Menutup sisa "KURANG: AI draft feedback (butuh consent config)" — migration 00
 
 ## Bukti gates (slice AI)
 format 0 · lint 0 · typecheck 0 · test **309/309 +1 skip** (+20) · build 0 (check-env OK dengan 4 key AI baru). Tanpa migration baru → db:typecheck & live-denial tidak berubah (t11/000011 sudah membuktikan RLS+RPC). Catatan: commit ini lokal; 4 commit di depan origin/main (a75cc94, 814fac5, 53a93b4, dan ini). Verifikasi end-to-end state (c) — backend hidup + consent + mock — masih menunggu hosted pulih.
+
+## Catatan sesi — Blockchain anchoring opsional (Prompt 09; ADR-018)
+
+Baseline sertifikat sudah lulus seluruh test; anchoring kini jadi ADAPTER opsional dengan
+keputusan provider/network DITUNDA ke manusia.
+
+**ADR-018 (proposed)** — perbandingan no-chain / public low-cost chain (Solana, Algorand,
+Stellar, Base, Polygon) / permissioned ledger (Fabric, Besu private) + evaluasi biaya,
+finality, uptime, vendor lock-in, regulasi, privacy, operasional. Keputusan: TIDAK memilih;
+provider nyata DITOLAK runtime (noop) — tidak ada kredensial/transaksi karangan. Flag
+`BLOCKCHAIN_ANCHOR_ENABLED=false` default tetap.
+
+**`lib/chain.ts` (upgrade)** — interface `anchor(rootHash)` / `getStatus(reference)` /
+`verify(rootHash, reference)`; status `pending → final` (bukan boolean), `failed`,
+`not_configured`. `MockChainAdapter` deterministik: confirmations → finality, duplicate
+root → reference sama (idempoten), `failAnchor`/`failAnchorOnce` (transient), `timeoutMs`
+(provider timeout), `unavailable` (provider down). `anchorWithRetry` (backoff sederhana);
+`verifyAnchor` fallback → `verified | not_final | invalid | unavailable` (provider down
+tidak pernah jadi "invalid"/"verified" palsu). `getChainAdapter()`: off → noop;
+enabled+mock → mock; enabled+provider nyata → noop (ADR-018 pending).
+
+**Migration `…000017`** — CHECK `chain_anchors.status in ('pending','final','failed')`;
+policy `chain_anchors_public_read` (anon+authenticated) — baris HANYA hash/root +
+transaction reference (tanpa PII/nilai, by design); view `certificates_public` kini
+`LEFT JOIN chain_anchors` → `chain_anchor_status`.
+
+**UI verifier** — `/api/public/certificates/[publicId]` mengembalikan
+`chainAnchor.status ∈ none|pending|final|failed`; halaman `/verify/{publicId}` membedakan
+Record valid / Payload hash cocok / Blockchain (final = "terverifikasi di blockchain",
+pending = "belum final; tidak diklaim terverifikasi", failed = "anchor gagal", none =
+"tidak di-anchor"); TIDAK ada klaim verified sebelum final (ACCEPTANCE_CRITERIA ✓).
+
+**Tests (+15)** — `tests/unit/chain.test.ts` (12: lifecycle pending→final, duplicate,
+pending selamanya, fail permanen, timeout, retry transient/habis, unavailable,
+verifyAnchor verified/invalid/not_final/unavailable, seleksi flag+mock+provider nyata
+ditolak, noop) + `contracts.test.ts` +3 statis (000017: CHECK, policy anon non-PII, view
+LEFT JOIN).
+
+## Bukti gates (anchor adapter)
+format 0 · lint 0 · typecheck 0 · test **324/324 +1 skip** (+15) · `db:typecheck` 0
+(38 tables, 2 views — view baru lolos advisor) · **live-denial 91/91** (000017 apply
+bersih di harness) · build 0. Belum ter-push ke hosted (outage masih berlanjut;
+migration pending 000012–000017 tercatat di .freebuff/run.md).
