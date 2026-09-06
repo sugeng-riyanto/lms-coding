@@ -13,29 +13,42 @@
 -- ============================================================================
 insert into auth.users
   (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at,
-   raw_app_meta_data, created_at, updated_at)
+   raw_app_meta_data, created_at, updated_at,
+   confirmation_token, recovery_token, email_change_token_new,
+   email_change_token_current, reauthentication_token, phone_change_token,
+   email_change, phone_change)
 values
   ('a0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'guru@demo.local',
    extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', now(), now()),
+   '{"provider":"email","providers":["email"]}', now(), now(),
+   '', '', '', '', '', '', '', ''),
   ('a5000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'wali@demo.local',
    extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', now(), now()),
+   '{"provider":"email","providers":["email"]}', now(), now(),
+   '', '', '', '', '', '', '', ''),
   ('b0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'murid01@demo.local',
    extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', now(), now()),
+   '{"provider":"email","providers":["email"]}', now(), now(),
+   '', '', '', '', '', '', '', ''),
   ('b0000000-0000-0000-0000-000000000002', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'murid02@demo.local',
    extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', now(), now()),
+   '{"provider":"email","providers":["email"]}', now(), now(),
+   '', '', '', '', '', '', '', ''),
   ('b0000000-0000-0000-0000-000000000003', '00000000-0000-0000-0000-000000000000',
    'authenticated', 'authenticated', 'murid03@demo.local',
    extensions.crypt('DemoPass-2026!', extensions.gen_salt('bf')), now(),
-   '{"provider":"email","providers":["email"]}', now(), now())
+   '{"provider":"email","providers":["email"]}', now(), now(),
+   '', '', '', '', '', '', '', '')
 on conflict (id) do nothing;
+
+-- CATATAN: kolom token/change auth.users WAJIB '' (bukan NULL) — GoTrue men-scan
+-- kolom ini sebagai string; NULL memicu 500 "Database error querying schema"
+-- saat sign-in (supabase/auth#1940, docs troubleshooting). Insert langsung SQL
+-- yang membiarkan kolom ini NULL akan membuat akun tidak bisa login di hosted.
 
 -- identities wajib untuk email/password sign-in di GoTrue modern.
 insert into auth.identities

@@ -39,7 +39,17 @@ create table if not exists auth.users (
   email_confirmed_at timestamptz,
   raw_app_meta_data jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Kolom yang GoTrue scan sebagai string; NULL memicu "Database error querying
+  -- schema" saat sign-in (lihat supabase/auth#1940). Seed menulis '' eksplisit.
+  confirmation_token text,
+  recovery_token text,
+  email_change_token_new text,
+  email_change_token_current text,
+  reauthentication_token text,
+  phone_change_token text,
+  email_change text,
+  phone_change text
 );
 
 create table if not exists auth.identities (
