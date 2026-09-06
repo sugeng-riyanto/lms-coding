@@ -27,6 +27,8 @@ export function AssessmentBuilder({
   const [notice, setNotice] = useState("");
   const [pick, setPick] = useState("");
   const [points, setPoints] = useState("10");
+  const [randomize, setRandomize] = useState(false);
+  const [poolSize, setPoolSize] = useState("");
 
   async function onCreate() {
     setBusy(true);
@@ -36,6 +38,8 @@ export function AssessmentBuilder({
       cooldownSeconds: 0,
       durationSeconds: 0,
       release: "immediate",
+      randomize,
+      poolSize: poolSize.trim() === "" ? undefined : Number(poolSize),
     });
     setBusy(false);
     setNotice(res.ok ? "Assessment dibuat." : `Gagal: ${res.error}`);
@@ -75,6 +79,29 @@ export function AssessmentBuilder({
       {!assessment ? (
         <div className="rounded-xl border p-5">
           <p>Belum ada assessment untuk activity ini.</p>
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={randomize}
+                onChange={(e) => setRandomize(e.target.checked)}
+                className="size-4"
+              />
+              Acak urutan soal per attempt (seed server, reproducible)
+            </label>
+            <label htmlFor="pool-size" className="flex items-center gap-2 text-sm">
+              <span>Jumlah soal per attempt (kosong = semua):</span>
+              <input
+                id="pool-size"
+                type="number"
+                min={1}
+                disabled={!randomize}
+                value={poolSize}
+                onChange={(e) => setPoolSize(e.target.value)}
+                className="w-24 rounded-lg border px-3 py-1 disabled:opacity-50"
+              />
+            </label>
+          </div>
           <button
             onClick={onCreate}
             disabled={busy}

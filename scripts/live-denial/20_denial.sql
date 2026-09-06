@@ -611,6 +611,122 @@ end $$;
 
 set role postgres;
 
+-- ============ t12: ATTEMPT — deadline server-authoritative + submit idempotent ============
+-- (Phase 4, migration 000012: finalize_attempt menolak attempt lewat deadline;
+--  submit ganda = no-op; murid lain TIDAK bisa mem-finalize attempt murid lain.)
+
+-- Assessment ber-deadline (5 detik) untuk uji TIME_EXPIRED.
+insert into public.assessments (id, activity_id, settings_json, total_points) values
+  ('a1000000-0000-0000-0000-000000000005', 'a1000000-0000-0000-0000-000000000003',
+   '{"durationSeconds":5}', 10)
+on conflict (id) do nothing;
+
+-- Attempt expired milik Murid 01 (mulai 1 jam lalu) pada assessment ber-deadline.
+insert into public.attempts (assessment_id, enrollment_id, attempt_no, status, idempotency_key, started_at)
+select 'a1000000-0000-0000-0000-000000000005', e.id, 1, 'in_progress', 't12-expired', now() - interval '1 hour'
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1
+on conflict (idempotency_key) do nothing;
+
+-- Attempt kedua milik Murid 01 (masih hidup; id tetap) untuk uji FORBIDDEN lintas murid.
+insert into public.attempts (id, assessment_id, enrollment_id, attempt_no, status, idempotency_key, started_at)
+select 'a1000000-0000-0000-0000-000000000020', 'a1000000-0000-0000-0000-000000000004', e.id, 2,
+       'in_progress', 't12-cross', now()
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1
+on conflict (id) do nothing;
+
+-- Murid 01: finalize attempt miliknya sendiri yang masih hidup → boleh.
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+declare
+  a_id uuid;
+begin
+  select id into a_id from public.attempts where idempotency_key = 'fixture-attempt-A';
+  perform public.finalize_attempt(a_id, 't12-first');
+  insert into public.harness_results (check_id, passed, detail)
+  select 't12_own_finalize_allowed',
+         status = 'submitted' and submitted_at is not null,
+         'status=' || status
+  from public.attempts where id = a_id;
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_own_finalize_allowed', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Submit ganda: panggilan kedua tidak error dan tidak mengubah apa pun (idempotent).
+do $$
+declare
+  a_id uuid; s1 timestamptz; s2 timestamptz; st text;
+begin
+  select id into a_id from public.attempts where idempotency_key = 'fixture-attempt-A';
+  select submitted_at into s1 from public.attempts where id = a_id;
+  perform public.finalize_attempt(a_id, 't12-second');
+  select status, submitted_at into st, s2 from public.attempts where id = a_id;
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_duplicate_submit_noop', st = 'submitted' and s2 = s1,
+          'status=' || st || ' same_ts=' || (s2 = s1));
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_duplicate_submit_noop', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Attempt lewat deadline (mulai 1 jam lalu, durasi 5 dtk) → TIME_EXPIRED.
+do $$
+declare
+  a_id uuid;
+begin
+  select id into a_id from public.attempts where idempotency_key = 't12-expired';
+  perform public.finalize_attempt(a_id, 't12-expired-submit');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_deadline_rejected', false, 'RPC TIDAK menolak attempt lewat deadline!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_deadline_rejected', sqlerrm like '%TIME_EXPIRED%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+set role postgres;
+
+-- Murid 02: attempt milik Murid 01 tak terbaca RLS + RPC menolak finalize.
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000002","role":"authenticated"}', false);
+
+do $$
+declare
+  n int;
+begin
+  select count(*) into n from public.attempts where id = 'a1000000-0000-0000-0000-000000000020';
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_cross_student_read_hidden', n = 0, 'rows=' || n);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_cross_student_read_hidden', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+do $$
+begin
+  -- RPC security definer: walau id diketahui murid 02, FORBIDDEN wajib naik
+  -- (baris dijamin ada oleh insert postgres di atas + ON_ERROR_STOP).
+  perform public.finalize_attempt('a1000000-0000-0000-0000-000000000020', 't12-cross-submit');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_cross_student_finalize_denied', false, 'RPC TIDAK menolak murid lain!');
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t12_cross_student_finalize_denied', sqlerrm like '%FORBIDDEN%',
+          'sqlstate=' || sqlstate || ' msg=' || sqlerrm);
+end $$;
+
+set role postgres;
+
 -- Hasil (dibaca runner).
 set role postgres;
 select check_id || '|' || case when passed then 'PASS' else 'FAIL' end as result

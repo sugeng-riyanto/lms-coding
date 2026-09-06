@@ -1,4 +1,18 @@
-import type { GradingRule, QuestionType } from "@/lib/grading";
+import type { GradingRule, NumericUnitRule, QuestionType } from "@/lib/grading";
+
+/** Parse "kg:1,g:0.001" + unit basis menjadi NumericUnitRule (atau undefined). */
+export function parseUnitRule(factorsCsv: string, expectedUnit: string): NumericUnitRule | undefined {
+  const unitFactors: Record<string, number> = {};
+  for (const pair of factorsCsv.split(",")) {
+    const [rawU, rawF] = pair.split(":").map((s) => s.trim());
+    if (!rawU) continue;
+    const f = Number(rawF);
+    if (!Number.isFinite(f) || f <= 0) continue;
+    unitFactors[rawU.toLowerCase()] = f;
+  }
+  if (Object.keys(unitFactors).length === 0) return undefined;
+  return { expectedUnit: expectedUnit.trim() || "unit", unitFactors };
+}
 
 /** Soal yang boleh dikirim ke browser: tanpa grading_json & explanation. */
 export interface SanitizedQuestion {
@@ -54,6 +68,7 @@ export function buildGradingRule(
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean),
+        partialCredit: fields["partial"] === "fractional" ? "fractional" : "exact",
       };
     case "true_false":
       return { ...base, correctOptionId: fields["correct"] === "false" ? "false" : "true" };
@@ -63,6 +78,8 @@ export function buildGradingRule(
         expected: Number(fields["expected"] ?? "0"),
         toleranceAbsolute: Number(fields["tolAbs"] ?? "0"),
         toleranceRelative: Number(fields["tolRel"] ?? "0"),
+        // unitFactors: "kg:1,g:0.001,mg:0.000001" -> konversi ke basis (expectedUnit).
+        unit: parseUnitRule(fields["unitFactors"] ?? "", fields["unitExpected"] ?? ""),
       };
     case "short_text":
       return {

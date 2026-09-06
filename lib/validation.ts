@@ -108,6 +108,9 @@ export const createAssessmentSchema = z.object({
   cooldownSeconds: z.coerce.number().int().min(0).max(86400).default(0),
   durationSeconds: z.coerce.number().int().min(0).max(86400).default(0),
   release: z.enum(["immediate", "manual"]).default("immediate"),
+  // Randomisasi pool/urutan: seed dibuat SERVER per attempt (reproducible).
+  randomize: z.boolean().default(false),
+  poolSize: z.coerce.number().int().min(1).max(200).optional(),
 });
 
 export const addQuestionToAssessmentSchema = z.object({

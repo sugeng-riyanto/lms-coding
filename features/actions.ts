@@ -43,6 +43,7 @@ import {
   uuidSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
+import { pickPool, randomSeedHex } from "@/lib/shuffle";
 import { checkEligibility } from "@/lib/eligibility";
 import { normalizeOrder } from "@/lib/reorder";
 import { validateCourseDraft, type DraftLevel, type DraftPrereq } from "@/lib/publish-validation";
@@ -256,7 +257,27 @@ export async function startAttempt(input: unknown) {
   const settings = ((asmt as { settings_json: Record<string, unknown> } | null)?.settings_json ?? {}) as {
     maxAttempts?: number;
     cooldownSeconds?: number;
+    randomize?: boolean;
+    poolSize?: number;
   };
+
+  // Randomisasi server-authoritative: seed kriptografis dibuat SERVER, pool +
+  // urutan dihitung deterministik (lib/shuffle), disimpan di attempt agar
+  // grading memakai subset yang sama dan dapat direproduksi. Client tidak
+  // pernah memilih seed/urutan (kunci jawaban juga tak ikut di sini).
+  let questionOrderJson: { seed: string; order: string[] } | null = null;
+  if (settings.randomize) {
+    const { data: links } = await supabase
+      .from("assessment_questions")
+      .select("question_version_id")
+      .eq("assessment_id", parsed.data.assessmentId)
+      .order("position", { ascending: true });
+    const ids = ((links as { question_version_id: string }[] | null) ?? []).map((l) => l.question_version_id);
+    if (ids.length > 0) {
+      const seed = randomSeedHex();
+      questionOrderJson = { seed, order: pickPool(ids, settings.poolSize ?? ids.length, seed) };
+    }
+  }
   const { count } = await supabase
     .from("attempts")
     .select("id", { count: "exact", head: true })
@@ -297,6 +318,7 @@ export async function startAttempt(input: unknown) {
       status: "in_progress",
       idempotency_key: parsed.data.idempotencyKey,
       started_at: new Date().toISOString(),
+      question_order_json: questionOrderJson,
     })
     .select("id")
     .single();
@@ -319,7 +341,7 @@ export async function submitAttempt(input: unknown) {
 
   const { data: attempt } = await supabase
     .from("attempts")
-    .select("id,assessment_id,enrollment_id,status,started_at")
+    .select("id,assessment_id,enrollment_id,status,started_at,question_order_json")
     .eq("id", parsed.data.attemptId)
     .single();
   const att = attempt as {
@@ -328,6 +350,7 @@ export async function submitAttempt(input: unknown) {
     enrollment_id: string;
     status: string;
     started_at: string;
+    question_order_json: { seed: string; order: string[] } | null;
   } | null;
   if (!att) return { ok: false as const, error: "NOT_FOUND" };
   if (att.status !== "in_progress") return { ok: true as const }; // submit ganda = idempotent
@@ -349,13 +372,24 @@ export async function submitAttempt(input: unknown) {
 
   // Auto-grade objektif via trusted server (service bypass RLS tulis murid).
   const svc = createServiceClient();
-  const { data: links } = await svc
+  const { data: linksRaw } = await svc
     .from("assessment_questions")
     .select("question_version_id,points")
     .eq("assessment_id", att.assessment_id);
+  let links = (linksRaw as { question_version_id: string; points: number }[] | null) ?? [];
+  // Randomisasi: hanya subset/urutan yang di-roll SERVER saat startAttempt yang
+  // dinilai — soal di luar pool attempt ini tidak ikut (dan tidak bisa
+  // disisipkan client lewat response palsu).
+  const ordered = att.question_order_json?.order;
+  if (ordered && ordered.length > 0) {
+    const byId = new Map(links.map((l) => [l.question_version_id, l]));
+    links = ordered
+      .map((id) => byId.get(id))
+      .filter((l): l is { question_version_id: string; points: number } => !!l);
+  }
   const scores: number[] = [];
   const points: number[] = [];
-  for (const link of (links as { question_version_id: string; points: number }[] | null) ?? []) {
+  for (const link of links) {
     const { data: qv } = await svc
       .from("question_versions")
       .select("grading_json,points")
@@ -1253,6 +1287,8 @@ export async function createAssessment(input: unknown) {
         cooldownSeconds: parsed.data.cooldownSeconds,
         durationSeconds: parsed.data.durationSeconds,
         release: parsed.data.release,
+        randomize: parsed.data.randomize,
+        ...(parsed.data.poolSize !== undefined ? { poolSize: parsed.data.poolSize } : {}),
       },
     })
     .select("id")
@@ -1309,20 +1345,36 @@ export async function getAttemptQuestions(attemptId: string) {
   if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
   const { data: attempt } = await supabase
     .from("attempts")
-    .select("id,assessment_id,status")
+    .select("id,assessment_id,status,question_order_json")
     .eq("id", attemptId)
     .single();
-  const att = attempt as { id: string; assessment_id: string; status: string } | null;
+  const att = attempt as {
+    id: string;
+    assessment_id: string;
+    status: string;
+    question_order_json: { seed: string; order: string[] } | null;
+  } | null;
   if (!att) return { ok: false as const, error: "NOT_FOUND" };
   // RLS responses/attempts menegakkan kepemilikan; grading_json TIDAK PERNAH di-select di sini.
-  const { data: links } = await supabase
+  // Urutan soal = roll SERVER saat startAttempt (question_order_json); fallback posisi.
+  const ordered = att.question_order_json?.order;
+  const linksQuery = supabase
     .from("assessment_questions")
     .select("question_version_id,position,points")
-    .eq("assessment_id", att.assessment_id)
-    .order("position");
+    .eq("assessment_id", att.assessment_id);
+  const { data: linksRaw } =
+    ordered && ordered.length > 0 ? await linksQuery.in("question_version_id", ordered) : await linksQuery;
+  let links = (linksRaw as { question_version_id: string; position: number; points: number }[] | null) ?? [];
+  if (ordered && ordered.length > 0) {
+    const byId = new Map(links.map((l) => [l.question_version_id, l]));
+    links = ordered
+      .map((id) => byId.get(id))
+      .filter((l): l is { question_version_id: string; position: number; points: number } => !!l);
+  } else {
+    links.sort((a, b) => a.position - b.position);
+  }
   const out: (SanitizedQuestion & { savedAnswer: unknown })[] = [];
-  for (const link of (links as { question_version_id: string; position: number; points: number }[] | null) ??
-    []) {
+  for (const link of links) {
     const { data: qv } = await supabase
       .from("question_versions")
       .select("id,question_id")

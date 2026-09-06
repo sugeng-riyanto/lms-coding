@@ -7,6 +7,13 @@ export type QuestionType =
   | "essay_manual"
   | "file_manual";
 
+export interface NumericUnitRule {
+  /** Unit jawaban yang diharapkan bila murid tidak menulis unit (basis konversi). */
+  expectedUnit: string;
+  /** Faktor konversi tiap unit ke basis: { kg: 1, g: 0.001, mg: 0.000001 }. */
+  unitFactors: Record<string, number>;
+}
+
 export interface GradingRule {
   type: QuestionType;
   points: number;
@@ -14,13 +21,39 @@ export interface GradingRule {
   correctOptionId?: string;
   // multiple_choice
   correctOptionIds?: string[];
+  /** Kebijakan skor MC: "exact" = semua-or-tidak (default), "fractional" = proporsi benar. */
+  partialCredit?: "exact" | "fractional";
   // numeric
   expected?: number;
   toleranceAbsolute?: number;
   toleranceRelative?: number;
+  /** Normalisasi unit: jawaban "5000 g" dikonversi ke basis (expectedUnit) sebelum toleransi. */
+  unit?: NumericUnitRule;
   // short_text
   acceptedAnswers?: string[];
   normalize?: { trim?: boolean; lowercase?: boolean; collapseSpaces?: boolean };
+}
+
+/**
+ * Parse jawaban numerik + konversi unit ke basis. Mengembalikan null bila:
+ * - bukan number/string numerik yang valid;
+ * - string memuat unit yang TIDAK ada di unitFactors (tidak menebak);
+ * - string memuat unit dan rule tidak mendefinisikan unitFactors.
+ * Number polos dianggap sudah dalam basis (expectedUnit).
+ */
+export function parseNumericAnswer(answer: unknown, unit?: NumericUnitRule): number | null {
+  if (typeof answer === "number") return Number.isFinite(answer) ? answer : null;
+  if (typeof answer !== "string") return null;
+  const m = /^\s*(-?\d+(?:\.\d+)?)\s*([A-Za-zµ%]+)?\s*$/.exec(answer);
+  if (!m) return null;
+  const value = Number(m[1]);
+  if (!Number.isFinite(value)) return null;
+  const token = m[2];
+  if (!token) return value; // tanpa unit → basis
+  if (!unit || !unit.unitFactors) return null;
+  const factor = unit.unitFactors[token.toLowerCase()];
+  if (factor === undefined) return null; // unit tak dikenal → gagal, jangan tebak
+  return value * factor;
 }
 
 export function normalizeShortText(input: string, rule?: GradingRule["normalize"]): string {
@@ -44,16 +77,25 @@ export function autoGrade(rule: GradingRule, answer: unknown): number {
       if (!Array.isArray(answer)) return 0;
       const expected = new Set(rule.correctOptionIds ?? []);
       const got = new Set(answer.filter((a): a is string => typeof a === "string"));
+      if (rule.partialCredit === "fractional") {
+        // Kebijakan parsial: poin = poin × (opsi benar yang dipilih / total opsi benar).
+        // Opsi salah yang ikut dipilih TIDAK mengurangi (tidak ada penalti negatif).
+        if (expected.size === 0) return 0;
+        let matched = 0;
+        for (const id of got) if (expected.has(id)) matched++;
+        return Math.min(points, (points * matched) / expected.size);
+      }
       if (got.size !== expected.size) return 0;
       for (const id of got) if (!expected.has(id)) return 0;
       return points;
     }
     case "numeric_tolerance": {
-      const n = typeof answer === "number" ? answer : Number(answer);
-      if (!Number.isFinite(n) || rule.expected === undefined) return 0;
+      const n = parseNumericAnswer(answer, rule.unit);
+      if (n === null || rule.expected === undefined) return 0;
       const absTol = rule.toleranceAbsolute ?? 0;
       const relTol = (rule.toleranceRelative ?? 0) * Math.abs(rule.expected);
       const tol = Math.max(absTol, relTol);
+      // Batas inklusif: |n - expected| == tol → benar (boundary test).
       return Math.abs(n - rule.expected) <= tol ? points : 0;
     }
     case "short_text": {
