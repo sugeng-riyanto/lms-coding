@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CohortManager } from "./cohort-manager";
+import { StudentBulkImport } from "./student-bulk-import";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +83,9 @@ export default async function CohortsPage() {
       <p className="mt-1 text-sm text-slate-600">
         Suspend enrollment menonaktifkan akses murid tanpa menghapus riwayat.
       </p>
+      <div className="mt-4">
+        <StudentBulkImport cohorts={cohorts.map((c) => ({ id: c.id, name: c.name }))} />
+      </div>
       <CohortManager initialCohorts={cohorts} courses={myCourses} />
     </main>
   );

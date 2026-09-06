@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { LevelManager, type ManagerModule } from "./level-manager";
+import { ContentBulkImport } from "./content-bulk-import";
 
 export const dynamic = "force-dynamic";
 
@@ -81,6 +82,9 @@ export default async function LevelPage({ params }: { params: Promise<{ id: stri
         {data.level.objective || <em className="text-red-700">kosong — wajib diisi sebelum publish</em>}
       </p>
       <LevelManager levelId={data.level.id} initialModules={data.modules} />
+      <div className="mt-4">
+        <ContentBulkImport courseId={data.courseId} levelId={data.level.id} />
+      </div>
     </main>
   );
 }

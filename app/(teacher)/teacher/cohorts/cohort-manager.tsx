@@ -118,6 +118,12 @@ export function CohortManager({
         <section key={c.id} aria-label={c.name} className="rounded-xl border p-4">
           <h2 className="font-bold">
             {c.name} <span className="text-sm font-normal text-slate-500">({c.academicYear})</span>
+            <a
+              href={`/api/export/cohorts/${c.id}`}
+              className="ml-2 text-sm font-semibold text-blue-700 underline"
+            >
+              Ekspor roster (CSV)
+            </a>
           </h2>
           <h3 className="mt-3 text-sm font-semibold">Anggota ({c.members.length})</h3>
           <ul className="mt-1 text-sm">

@@ -52,6 +52,13 @@ import { checkEligibility } from "@/lib/eligibility";
 import { normalizeOrder } from "@/lib/reorder";
 import { validateCourseDraft, type DraftLevel, type DraftPrereq } from "@/lib/publish-validation";
 import { checkRateLimit } from "@/lib/ratelimit";
+import {
+  groupContentRows,
+  parseContentRows,
+  parseStudentRows,
+  type BulkActivityType,
+} from "@/lib/bulk-import";
+import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 
 // ---------- Course authoring: create draft ----------
 export async function createCourse(input: unknown) {
@@ -1970,6 +1977,225 @@ async function copyVersionTree(supabase: Supa, srcVersionId: string, dstVersionI
 }
 
 // ---------- Cohort: buat + suspend enrollment (API_CONTRACTS) ----------
+// ---------- Bulk import (XLSX, server-side) ----------
+// Parsing + validasi + penyediaan identitas lewat jalur PRIVILEGED (service
+// client, server-only): memberships TIDAK punya policy insert untuk guru
+// (provisioning akun = admin). Otorisasi guru tetap diperiksa di action:
+// cohort/course miliknya (app client + RLS). Baris rusak dilaporkan per baris.
+
+async function xlsxRows(file: File): Promise<unknown[]> {
+  const buf = Buffer.from(await file.arrayBuffer());
+  const wb = xlsxRead(buf, { type: "buffer" });
+  const first = wb.SheetNames[0];
+  const ws = first ? wb.Sheets[first] : undefined;
+  if (!ws) return [];
+  return xlsxUtils.sheet_to_json(ws) as unknown[];
+}
+
+const EMAIL_CHUNK = 100;
+
+/** Bulk daftarkan murid ke cohort milik guru (identitas dicocokkan via email). */
+export async function bulkImportStudents(formData: FormData) {
+  const file = formData.get("file");
+  const cohortIdRaw = formData.get("cohortId");
+  if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "FILE_MISSING" };
+  if (typeof cohortIdRaw !== "string" || !uuidSchema.safeParse(cohortIdRaw).success)
+    return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const uid = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!uid) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Cohort milik guru ini (RLS select cohort + filter teacher_id).
+  const { data: cohort } = await supabase
+    .from("cohorts")
+    .select("id,organization_id")
+    .eq("id", cohortIdRaw)
+    .eq("teacher_id", uid)
+    .single();
+  const c = cohort as { id: string; organization_id: string } | null;
+  if (!c) return { ok: false as const, error: "FORBIDDEN" };
+
+  const sheetRows = await xlsxRows(file);
+  const { rows, errors } = parseStudentRows(sheetRows);
+  if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+
+  // Resolusi email → user id (service client; hanya server).
+  const svc = createServiceClient();
+  const emailToId = new Map<string, string>();
+  for (let i = 0; i < rows.length; i += EMAIL_CHUNK) {
+    const chunk = rows.slice(i, i + EMAIL_CHUNK).map((r) => r.email);
+    const { data } = await svc.schema("auth").from("users").select("id,email").in("email", chunk);
+    for (const u of (data as { id: string; email: string }[] | null) ?? []) emailToId.set(u.email, u.id);
+  }
+
+  let added = 0;
+  let existing = 0;
+  const notFound: string[] = [];
+  // Anggota cohort yang sudah ada (hindari duplikat; tanpa asumsi unique constraint).
+  const { data: currentMembers } = await supabase
+    .from("cohort_members")
+    .select("student_id")
+    .eq("cohort_id", c.id);
+  const memberSet = new Set(
+    ((currentMembers as { student_id: string }[] | null) ?? []).map((m) => m.student_id),
+  );
+  for (const r of rows) {
+    const userId = emailToId.get(r.email);
+    if (!userId) {
+      notFound.push(r.email);
+      continue;
+    }
+    if (memberSet.has(userId)) {
+      existing++;
+      continue;
+    }
+    // Profil + membership (provisioning akun = privileged, bukan policy guru).
+    await svc
+      .from("profiles")
+      .upsert(
+        { id: userId, organization_id: c.organization_id, display_name: r.displayName },
+        { onConflict: "id" },
+      );
+    await svc
+      .from("memberships")
+      .upsert(
+        { organization_id: c.organization_id, user_id: userId, role: "student", status: "active" },
+        { onConflict: "organization_id,user_id" },
+      );
+    // Keanggotaan cohort lewat RLS guru (teacher insert policy).
+    const { error: cmErr } = await supabase.from("cohort_members").insert({
+      cohort_id: c.id,
+      student_id: userId,
+      status: "active",
+    });
+    if (cmErr) errors.push(`Murid ${r.email}: gagal ditambahkan ke cohort (${cmErr.message}).`);
+    else {
+      memberSet.add(userId);
+      added++;
+    }
+  }
+
+  return { ok: true as const, added, existing, notFound, errors };
+}
+
+/** Bulk impor materi (module/lesson/activity) ke level draft kursus milik guru. */
+export async function bulkImportContent(formData: FormData) {
+  const file = formData.get("file");
+  const courseIdRaw = formData.get("courseId");
+  const levelIdRaw = formData.get("levelId");
+  if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "FILE_MISSING" };
+  if (
+    typeof courseIdRaw !== "string" ||
+    typeof levelIdRaw !== "string" ||
+    !uuidSchema.safeParse(courseIdRaw).success ||
+    !uuidSchema.safeParse(levelIdRaw).success
+  )
+    return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const uid = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!uid) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Kursus milik guru + level di dalam versi kursus tsb (RLS guru).
+  const { data: course } = await supabase
+    .from("courses")
+    .select("id")
+    .eq("id", courseIdRaw)
+    .eq("owner_id", uid)
+    .single();
+  if (!course) return { ok: false as const, error: "FORBIDDEN" };
+  const { data: level } = await supabase
+    .from("levels")
+    .select("id,course_version_id")
+    .eq("id", levelIdRaw)
+    .single();
+  const lv = level as { id: string; course_version_id: string } | null;
+  if (!lv) return { ok: false as const, error: "FORBIDDEN" };
+  const { data: cv } = await supabase
+    .from("course_versions")
+    .select("id")
+    .eq("id", lv.course_version_id)
+    .eq("course_id", courseIdRaw)
+    .single();
+  if (!cv) return { ok: false as const, error: "FORBIDDEN" };
+
+  const sheetRows = await xlsxRows(file);
+  const { rows, errors } = parseContentRows(sheetRows);
+  if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+
+  let modules = 0;
+  let lessons = 0;
+  let activities = 0;
+  const grouped = groupContentRows(rows);
+  for (const [moduleTitle, lessonsMap] of grouped) {
+    const { data: mLast } = await supabase
+      .from("modules")
+      .select("position")
+      .eq("level_id", levelIdRaw)
+      .order("position", { ascending: false })
+      .limit(1);
+    const mPos = (((mLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
+    const { data: mod, error: mErr } = await supabase
+      .from("modules")
+      .insert({ level_id: levelIdRaw, position: mPos, title: moduleTitle })
+      .select("id")
+      .single();
+    if (mErr || !mod) {
+      errors.push(`Module "${moduleTitle}": gagal dibuat.`);
+      continue;
+    }
+    modules++;
+    for (const [lessonTitle, activityRows] of lessonsMap) {
+      const objective = activityRows[0]?.objective ?? "";
+      const { data: lLast } = await supabase
+        .from("lessons")
+        .select("position")
+        .eq("module_id", (mod as { id: string }).id)
+        .order("position", { ascending: false })
+        .limit(1);
+      const lPos = (((lLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
+      const { data: les, error: lErr } = await supabase
+        .from("lessons")
+        .insert({
+          module_id: (mod as { id: string }).id,
+          position: lPos,
+          title: lessonTitle,
+          objective: objective || "Materi pelajaran ini.",
+          estimated_minutes: 15,
+          required: true,
+        })
+        .select("id")
+        .single();
+      if (lErr || !les) {
+        errors.push(`Lesson "${lessonTitle}": gagal dibuat.`);
+        continue;
+      }
+      lessons++;
+      for (const act of activityRows) {
+        const { data: aLast } = await supabase
+          .from("activities")
+          .select("position")
+          .eq("lesson_id", (les as { id: string }).id)
+          .order("position", { ascending: false })
+          .limit(1);
+        const aPos = (((aLast as { position: number }[] | null) ?? [])[0]?.position ?? -1) + 1;
+        const { error: aErr } = await supabase.from("activities").insert({
+          lesson_id: (les as { id: string }).id,
+          position: aPos,
+          type: act.activityType as BulkActivityType,
+          title: act.activityTitle,
+          required: true,
+          content_json: (act.contentJson ?? {}) as Record<string, unknown>,
+        });
+        if (aErr) errors.push(`Aktivitas "${act.activityTitle}": gagal dibuat.`);
+        else activities++;
+      }
+    }
+  }
+  return { ok: true as const, modules, lessons, activities, errors };
+}
+
 export async function createCohort(input: unknown) {
   const parsed = createCohortSchema.safeParse(input);
   if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
