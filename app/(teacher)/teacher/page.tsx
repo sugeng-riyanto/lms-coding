@@ -264,6 +264,10 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         <Link href="/teacher/analytics" className="text-blue-700 underline">
           Analitik kelas
         </Link>
+        {" · "}
+        <Link href="/teacher/certificates" className="text-blue-700 underline">
+          Sertifikat &amp; anchoring
+        </Link>
       </p>
     </main>
   );

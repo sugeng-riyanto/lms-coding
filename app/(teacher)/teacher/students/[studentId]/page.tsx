@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { IssueCertificateButton } from "./issue-button";
 import { ReissueCertificateButton } from "./reissue-button";
+import { AnchorStatusChip } from "@/components/anchor-status";
 
 export const dynamic = "force-dynamic";
 
@@ -75,7 +76,9 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
   }
   const { data: certs } = await supabase
     .from("certificates")
-    .select("id,serial_no,status,issued_at,enrollment_id,level_id")
+    .select(
+      "id,serial_no,status,issued_at,enrollment_id,level_id,chain_anchors(status,transaction_ref,network)",
+    )
     .in(
       "enrollment_id",
       enrs.map((e) => e.id),
@@ -89,6 +92,11 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
           issued_at: string;
           enrollment_id: string;
           level_id: string;
+          chain_anchors: {
+            status: string | null;
+            transaction_ref: string | null;
+            network: string | null;
+          } | null;
         }[]
       | null) ?? [];
 
@@ -231,19 +239,21 @@ export default async function StudentDetailPage({
                 key={c.serial_no}
                 className="flex flex-wrap items-center justify-between gap-2 rounded border px-3 py-2"
               >
-                <span>
-                  {c.serial_no} ·{" "}
+                <span className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono">{c.serial_no}</span>
                   {c.status === "active" ? (
                     <span className="font-semibold text-green-800">active</span>
                   ) : (
                     <span className="font-semibold text-red-700">revoked</span>
                   )}
                   {replaced && (
-                    <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
-                      diganti
-                    </span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">diganti</span>
                   )}{" "}
                   · {c.issued_at}
+                  <AnchorStatusChip
+                    status={c.chain_anchors?.status ?? null}
+                    reference={c.chain_anchors?.transaction_ref}
+                  />
                 </span>
                 {c.status === "active" && (
                   <ReissueCertificateButton certificateId={c.id} serialNo={c.serial_no} />

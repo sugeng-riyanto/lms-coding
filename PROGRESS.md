@@ -629,3 +629,34 @@ membership→service→batch + gerbang + scope nested).
 format 0 · lint 0 · typecheck 0 · test **337/337 +1 skip** (+13) · `db:typecheck` 0 (38 tables)
 · **live-denial 91/91** (000018 apply bersih) · build 0. Migration 000018 belum ter-push
 ke hosted (outage; stack pending 000012–000018 di .freebuff/run.md).
+
+## Catatan sesi — Anchoring UI guru (ADR-018): status per sertifikat + trigger anchor batch
+
+**`/teacher/certificates` (baru)** — daftar sertifikat org guru (aggregasi lintas cohort
+yang dia ajar; RLS certs_teacher_all + filter nested `enrollments.cohort_id` defense-in-depth),
+per baris: serial, nama murid (via enrollments→profiles), status, tanggal, dan **chip status
+anchor**. Header section "Anchoring blockchain (opsional)": saat flag off tampil catatan jelas
+(`BLOCKCHAIN_ANCHOR_ENABLED=false` + rujukan ADR-018); saat on → `AnchorBatchButton`.
+
+**`components/anchor-status.tsx` (baru)** — chip aksesibel `tidak di-anchor / anchor pending /
+✓ anchor final / anchor gagal` (teks selalu ada; warna hanya sekunder; title memuat tx
+reference). Hanya state final yang menyiratkan verifikasi; pending tidak pernah diklaim.
+
+**`AnchorBatchButton` (client)** — memanggil `anchorCertificateBatch()`; hasil sukses
+(anchored count + Merkle root pendek + status + tx) atau pesan terpetakan
+(`BLOCKCHAIN_DISABLED`/`_PROVIDER_PENDING`/`ANCHOR_FAILED`/`ANCHOR_EMPTY`); `role="status"`;
+kembali null saat fitur nonaktif.
+
+**Perluasan**: chip anchor di halaman murid (`/teacher/students/[id]` — select sertifikat kini
+meng-embed `chain_anchors(status,transaction_ref,network)`) dan tautan "Sertifikat & anchoring"
+di dashboard guru.
+
+**Tests (+6)** — `tests/integration/teacher-certificates.test.ts` statis: route force-dynamic +
+select embed + scope cohort; gerbang flag di halaman; button client memanggil action + tanpa
+klaim "blockchain verified"; chip membedakan 4 state; halaman murid menampilkan chip; link
+dashboard.
+
+## Bukti gates (anchoring UI guru)
+format 0 · lint 0 · typecheck 0 · test **343/343 +1 skip** (+6) · build 0. Tanpa migration
+baru (status anchor dari 000017; batch org dari 000018) → db:typecheck/live-denial tidak
+berubah (91/91). Verifikasi visual di preview menunggu backend hidup.
