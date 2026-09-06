@@ -67,6 +67,12 @@ export const activityTypeSchema = z.enum([
   "quiz",
   "assignment_upload",
   "roblox_challenge",
+  // Jenis konten LMS coding (migration 000014): kode + media ter-embed.
+  "code_board",
+  "embed_youtube",
+  "embed_pdf",
+  "embed_audio",
+  "embed_file",
 ]);
 
 export const createActivitySchema = z.object({

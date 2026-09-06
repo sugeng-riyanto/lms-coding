@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { recordLearningEvent, startAttempt } from "@/features/actions";
 import { makeClientEventId } from "@/lib/sync-queue";
 import { UploadBox } from "@/components/upload-box";
+import { CodeBlock } from "@/components/code-block";
+import { EmbedAudio, EmbedFile, EmbedPdf, EmbedYoutube } from "@/components/media-embed";
 import { useEngagementHeartbeat, useOfflineFlush } from "./use-sync";
 import { ReflectionBox } from "./reflection-box";
 import type { ActivityData } from "./page";
@@ -117,6 +119,70 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
         ) : (
           <p>Belum ada file.</p>
         )}
+        {completeBtn}
+      </div>
+    );
+  }
+  // ---- LMS coding: blok kode + media ter-embed (migration 000014) ----
+  if (activity.type === "code_board") {
+    const code = typeof c["code"] === "string" ? c["code"] : "";
+    const language = typeof c["language"] === "string" ? c["language"] : "";
+    const transcript = typeof c["transcript"] === "string" ? c["transcript"] : "";
+    return (
+      <div className="mt-4">
+        {code ? (
+          <CodeBlock code={code} language={language} />
+        ) : (
+          <p className="text-sm text-slate-500">Kode belum diisi oleh pengajar.</p>
+        )}
+        {transcript ? (
+          <details className="mt-3 rounded-lg border border-slate-200 p-3 dark:border-slate-600">
+            <summary className="cursor-pointer font-semibold">Penjelasan (transkrip)</summary>
+            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
+              {transcript}
+            </p>
+          </details>
+        ) : null}
+        {completeBtn}
+      </div>
+    );
+  }
+  if (activity.type === "embed_youtube") {
+    const url = typeof c["url"] === "string" ? c["url"] : "";
+    const title = typeof c["title"] === "string" ? c["title"] : "";
+    return (
+      <div className="mt-4">
+        <EmbedYoutube url={url} title={title} />
+        {completeBtn}
+      </div>
+    );
+  }
+  if (activity.type === "embed_pdf") {
+    const url = typeof c["url"] === "string" ? c["url"] : "";
+    const title = typeof c["title"] === "string" ? c["title"] : "";
+    return (
+      <div className="mt-4">
+        <EmbedPdf url={url} title={title} />
+        {completeBtn}
+      </div>
+    );
+  }
+  if (activity.type === "embed_audio") {
+    const url = typeof c["url"] === "string" ? c["url"] : "";
+    const transcript = typeof c["transcript"] === "string" ? c["transcript"] : "";
+    return (
+      <div className="mt-4">
+        <EmbedAudio url={url} transcript={transcript} />
+        {completeBtn}
+      </div>
+    );
+  }
+  if (activity.type === "embed_file") {
+    const url = typeof c["url"] === "string" ? c["url"] : "";
+    const title = typeof c["title"] === "string" ? c["title"] : "";
+    return (
+      <div className="mt-4">
+        <EmbedFile url={url} title={title} />
         {completeBtn}
       </div>
     );

@@ -34,7 +34,30 @@ const ACTIVITY_TYPES = [
   "quiz",
   "assignment_upload",
   "roblox_challenge",
+  // LMS coding: blok kode + media ter-embed (migration 000014).
+  "code_board",
+  "embed_youtube",
+  "embed_pdf",
+  "embed_audio",
+  "embed_file",
 ] as const;
+
+/** Petunjuk isian JSON per tipe aktivitas (dokumentasi ringkas di UI authoring). */
+const CONTENT_HINTS: Record<string, string> = {
+  article: '{"body": "Teks materi (plain text, line break dihormati)"}',
+  video_link: '{"url": "https://…", "transcript": "Transkrip aksesibel"}',
+  resource: '{"url": "https://…"}',
+  reflection: "{}",
+  quiz: "{}",
+  assignment_upload: "{}",
+  roblox_challenge: '{"placeId": "…", "instruction": "…"}',
+  code_board:
+    '{"code": "print(\'Halo dunia\')", "language": "python", "transcript": "Penjelasan alternatif"}',
+  embed_youtube: '{"url": "https://www.youtube.com/watch?v=ID"}',
+  embed_pdf: '{"url": "https://…/materi.pdf", "title": "Opsional"}',
+  embed_audio: '{"url": "https://…/audio.mp3", "transcript": "Transkrip"}',
+  embed_file: '{"url": "https://…/berkas.zip", "title": "Nama berkas"}',
+};
 
 export function LevelManager({
   levelId,
@@ -276,15 +299,17 @@ export function LevelManager({
             className="mt-1 w-full rounded-lg border px-3 py-2"
           />
           <label htmlFor="a-content" className="mt-2 block text-sm font-semibold">
-            Konten JSON (body/url/transcript/placeId/instruction/expectedEvidence)
+            Konten JSON
           </label>
           <textarea
             id="a-content"
             rows={2}
             value={actContent}
             onChange={(e) => setActContent(e.target.value)}
+            placeholder={CONTENT_HINTS[actType] ?? "{}"}
             className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs"
           />
+          <p className="mt-1 text-xs text-slate-500">Contoh: {CONTENT_HINTS[actType] ?? "{}"}</p>
           <button
             disabled={busy}
             className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"

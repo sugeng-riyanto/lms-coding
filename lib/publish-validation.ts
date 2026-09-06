@@ -23,7 +23,18 @@ export interface DraftActivity {
   id: string;
   position: number;
   type:
-    "article" | "video_link" | "resource" | "reflection" | "quiz" | "assignment_upload" | "roblox_challenge";
+    | "article"
+    | "video_link"
+    | "resource"
+    | "reflection"
+    | "quiz"
+    | "assignment_upload"
+    | "roblox_challenge"
+    | "code_board"
+    | "embed_youtube"
+    | "embed_pdf"
+    | "embed_audio"
+    | "embed_file";
   title: string;
   /** quiz: total poin + apakah setiap butir punya kunci jawaban */
   points?: number;

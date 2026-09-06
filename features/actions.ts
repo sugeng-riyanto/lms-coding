@@ -190,7 +190,13 @@ export async function publishCourseVersion(input: unknown) {
             a.type === "resource" ||
             a.type === "reflection" ||
             a.type === "assignment_upload" ||
-            a.type === "roblox_challenge"
+            a.type === "roblox_challenge" ||
+            // LMS coding: konten kode & media ter-embed (tanpa gate tambahan).
+            a.type === "code_board" ||
+            a.type === "embed_youtube" ||
+            a.type === "embed_pdf" ||
+            a.type === "embed_audio" ||
+            a.type === "embed_file"
           ) {
             activities.push({ id: a.id, position: a.position, type: a.type, title: a.title });
           }
