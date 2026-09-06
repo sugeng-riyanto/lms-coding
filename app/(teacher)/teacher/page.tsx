@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { summarizeCohort, type StudentRow } from "@/lib/analytics";
 import { detectRisk } from "@/lib/progress";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { AlertControls } from "./alert-controls";
 
 export const dynamic = "force-dynamic";
@@ -164,7 +165,10 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
 
   return (
     <main id="main" className="mx-auto max-w-5xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Dashboard kelas</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold">Dasbor Kelas</h1>
+        <ThemeToggle />
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
         {data.cohorts.map((c) => (
           <Link

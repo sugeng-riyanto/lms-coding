@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -30,9 +31,12 @@ export default function LoginPage() {
   }
 
   return (
-    <main id="main" className="mx-auto max-w-md px-4 py-16">
-      <h1 className="text-3xl font-bold">Masuk</h1>
-      <p className="mt-2 text-slate-600">Guru dan murid memakai akun sekolah. Session refresh otomatis.</p>
+    <main id="main" className="mx-auto max-w-md px-4 py-10">
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold">Masuk</h1>
+        <ThemeToggle />
+      </div>
+      <p className="mt-2 text-slate-600">Gunakan akun sekolah yang diberikan oleh institusi Anda.</p>
       <form onSubmit={onSubmit} className="mt-6 space-y-4" aria-label="Form login">
         <div>
           <label htmlFor="email" className="font-semibold">

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { formatJakarta } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -113,11 +114,16 @@ export default async function GuardianPage() {
 
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-      <p className="text-sm font-semibold text-blue-700">Halo, Wali 👋</p>
-      <h1 className="mt-1 text-3xl font-bold">Ringkasan anak</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Ringkasan hanya untuk anak yang tertaut ke Anda melalui <em>guardian link</em> aktif, dan hanya berisi
-        data yang diizinkan RLS (profil, enrollment, progress — bukan jawaban/nilai detail).
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-blue-700">Portal Orang Tua / Wali</p>
+          <h1 className="mt-1 text-3xl font-bold">Ringkasan Perkembangan Anak</h1>
+        </div>
+        <ThemeToggle />
+      </div>
+      <p className="mt-3 text-sm text-slate-600">
+        Ringkasan hanya menampilkan anak yang tertaut melalui <em>guardian link</em> aktif dan data yang
+        diizinkan kebijakan akses (profil, pendaftaran, progres — bukan jawaban atau nilai terperinci).
       </p>
 
       {children.length === 0 ? (

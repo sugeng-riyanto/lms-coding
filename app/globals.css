@@ -1,7 +1,22 @@
 @import "tailwindcss";
 
+/* Dark mode via class `dark` di <html> (toggle + prefers-color-scheme saat awal). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+html {
+  background-color: #ffffff;
+}
+
+html.dark {
+  background-color: #0b1220;
 }
 
 body {
@@ -11,6 +26,127 @@ body {
     "Segoe UI",
     Roboto,
     sans-serif;
+}
+
+/* ============ Dark mode: peta palet netral ke setara gelap ============
+ * Aplikasi memakai utility Tailwind terang (bg-white/slate-*, text-slate-*,
+ * border-slate-*). Override ter-scope `.dark` (2 kelas > 1 kelas) mengganti
+ * warna netral secara konsisten di seluruh halaman tanpa menyentuh tiap file.
+ * Aksen (biru, status semantik terang seperti emerald/amber/red-600/700) dan
+ * tombol solid tetap; badge berpasangan 100/800-900 di-flip agar terbaca.
+ */
+
+/* Permukaan */
+.dark .bg-white {
+  background-color: #111a2e;
+}
+.dark .bg-slate-50 {
+  background-color: #0b1220;
+}
+.dark .bg-slate-100 {
+  background-color: #1e293b;
+}
+.dark .bg-slate-200 {
+  background-color: #334155;
+}
+.dark .hover\:bg-slate-50:hover {
+  background-color: #1e293b;
+}
+.dark .hover\:bg-slate-100:hover {
+  background-color: #334155;
+}
+
+/* Teks netral */
+.dark .text-slate-300 {
+  color: #475569;
+}
+.dark .text-slate-400 {
+  color: #64748b;
+}
+.dark .text-slate-500 {
+  color: #94a3b8;
+}
+.dark .text-slate-600 {
+  color: #cbd5e1;
+}
+.dark .text-slate-700 {
+  color: #e2e8f0;
+}
+.dark .text-slate-800 {
+  color: #f1f5f9;
+}
+.dark .text-slate-900 {
+  color: #f8fafc;
+}
+
+/* Batas & pemisah */
+.dark .border-slate-100 {
+  border-color: #1e293b;
+}
+.dark .border-slate-200 {
+  border-color: #334155;
+}
+.dark .border-slate-300 {
+  border-color: #475569;
+}
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: #334155;
+}
+
+/* Input & area teks */
+.dark input,
+.dark select,
+.dark textarea {
+  background-color: #0f172a;
+  border-color: #334155;
+  color: #f1f5f9;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #64748b;
+}
+
+/* Badge semantik berpasangan 100↔900 di-flip agar kontras pada latar gelap */
+.dark .bg-emerald-100 {
+  background-color: #022c22;
+}
+.dark .text-emerald-900 {
+  color: #a7f3d0;
+}
+.dark .bg-amber-100 {
+  background-color: #2a1a03;
+}
+.dark .text-amber-900 {
+  color: #fde68a;
+}
+.dark .bg-red-100 {
+  background-color: #2c0707;
+}
+.dark .text-red-900 {
+  color: #fecaca;
+}
+.dark .bg-blue-100 {
+  background-color: #0c1a33;
+}
+.dark .text-blue-900 {
+  color: #bfdbfe;
+}
+.dark .bg-sky-100 {
+  background-color: #082f3c;
+}
+.dark .text-sky-900 {
+  color: #bae6fd;
+}
+.dark .bg-rose-100 {
+  background-color: #340b1c;
+}
+.dark .text-rose-900 {
+  color: #fecdd3;
+}
+
+/* Tabel zebra ringan */
+.dark .odd\:bg-white:nth-child(odd) {
+  background-color: #111a2e;
 }
 
 :focus-visible {

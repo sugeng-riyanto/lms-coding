@@ -3,14 +3,22 @@ import "./globals.css";
 import { isDemoBackend } from "@/lib/supabase/demo";
 
 export const metadata: Metadata = {
-  title: "Autonomous Learning LMS",
-  description: "LMS personal: jalur belajar mandiri, mastery, kuis, dan sertifikat terverifikasi.",
+  title: {
+    default: "Coding School LMS",
+    template: "%s · Coding School LMS",
+  },
+  description:
+    "Platform pembelajaran coding sekolah: jalur belajar terstruktur, coding board, materi ter-embed, kuis, penilaian, dan sertifikat terverifikasi.",
 };
+
+/** Inisialisasi tema tanpa FOUC: localStorage dulu, fallback preferensi sistem. */
+const THEME_INIT = `(function(){try{var t=localStorage.getItem("lms-theme");if(t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="id">
+    <html lang="id" suppressHydrationWarning>
       <body className="min-h-screen bg-white text-slate-900 antialiased">
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         {isDemoBackend() && (
           <p
             role="status"
