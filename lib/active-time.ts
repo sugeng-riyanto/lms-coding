@@ -47,12 +47,16 @@ export function nextHeartbeatAllowed(
   return nowMs - lastSentAtMs >= minIntervalMs;
 }
 
-/** Validasi metadata draft_saved: hanya panjang teks (minimisasi data). */
+/**
+ * Validasi metadata draft_saved: hanya panjang teks (minimisasi data).
+ * Kunci `chars` dipakai ReflectionBox; lesson player lama mengirim `length` —
+ * dua-duanya diterima agar tidak ada produsen draft yang patah.
+ */
 export function validateDraftMetadata(
   metadata: Record<string, unknown>,
 ): { ok: true; chars: number } | { ok: false; reason: string } {
-  const chars = metadata.chars;
-  const n = typeof chars === "number" ? chars : Number(chars);
+  const raw = metadata.chars ?? metadata.length;
+  const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n) || n < 0) return { ok: false, reason: "CHARS_INVALID" };
   if (n > MAX_DRAFT_CHARS) return { ok: false, reason: "CHARS_TOO_LONG" };
   return { ok: true, chars: Math.floor(n) };

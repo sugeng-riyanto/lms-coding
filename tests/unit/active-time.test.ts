@@ -56,14 +56,22 @@ describe("nextHeartbeatAllowed", () => {
 });
 
 describe("validateDraftMetadata", () => {
-  it("terima panjang draf normal", () => {
+  it("terima panjang draf normal (chars)", () => {
     expect(validateDraftMetadata({ chars: 120 })).toEqual({ ok: true, chars: 120 });
+  });
+  it("lesson player lama mengirim length — tetap diterima", () => {
+    expect(validateDraftMetadata({ length: 40 })).toEqual({ ok: true, chars: 40 });
+  });
+  it("chars menang bila keduanya ada", () => {
+    expect(validateDraftMetadata({ chars: 10, length: 9999 })).toEqual({ ok: true, chars: 10 });
   });
   it("tolak panjang melebihi MAX_DRAFT_CHARS", () => {
     expect(validateDraftMetadata({ chars: MAX_DRAFT_CHARS + 1 }).ok).toBe(false);
+    expect(validateDraftMetadata({ length: MAX_DRAFT_CHARS + 1 }).ok).toBe(false);
   });
-  it("tolak negatif / non-finite", () => {
+  it("tolak negatif / non-finite / tanpa kunci", () => {
     expect(validateDraftMetadata({ chars: -1 }).ok).toBe(false);
     expect(validateDraftMetadata({ chars: Number.NaN }).ok).toBe(false);
+    expect(validateDraftMetadata({}).ok).toBe(false);
   });
 });
