@@ -74,6 +74,8 @@ import {
   type BulkActivityType,
 } from "@/lib/bulk-import";
 import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
+import { ANCHOR_BATCH_LIMIT, isAnchorEligible, runAnchorBatch, type AnchorCandidate } from "@/lib/anchor-job";
+import { getChainAdapter, isChainEnabled, NoopChainAdapter } from "@/lib/chain";
 
 // ---------- Course authoring: create draft ----------
 export async function createCourse(input: unknown) {
@@ -1027,6 +1029,96 @@ export async function revokeCertificate(input: unknown) {
   });
   if (error) return { ok: false as const, error: "REVOKE_FAILED" };
   return { ok: true as const };
+}
+
+// ---------- Batch anchoring (ADR-018; per-org, service client) ----------
+// Ops job: kumpulkan payload_hash sertifikat ACTIVE org ini yang belum
+// ter-anchor → satu Merkle root → anchor via adapter → simpan chain_anchors +
+// tautkan. Tanpa env/provider terkonfigurasi → tolak (tidak mengarang
+// transaksi). Scheduler dapat memanggil action ini secara berkala.
+export async function anchorCertificateBatch() {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  const orgId = (mem as { organization_id: string } | null)?.organization_id;
+  if (!orgId) return { ok: false as const, error: "FORBIDDEN" };
+
+  // Gerbang ADR-018: flag OFF → disabled; provider nyata/belum dipilih → pending.
+  if (!isChainEnabled()) return { ok: false as const, error: "BLOCKCHAIN_DISABLED" };
+  const adapter = getChainAdapter();
+  if (adapter instanceof NoopChainAdapter) {
+    return { ok: false as const, error: "BLOCKCHAIN_PROVIDER_PENDING" };
+  }
+  const env = getServerEnv();
+  const provider = (env.BLOCKCHAIN_PROVIDER ?? "").trim() || "mock";
+  const network = (env.BLOCKCHAIN_NETWORK ?? "").trim() || "mock";
+
+  // Jalur privileged (service): chain_anchors & link sertifikat TANPA policy
+  // authenticated — hanya setelah validasi caller (guru teacher aktif org).
+  const svc = createServiceClient();
+  const { data: certRows } = await svc
+    .from("certificates")
+    .select("id,status,chain_anchor_id,payload_hash")
+    .eq("status", "active")
+    .is("chain_anchor_id", null)
+    .eq("enrollments.courses.organization_id", orgId)
+    .limit(ANCHOR_BATCH_LIMIT);
+  const certs =
+    (certRows as
+      { id: string; status: string; chain_anchor_id: string | null; payload_hash: string | null }[] | null) ??
+    [];
+
+  const outcome = await runAnchorBatch({
+    findCandidates: async (): Promise<AnchorCandidate[]> =>
+      certs
+        .filter(isAnchorEligible)
+        .map((c) => ({ certificateId: c.id, payloadHash: c.payload_hash as string })),
+    findAnchorByRoot: async (root) => {
+      const { data } = await svc
+        .from("chain_anchors")
+        .select("id,status,transaction_ref")
+        .eq("merkle_root", root)
+        .eq("organization_id", orgId)
+        .maybeSingle();
+      return (data as { id: string; status: string; transaction_ref: string | null } | null) ?? null;
+    },
+    insertAnchor: async (row) => {
+      const { data } = await svc.from("chain_anchors").insert(row).select("id").single();
+      if (!data) throw new Error("ANCHOR_INSERT_FAILED");
+      return (data as { id: string }).id;
+    },
+    linkCertificates: async (anchorId, certificateIds) => {
+      await svc.from("certificates").update({ chain_anchor_id: anchorId }).in("id", certificateIds);
+    },
+    adapter,
+    provider,
+    network,
+    organizationId: orgId,
+  });
+
+  if (outcome.ok) {
+    return {
+      ok: true as const,
+      anchored: outcome.anchored,
+      root: outcome.root,
+      reference: outcome.reference,
+      status: outcome.status,
+    };
+  }
+  if (outcome.reason === "no_candidates") {
+    return { ok: true as const, anchored: 0, root: null, reference: null, status: "none" as const };
+  }
+  if (outcome.reason === "empty_hashes") return { ok: false as const, error: "ANCHOR_EMPTY" };
+  return { ok: false as const, error: "ANCHOR_FAILED", root: outcome.root };
 }
 
 // ---------- Auth: logout (refresh session berhenti, cookie dibersihkan) ----------

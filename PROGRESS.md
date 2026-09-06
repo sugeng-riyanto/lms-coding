@@ -594,3 +594,38 @@ format 0 · lint 0 · typecheck 0 · test **324/324 +1 skip** (+15) · `db:typec
 (38 tables, 2 views — view baru lolos advisor) · **live-denial 91/91** (000017 apply
 bersih di harness) · build 0. Belum ter-push ke hosted (outage masih berlanjut;
 migration pending 000012–000017 tercatat di .freebuff/run.md).
+
+## Catatan sesi — Batch anchoring job slice (Prompt 09 lanjutan; ADR-018)
+
+**`lib/anchor-job.ts` (baru)** — job batch anchoring per-org:
+- `isAnchorEligible` (active + belum ter-anchor + punya payload_hash), `collectAnchorCandidates`
+  (urut deterministik + `ANCHOR_BATCH_LIMIT=200`), `runAnchorBatch(deps)` orkestrator murni
+  terhadap I/O: kandidat → **satu Merkle root** (lib/merkle.ts) → `adapter.anchor(root)` →
+  `insertAnchor` baris `chain_anchors` (provider/network/transaction_ref/merkle_root/status
+  pending|final) → `linkCertificates`. **Dedup crash-window**: root yang sama sudah ada →
+  link ke baris lama, TANPA anchor ulang. Hanya hash/root + tx reference (tanpa PII).
+  Anchor gagal/failed → tanpa insert/link (run berikutnya retry).
+
+**Migration `…000018`** — `chain_anchors.organization_id` (nullable, FK org) + index:
+anchor di-scope per-org sehingga guru org tidak bisa menyentuh/melihat sertifikat org lain.
+
+**Action `anchorCertificateBatch()`** (features/actions.ts) — jalur ops:
+auth (claims) → membership guru teacher aktif org (`FORBIDDEN`) → gerbang ADR-018 fail-closed
+(`BLOCKCHAIN_DISABLED` saat flag off; `BLOCKCHAIN_PROVIDER_PENDING` saat provider nyata/
+belum dipilih → NoopChainAdapter → tolak, tanpa transaksi karangan) → service client
+(jobs/chain_anchors memang service-only) → batch sertifikat org caller:
+`status=active + chain_anchor_id is null + enrollments.courses.organization_id=org`
+(nested filter, server-side, tanpa cross-org) → `runAnchorBatch` → hasil
+`{ok, anchored, root, reference, status}`; `no_candidates` = ok dengan anchored 0.
+Scheduler dapat memanggil action ini berkala.
+
+**Tests (+13)** — `tests/unit/anchor-job.test.ts` (10: eligible filter, collect deterministik/
+limit, happy path root+insert+link, no-candidates tanpa panggil adapter, anchor failed tanpa
+insert, crash-window dedup anchor sekali, batas batch) + `tests/integration/anchor-batch.test.ts`
+(3 statis: migration 000018 org+index, surface lib + tanpa PII, action authz
+membership→service→batch + gerbang + scope nested).
+
+## Bukti gates (batch anchor)
+format 0 · lint 0 · typecheck 0 · test **337/337 +1 skip** (+13) · `db:typecheck` 0 (38 tables)
+· **live-denial 91/91** (000018 apply bersih) · build 0. Migration 000018 belum ter-push
+ke hosted (outage; stack pending 000012–000018 di .freebuff/run.md).
