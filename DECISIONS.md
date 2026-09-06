@@ -63,6 +63,50 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
 - Decision: PDF dirender on-demand (pdfkit, A4 landscape) dengan permission check RLS (murid pemilik / guru cohort); revoked → 410. Persist ke private bucket + signed URL menjadi backlog terverifikasi-belakangan.
 - Consequences: tidak ada file PDF tersimpan; setiap unduhan melewati otorisasi — setara atau lebih ketat dari signed URL.
 
+## ADR-010 — Unit target mingguan: completions dulu, minutes tertunda
+
+- Status: accepted
+- Context: rencana `docs/plan-weekly-target-spaced-review.md` (D1) — LEARNING_ENGINE.md
+  menuntut target mingguan personal, tetapi `study_sessions` belum punya write
+  path (heartbeat + active-time clamping Prompt 04 belum diimplementasi;
+  `features/actions.ts` hanya menulis `learning_events`). Target berbasis menit
+  tidak bisa diukur jujur hari ini; completions (transisi `progress_snapshots` →
+  `completed`) sudah tersedia dan idempotent via `recomputeProgress`.
+- Decision: `weekly_plans.goal_unit` menyimpan kedua nilai
+  (`check (goal_unit in ('completions','minutes'))`) dengan **default
+  `'completions'`**; MVP menghitung progress dari jumlah completions per minggu
+  ISO. Nilai `'minutes'` tidak dipakai app sampai write path `study_sessions`
+  (heartbeat terbatas + clamp) hadir dan teruji.
+- Alternatives: (a) target menit lebih dulu — butuh write path sesi yang belum
+  ada; (b) tanpa kolom unit (tetap completions) — memaksa migration lagi saat
+  menit dibutuhkan; (c) mengekspos menit sekarang — angka tidak jujur.
+- Consequences: kebutuhan menit kelak hanya butuh perubahan app (recording
+  sesi + UI), bukan migration (CHECK sudah mengizinkan `'minutes'`); dokumen
+  dan UI tidak boleh menyebut target menit sebagai terukur sebelum write path
+  hadir.
+
+## ADR-011 — Scheduling review via hook aplikasi, bukan trigger DB
+
+- Status: accepted
+- Context: rencana `docs/plan-weekly-target-spaced-review.md` (D4) — review
+  pertama harus dibuat saat sebuah level selesai, dan `recomputeProgress`
+  bersifat idempotent (bisa dijalankan ulang). Migration manual (tanpa CLI)
+  diaplikasikan verbatim oleh runner live-denial, sehingga migration idealnya
+  seminimal mungkin dan bebas efek samping tersembunyi.
+- Decision: tidak ada trigger DB. Baris `weekly_plans` dibuat lazy
+  (get-or-create di server code); baris `review_items` pertama dijadwalkan oleh
+  **hook aplikasi** yang menyertai `recomputeProgress` (hanya bila belum ada
+  baris scheduled untuk `(enrollment, entity)`). Partial unique index
+  `review_items_one_active` tetap menjadi jaminan tingkat-DB terhadap duplikat.
+- Alternatives: (a) trigger `after insert/update` pada `progress_snapshots` —
+  menyembunyikan efek samping di migration dan menyulitkan audit/test;
+  (b) job berkala (cron/edge function) menyapu due items — menambah moving
+  part infra untuk antrian yang sebenarnya sinkron dengan event completion.
+- Consequences: kebenaran scheduling bergantung pada call-site aplikasi
+  (semua jalur yang menandai level completed harus lewat hook); trigger hanya
+  boleh diperkenalkan kembali via migration baru + test + live-denial, dan
+  index unik parsial tetap melindungi dari duplikat apa pun jalurnya.
+
 ## Template
 
 ```text

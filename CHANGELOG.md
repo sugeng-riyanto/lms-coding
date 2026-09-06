@@ -21,9 +21,9 @@ rerun) diakumulasi ke entri ini saat rilis aktual.
   on-demand, ADR-009) + UI reissue khusus (regenerate dengan alasan audit).
 - **Phase 7 — Hardening/deployment**: live Supabase advisor (`db lint`/advisor;
   alternatif tanpa CLI: perluas `scripts/db-advisor.mjs`), restore rehearsal
-  (latihan restore dari backup terverifikasi), uji 2 viewport responsif sebagai
-  bagian E2E browser (audit ad-hoc @360/768/1440 sudah lewat, perlu diformalkan
-  ke suite), dan perluasan cakupan E2E browser.
+  (latihan restore dari backup terverifikasi), dan wiring E2E ke CI. Sebagian
+  sudah tereksekusi: uji responsif @360/768/1440 diformalkan menjadi
+  `tests/e2e/responsive.spec.ts` (5 route publik × 3 viewport, 15 test).
 
 Exit criteria: seluruh gate hijau (`format:check`/`lint`/`typecheck`/`test`/
 `build`/`db:typecheck`/`e2e` + live-denial 38/38 di CI) dan tidak ada lagi

@@ -68,7 +68,7 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 - [x] Phase 4 Assessment — bank soal berversi + builder + limit/cooldown/timer server + sanitasi kunci + auto-grade server (service bypass) + release policy + grading queue + upload + revision audit. KURANG: AI draft feedback (butuh consent config).
 - [x] Phase 5 Analytics — live overview/matrix/detail + alerts persist + CSV export + reconciliation tests. Item analysis & misconception map: belum.
 - [x] Phase 6 Certificates — eligibility server + PDF A4 on-demand (ADR-009) + QR + revoke + chain OFF. KURANG: persist PDF ke bucket + UI reissue khusus.
-- [x] Phase 7 Hardening/deployment — hardening tests + runbooks + release checklist + CSP/headers/rate-limit/upload guard. KURANG: live advisor, restore rehearsal, uji 2 viewport, E2E browser.
+- [x] Phase 7 Hardening/deployment — hardening tests + runbooks + release checklist + CSP/headers/rate-limit/upload guard + uji viewport responsif diformalkan (`tests/e2e/responsive.spec.ts`, 15 test @360/768/1440 pada 5 route publik). KURANG: live advisor, restore rehearsal, wiring e2e ke CI (perluasan cakupan browser).
 
 ## Catatan sesi Prompt 01 (Phase 0)
 
@@ -98,7 +98,7 @@ Perubahan sesi ini:
 - Migration manual kini 9 file (000000–000008); db-advisor memindai semuanya.
 - Phase 1 exit criteria: TERPENUHI STATIS **dan LIVE** — denial 38/38 PASS pada Postgres 18 via `scripts/live-denial/` (shim Supabase + migration verbatim + seed + fixture; lihat `scripts/live-denial/README.md`). Supabase CLI/Docker tetap tidak ada → hanya lapisan HTTP (PostgREST/GoTrue) yang belum teruji.
 - Mode demo DEV-ONLY (preview tanpa Supabase): `lib/supabase/demo.ts` + `createClient()` demo-aware + guard demo identity + banner amber di root layout — halaman guarded (/learn, /teacher, /profile, cohorts, questions, dll) RENDER state kosong alih-alih error boundary saat `next dev` tanpa env. `createStrictClient` di server actions & 3 API handlers (export, pdf, public verifier) menjaga write/API tetap fail keras; NODE_ENV=production tidak pernah masuk mode demo (fail closed). File: `lib/supabase/demo.ts` (baru), `lib/supabase/server.ts`, `lib/auth/guards.ts`, `app/layout.tsx`, `features/actions.ts`, 3 route handlers, `.prettierignore` (+next-env.d.ts).
-- Responsive audit publik (/, /login, /health, /unauthorized, /verify) via Playwright chromium @360/768/1440px: 0 horizontal overflow di semua route & lebar; satu-satunya elemen ber-overflow internal adalah skip-link `sr-only` (by design). Screenshot: `.freebuff/responsive/*.png` (tool dir, tidak di-commit). CATATAN: `/verify` hanya teruji dalam state 404 (tanpa row demo + RLS anon Phase 6); state valid (dl flex justify-between) belum teruji @360px.
+- Responsive audit publik (/, /login, /health, /unauthorized, /verify) via Playwright chromium @360/768/1440px: 0 horizontal overflow di semua route & lebar; satu-satunya elemen ber-overflow internal adalah skip-link `sr-only` (by design). Screenshot: `.freebuff/responsive/*.png` (tool dir, tidak di-commit). CATATAN: `/verify` hanya teruji dalam state 404 (tanpa row demo + RLS anon Phase 6); state valid (dl flex justify-between) belum teruji @360px. UPDATE: audit diformalkan menjadi `tests/e2e/responsive.spec.ts` (di-commit, 5 route × 3 viewport): cek doc overflow, elemen melewati tepi kanan, container overflow-x meng-clip, viewport meta, dan non-vakum (konten di-skip bila HTTP non-200, mis. fallback 404 `/verify` di dev tanpa row — Next dev merender shell kosong). Verifikasi: e2e 18 passed / 1 skipped (15 baru), typecheck PASS.
 - Live-denial harness: `scripts/live-denial/` (00_shim, 05_grants, 10_fixture, 20_denial, run.sh, README) — tooling dev, dipakai manual; migration `20260906000008_rls_recursion_fix.sql` berisi perbaikan 2 bug nyata yang hanya muncul saat eksekusi sungguhan (lihat README): recursion cycle policy dan grant EXECUTE helper private ke authenticated.
 - CI kini menggates live-denial juga: job `live-denial` di `.github/workflows/ci.yml` (setelah `verify`, service container `postgres:18` di port 5432 + `postgresql-client` via apt, lalu `bash scripts/live-denial/run.sh` dengan env `PGHOST/PGPORT/PGUSER/PGPASSWORD` default). Divalidasi lokal: suite tetap 38/38 PASS dengan kontrak env yang sama.
 
@@ -114,6 +114,26 @@ Seluruh gate dijalankan ulang terhadap HEAD `17e2c26` (tree bersih + 2 file unco
 | `test` | 0 | PASS 113/113 (20 files) |
 | `build` | 0 | PASS (production build) |
 | `db:typecheck` | 0 | PASS (DB advisor: 34 tables, 1 view) |
-| `e2e` | 0 | PASS 3 passed / 1 skipped (login skip: tanpa Supabase live) |
+| `e2e` | 0 | PASS 18 passed / 1 skipped (login skip: tanpa Supabase live; +15 responsive layout spec) |
 
 Log per gate: `/tmp/gate-{format,lint,typecheck,test,build,db,e2e}.log` (tool dir, tidak di-commit).
+
+## Catatan sesi — MVP target mingguan & spaced review (slice 1 dari rencana docs/plan-weekly-target-spaced-review.md)
+
+Slice 1 (migration + fungsi murni + unit test) selesai; action/UI/seed/live-denial t09 menyusul:
+
+1. `supabase/migrations/20260906000009_learning_planning.sql` (baru) — tabel `weekly_plans` (target per enrollment per minggu ISO, `goal_unit completions|minutes`, goal 1–50, unik `(enrollment_id, week_start)`) dan `review_items` (antrian review `level`, ladder via `interval_idx`, status `scheduled→completed|dismissed`, partial unique index `review_items_one_active` anti-duplikat). RLS granular student select/insert/update (enrollment sendiri aktif) + teacher select (cohort via `private.teacher_cohort_ids()`), **tanpa policy delete** (no hard delete). Lookup satu arah ke enrollments (pola 000004 yang live-tested) — bebas siklus recursion (pelajaran 000008); guru read-only MVP.
+2. `lib/progress-planning.ts` (baru, fungsi murni) — `isoWeekStart`/`isSameIsoWeek` (minggu ISO dalam timezone org; utji lintas-tz UTC vs Asia/Jakarta), `weeklyRollup` (clamp pct/achieved), `firstReviewDue` (+interval pertama), `nextReviewAfter` (confidence ≥4 maju/cap, =3 ulang, ≤2 reset), `orderedReviewQueue` (overdue → hari ini → berikutnya, tie-break due_at→mastery→id). Helper tz: `zonedYmd`/`zonedToUtc` (Intl, koreksi offset iteratif). `DEFAULT_REVIEW_INTERVALS_DAYS=[1,3,7,14]`.
+3. `tests/unit/progress-planning.test.ts` (baru, 17 test) — ladder, reset/cap, rollup clamp, batas minggu lintas tz (Minggu 20:00Z = Senin WIB), batas "hari ini" (00:00 besok WIB), imutabilitas.
+4. Keputusan kecil vs rencana: policy memakai subquery langsung ke `enrollments` (bukan helper baru) karena satu arah & bebas recursion — konsisten dengan `progress_*` 000004 yang live-tested; tidak menambah fungsi private baru.
+
+Gates slice: unit 17/17, **test 130/130 (21 files, +17)** , typecheck PASS, lint PASS, format:check PASS, `db:typecheck` PASS (advisor kini 36 tables), **live-denial 38/38 PASS dengan migration 000009 diaplikasikan verbatim di atas 000000–000008** (grant wildcard 05_grants menjangkau tabel baru). Belum: build tidak disentuh (lib belum diimpor route mana pun).
+
+## Catatan sesi — Item analysis & misconception map (slice metrik, rencana docs/plan-item-analysis-misconception-map.md)
+
+Slice fungsi murni + unit test selesai (tanpa migration/policy baru — baca lintas guru sudah ada via `responses_owner_select`/`attempts_teacher_select`):
+
+1. `lib/analytics-item.ts` (baru) — `ITEM_METRIC_DEFINITIONS_VERSION="2026-09-06/v1"`, `ATTEMPT_DRAFT_STATUSES` (not_started/in_progress difilter DI DALAM fungsi agar penyebut metrik konsisten), `isCorrectResponse` (exact-match pilihan vs kunci; subset multiple_choice salah — konsisten `autoGrade`), `itemStatistics` (per soal: n, correct, difficulty p, omit rate, discrimination upper–lower tercile dengan `null` saat kelompok < minGroupN default 3), `distractorMap` (cluster opsi salah terpilih: picked, shareOfIncorrect, studentIds/Names; opsi benar & jawaban kosong tidak masuk). Output deterministik (urutan questionId; tie studentId/attemptId/optionId). Keputusan kecil vs rencana: kolom `autoScore`/`questionVersionId` dihapus dari interface — fungsi menghitung dari isi jawaban (correctOptionIds vs chosenOptionIds), bukan skor; pemfilteran draft di dalam fungsi demi konsistensi denominator.
+2. `tests/unit/analytics-item.test.ts` (baru, 13 test) — eligibilitas draft, exact-match termasuk subset MC, difficulty/omit, discrimination positif & null (cohort kecil), cluster distractor (single_choice/true_false + MC, kosong dikecualikan), determinisme, reconciliation hitung-manual dari baris raw.
+
+Gates slice: unit 13/13, **test 143/143 (22 files, +13)** , typecheck PASS (0 error), lint PASS, prettier PASS. Belum: halaman `/teacher/analytics` + link dashboard, export `kind=item-analysis` (D2), t10_* live-denial opsional — sesuai rencana.
