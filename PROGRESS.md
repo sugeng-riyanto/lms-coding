@@ -398,3 +398,44 @@ Mengedit rubrik yang SUDAH terpasang kini cukup menaikkan versi (tidak wajib mem
 - **t14 live-denial +7 (79 total)**: bump v1→v2 (return 2), kriteria lama dipertahankan + baru ter-version (2/3), finalize menuntut skor versi aktif (DRAFT_INCOMPLETE pada response yang sudah final v1), skor v2 = 90/100, guru org-2 FORBIDDEN, murid FORBIDDEN, kriteria kosong INVALID_CRITERIA.
 
 Gates: format/lint/typecheck 0 · test **228/228** · db:typecheck 0 (38 tabel) · live-denial **79/79** (+7) · build 0. Migration 000015 belum di-push ke hosted (outage).
+
+## Catatan sesi — Bulk upload XLSX (murid & materi) + konektivitas + rencana offline bridge
+
+### Konektivitas Supabase (jawaban "apakah sudah terhubung?")
+Env `.env` MENUNJUK ke hosted (`jspmxdzgxevtfwvldwxy`) tetapi layanan hosted
+SEDANG DOWN (probe berulang: `/auth/v1/health` 504, PostgREST timeout 000).
+Login: teks "Demo lokal: gunakan user dari supabase/seed.sql" kini HANYA tampil
+di mode demo (`isDemoBackend()`); saat env hosted terpasang tampil "Terhubung
+ke server sekolah...". Rencana jembatan offline/poor-internet + sinkronisasi
+otomatis: `docs/plan-offline-local-bridge.md` (cache-baca IndexedDB, watchdog
+30s + auto-flush antrian idempoten, perluasan antrian tulis, opsi Supabase
+lokal) — prekondisi sebagian sudah ada (retry queue learning events).
+
+### Bulk upload murid (XLSX, oleh guru)
+- `lib/bulk-import.ts`: validator murni baris (kolom fleksibel Email/Nama,
+  normalisasi email, baris rusak per-baris) + unit test 7.
+- Action `bulkImportStudents` (FormData): teacher → cohort miliknya (RLS),
+  parse XLSX server-side (`xlsx`), resolusi email→user via service client
+  (auth.users), provisioning profil+membership = jalur privileged (memberships
+  TIDAK punya policy insert guru by design), keanggotaan cohort via RLS guru.
+  Hasil: {added, existing, notFound, errors}.
+- UI: kartu upload di `/teacher/cohorts` (pilih cohort + file + ringkasan).
+- Ekspor roster: route `/api/export/cohorts/[cohortId]` (CSV anti
+  formula-injection via lib/csv, guru own-cohort) + link per cohort.
+
+### Bulk upload materi (XLSX)
+- Action `bulkImportContent` (FormData): course owner + level milik kursus
+  (RLS), baris Module/Lesson/Objective/Activity Type/Activity Title/Content
+  JSON (tipe di-allowlist incl. jenis coding), posisi otomatis, masuk draf.
+  Hasil: {modules, lessons, activities, errors}.
+- UI: kartu upload di halaman level (`/teacher/courses/[id]/levels/[levelId]`).
+
+### RBAC / CRUD / approval / export
+Bulk paths menghormati RBAC eksisting: guru hanya cohort/course miliknya
+(action check + RLS), provisioning akun via service client (privileged, tanpa
+policy insert guru), export dibatasi teacher own-cohort. Approval (release
+nilai, issue/reissue sertifikat) & export data sudah ada; tidak ada perubahan
+kebijakan. Tidak ada migration baru — skema & RLS Supabase tidak berubah.
+
+Gates: format/lint/typecheck 0 · test **235/235** (+7) · db:typecheck 0 (38
+tabel) · live-denial **79/79** · build 0. Dep baru: `xlsx` (server-side).
