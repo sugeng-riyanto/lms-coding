@@ -82,7 +82,7 @@ if (problems.length > 0) {
   console.error("ENV FILE CHECK FAILED — perbaiki struktur file env (lihat panduan di header .env.example):");
   for (const p of problems) console.error(`  - ${p}`);
   console.error(
-    "Cek cepat: grep -c '^[A-Z]' <file> (harus 9 untuk .env) dan tidak ada duplikat via `sort | uniq -d`.",
+    "Cek cepat: jumlah key harus sama dengan .env.example dan tidak ada duplikat via `sort | uniq -d`.",
   );
   process.exit(1);
 }
