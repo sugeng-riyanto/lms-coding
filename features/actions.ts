@@ -6,6 +6,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
 import {
   addQuestionToAssessmentSchema,
+  alertIdSchema,
   archiveCourseSchema,
   createActivitySchema,
   createAssessmentSchema,
@@ -23,6 +24,7 @@ import {
   recomputeProgressSchema,
   releaseGradesSchema,
   reorderSiblingsSchema,
+  resolveAlertSchema,
   revokeCertificateSchema,
   saveResponseSchema,
   startAttemptSchema,
@@ -1137,6 +1139,41 @@ export async function releaseGrades(input: unknown) {
     .eq("status", "submitted");
   if (error) return { ok: false as const, error: "RELEASE_FAILED" };
   return { ok: true as const };
+}
+
+// ---------- Alerts: acknowledge / snooze / resolve (RLS cohort guru) ----------
+async function setAlertStatus(alertId: string, patch: Record<string, unknown>) {
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data, error } = await supabase
+    .from("alerts")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", alertId)
+    .select("id");
+  if (error || ((data as { id: string }[] | null) ?? []).length === 0)
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  return { ok: true as const };
+}
+
+export async function acknowledgeAlert(input: unknown) {
+  const parsed = alertIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  return setAlertStatus(parsed.data.alertId, { status: "acknowledged" });
+}
+
+export async function snoozeAlert(input: unknown) {
+  const parsed = alertIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  return setAlertStatus(parsed.data.alertId, {
+    status: "snoozed",
+    snoozed_until: new Date(Date.now() + 3 * 86400000).toISOString(),
+  });
+}
+
+export async function resolveAlert(input: unknown) {
+  const parsed = resolveAlertSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  return setAlertStatus(parsed.data.alertId, { status: "resolved", resolved_note: parsed.data.note });
 }
 
 // ---------- Attempt: hasil untuk murid (gate release policy) ----------

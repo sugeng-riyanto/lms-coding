@@ -120,6 +120,15 @@ export const releaseGradesSchema = z.object({
   assessmentId: uuidSchema,
 });
 
+export const alertIdSchema = z.object({
+  alertId: uuidSchema,
+});
+
+export const resolveAlertSchema = z.object({
+  alertId: uuidSchema,
+  note: z.string().max(2000).default(""),
+});
+
 export const enrollStudentSchema = z.object({
   courseId: uuidSchema,
   studentId: uuidSchema,
