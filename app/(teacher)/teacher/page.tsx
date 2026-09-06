@@ -260,6 +260,10 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         <Link href="/teacher/cohorts" className="text-blue-700 underline">
           Cohort & enrollment
         </Link>
+        {" · "}
+        <Link href="/teacher/analytics" className="text-blue-700 underline">
+          Analitik kelas
+        </Link>
       </p>
     </main>
   );

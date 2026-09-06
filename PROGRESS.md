@@ -511,3 +511,21 @@ mingguan bisa diukur dalam menit belajar aktif yang jujur.
 Gates: format 0 · lint 0 · typecheck 0 · test **271/271 +1 skip** (34 files;
 +23) · db:typecheck 0 (38 tabel — tanpa tabel baru) · live-denial **91/91**
 (+12) · build 0. Migration 000016 belum di-push ke hosted (outage).
+
+## Catatan sesi — UI Analitik guru (Phase 5): item analysis, misconception map, bottleneck, digest
+
+Menutup gap KURANG "Item analysis & misconception map UI" dan "learning-path bottleneck & teacher weekly action digest" (ANALYTICS.md insight guru).
+
+**`/teacher/analytics` (baru, server component force-dynamic di grup teacher yang di-guard):**
+- **Item analysis** dari `lib/analytics-item.ts` (itemStatistics + distractorMap): tabel n / p (kesulitan) / dilewati / diskriminasi; misconception map per distractor (opsi, berapa kali dipilih, share dari yang salah, nama murid — tanpa ranking publik).
+- **Hambatan jalur belajar** dari `bottleneckAnalysis` (lib/analytics-teacher.ts baru): dropoff = 1 − selesai/mulai per lesson, severity high/watch/insufficient/ok dengan teks (warna bukan satu-satunya pembeda), sort deterministik.
+- **Prioritas minggu ini** dari `buildTeacherDigest`: pending grading, alerts terbuka, murid tidak aktif (≥7 hari) → 3 kartu prioritas + alasan + tautan.
+- Footer definisi: versi metrik (ITEM/TEACHER_ANALYTICS_DEFINITIONS_VERSION), "diperbarui {waktu}", "ukuran sampel (n)".
+- Semua query **batch (.in)**, RLS via createClient (read-only, tanpa aksi tulis), filter cohort+assessment sebagai client component (AnalyticsFilters → router.push). Link "Analitik kelas" di dashboard guru.
+
+**Perbaikan dari lint/typecheck:** `Date.now()` di render → wrapper modul-scope `currentEpochMs()` (pola sama dengan getDashboard di learn/page.tsx, memenuhi react-hooks/purity); `openAlerts` dipetakan ke `DigestAlert.createdAt`; narrowing `selectedAssessment` via guard `params.assessmentId && …`.
+
+**Tests (+18):** unit `analytics-teacher.test.ts` (9: bottleneck dropoff/urut deterministik/distinct/minN, digest prioritas/≥5 alerts/resolved/bersih/deterministik) + integrasi statis (9: guard layout, versi metrik, read-only, batch, tabel ber-policy, UI metadata, filter, link dashboard).
+
+## Bukti gates (analytics UI)
+format 0 · lint 0 · typecheck 0 · test **289/289 +1 skip** (+18) · build 0. db:typecheck & live-denial tidak tersentuh (tanpa migration/DDL). 3 commit lokal di depan origin/main (a75cc94, 814fac5, dan commit ini).
