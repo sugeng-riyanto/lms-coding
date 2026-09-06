@@ -529,3 +529,25 @@ Menutup gap KURANG "Item analysis & misconception map UI" dan "learning-path bot
 
 ## Bukti gates (analytics UI)
 format 0 · lint 0 · typecheck 0 · test **289/289 +1 skip** (+18) · build 0. db:typecheck & live-denial tidak tersentuh (tanpa migration/DDL). 3 commit lokal di depan origin/main (a75cc94, 814fac5, dan commit ini).
+
+## Catatan sesi — Slice AI draft feedback (Phase 4 KURANG, ADR-014/015/017)
+
+Menutup sisa "KURANG: AI draft feedback (butuh consent config)" — migration 000011 + t11 sudah ada; slice app-layer kini lengkap.
+
+**`lib/ai-feedback.ts` (baru, server-only):**
+- `buildPrompt` + `extractAnswerText` (murni; AC-5 data minimization: tanpa identitas murid/nilai/data siswa lain; jawaban dipotong 4000 char, prompt 12.000).
+- `AiDraftProvider` + `createAiProvider()`: `mock` (deterministik ber-label, TANPA jaringan — default pengujian) / `http` (POST JSON ke `{base}/draft-feedback` dengan Bearer key, timeout 10s AbortController, error terswallow + log redact) / `null` saat unconfigured (ADR-017).
+
+**Env (semua server-only, masuk `.env.example` → daftar sah check-env otomatis):** `AI_FEEDBACK_ENABLED=false`, `AI_PROVIDER=`, `AI_PROVIDER_BASE_URL=`, `AI_PROVIDER_API_KEY=` — tanpa `NEXT_PUBLIC_AI_`; `lib/env.ts` +4 key opsional (file valid tanpa provider; fitur menolak runtime).
+
+**Aksi server (`features/actions.ts`, strict client, provider TIDAK pernah dipanggil dari browser):**
+- `requestAiDraft` — gerbang fail-closed berurutan: env → provider → consent org (rantai response→attempt→enrollment→cohort→course→org) → prompt → `upsert_ai_draft` (satu draft per response). Tanpa salah satu gerbang: `AI_DISABLED` / `AI_PROVIDER_UNCONFIGURED` / `AI_NO_CONSENT`, tanpa efek & tanpa jaringan (AC-1).
+- `approveAiDraft` — `apply_ai_feedback` RPC (persetujuan eksplisit guru: `feedback_json.ai_approved` merge + `grade_revisions` reason `ai_draft:approved` + draft approved; idempoten untuk status approved).
+- `rejectAiDraft` — status rejected (jejak keputusan, no hard delete; tolak draft yang sudah approved diblokir).
+
+**UI (grade queue `/teacher/grading`):** halaman server mengambil draft per response (batch `.in`, tabel teacher-only RLS) + `aiConfig` (env + consent org). Panel per item non-rubrik: tombol "Saran draf AI" (nonaktif+alasan bila env/consent belum — `role`/title aksesibel), panel **"DRAFT AI — perlu persetujuan guru"** (body + model + **Setujui & pakai** / **Tolak**), status approved/rejected ditampilkan dengan teks (bukan warna saja).
+
+**Tests (+20):** unit `ai-feedback.test.ts` (14: ekstraksi jawaban, prompt PII-strip/batas/orgName/kosong, mock deterministik + label, pilih provider mock/http/null, http POST+header+label, error non-OK dilempar) + integrasi statis +6 (env keys tanpa NEXT_PUBLIC_AI, ekspor lib + AbortController, urutan gerbang aksi env→provider→consent→draft, apply via RPC, UI label+tombol, tanpa import lib AI di client).
+
+## Bukti gates (slice AI)
+format 0 · lint 0 · typecheck 0 · test **309/309 +1 skip** (+20) · build 0 (check-env OK dengan 4 key AI baru). Tanpa migration baru → db:typecheck & live-denial tidak berubah (t11/000011 sudah membuktikan RLS+RPC). Catatan: commit ini lokal; 4 commit di depan origin/main (a75cc94, 814fac5, 53a93b4, dan ini). Verifikasi end-to-end state (c) — backend hidup + consent + mock — masih menunggu hosted pulih.

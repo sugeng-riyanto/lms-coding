@@ -215,6 +215,14 @@ export const gradeResponseSchema = z.object({
   feedback: z.string().max(5000).default(""),
 });
 
+export const requestAiDraftSchema = z.object({
+  responseId: uuidSchema,
+});
+
+export const aiDraftIdSchema = z.object({
+  draftId: uuidSchema,
+});
+
 export const createRubricSchema = z.object({
   questionVersionId: uuidSchema,
   title: z.string().min(3).max(200),

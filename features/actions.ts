@@ -3,6 +3,8 @@
 import { randomUUID } from "node:crypto";
 // Jalur WRITE: strict — env hilang → throw (tidak pernah sukses diam-diam di demo mode).
 import { createStrictClient as createClient } from "@/lib/supabase/server";
+import { getServerEnv } from "@/lib/env";
+import { createAiProvider, extractAnswerText, type AiDraftRequest } from "@/lib/ai-feedback";
 import { createServiceClient } from "@/lib/supabase/service";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
 import {
@@ -33,6 +35,8 @@ import {
   duplicateCourseSchema,
   enrollStudentSchema,
   gradeResponseSchema,
+  requestAiDraftSchema,
+  aiDraftIdSchema,
   issueCertificateSchema,
   publishQuestionVersionSchema,
   recordLearningEventSchema,
@@ -636,6 +640,137 @@ export async function gradeResponse(input: unknown) {
     p_feedback: parsed.data.feedback,
   });
   if (error) return { ok: false as const, error: "GRADE_FAILED" };
+  return { ok: true as const };
+}
+
+// ---------- AI draft feedback (ADR-014/015/017) ----------
+// Gerbang fitur: env AI_FEEDBACK_ENABLED=true + provider terkonfigurasi + org
+// consent. Tanpa salah satu → tolak tanpa efek & tanpa jaringan (AC-1).
+// Provider hanya dipanggil di server action; tidak ada fetch dari browser.
+export async function requestAiDraft(input: unknown) {
+  const parsed = requestAiDraftSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const env = getServerEnv();
+  if (!env.AI_FEEDBACK_ENABLED) return { ok: false as const, error: "AI_DISABLED" };
+  const provider = createAiProvider({
+    enabled: env.AI_FEEDBACK_ENABLED,
+    provider: env.AI_PROVIDER,
+    baseUrl: env.AI_PROVIDER_BASE_URL,
+    apiKey: env.AI_PROVIDER_API_KEY,
+  });
+  if (!provider) return { ok: false as const, error: "AI_PROVIDER_UNCONFIGURED" };
+
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Response + rantai org (RLS guru): response → attempt → enrollment → cohort → course → org.
+  const { data: resp } = await supabase
+    .from("responses")
+    .select("id,answer_json,question_version_id,attempts(enrollments(cohorts(courses(organization_id))))")
+    .eq("id", parsed.data.responseId)
+    .single();
+  const orgId = (
+    resp as {
+      id: string;
+      answer_json: unknown;
+      question_version_id: string;
+      attempts: {
+        enrollments: { cohorts: { courses: { organization_id: string } | null } | null } | null;
+      } | null;
+    } | null
+  )?.attempts?.enrollments?.cohorts?.courses?.organization_id;
+  if (!orgId) return { ok: false as const, error: "NOT_FOUND" };
+
+  // Consent per-org (ADR-014; default false = fail closed).
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("name,ai_feedback_consent")
+    .eq("id", orgId)
+    .single();
+  const orgRow = org as { name: string | null; ai_feedback_consent: boolean } | null;
+  if (!orgRow?.ai_feedback_consent) return { ok: false as const, error: "AI_NO_CONSENT" };
+
+  // Soal + jawaban → prompt (data minimization; identitas murid TIDAK ikut).
+  const { data: qv } = await supabase
+    .from("question_versions")
+    .select("question_id,questions(type,prompt_json)")
+    .eq("id", (resp as { question_version_id: string }).question_version_id)
+    .single();
+  const q = qv as {
+    question_id: string;
+    questions: { type: string; prompt_json: { text?: string } | null } | null;
+  } | null;
+  const answerText = extractAnswerText((resp as { answer_json: unknown }).answer_json);
+  const request: AiDraftRequest = {
+    qtype: q?.questions?.type ?? "unknown",
+    promptText: q?.questions?.prompt_json?.text ?? "",
+    answerText,
+    orgName: orgRow.name ?? undefined,
+  };
+
+  let result;
+  try {
+    result = await provider.generate(request);
+  } catch {
+    return { ok: false as const, error: "AI_PROVIDER_ERROR" };
+  }
+
+  const { data: draftId, error } = await supabase.rpc("upsert_ai_draft", {
+    p_response_id: parsed.data.responseId,
+    p_body: result.body,
+    p_model: result.model,
+  });
+  if (error) return { ok: false as const, error: "DRAFT_FAILED" };
+  return { ok: true as const, draftId: draftId as string };
+}
+
+// Approval eksplisit guru (ADR-015): apply_ai_feedback menulis feedback final
+// (penanda ai_approved, merge — tidak menimpa feedback manual) + grade_revisions
+// reason 'ai_draft:approved' + draft approved, satu transaksi di DB.
+export async function approveAiDraft(input: unknown) {
+  const parsed = aiDraftIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: draft } = await supabase
+    .from("ai_feedback_drafts")
+    .select("id,response_id,body,status")
+    .eq("id", parsed.data.draftId)
+    .single();
+  const d = draft as { id: string; response_id: string; body: string; status: string } | null;
+  if (!d) return { ok: false as const, error: "NOT_FOUND" };
+  if (d.status === "approved") return { ok: true as const }; // idempoten
+  const { error } = await supabase.rpc("apply_ai_feedback", {
+    p_response_id: d.response_id,
+    p_feedback: d.body,
+  });
+  if (error) return { ok: false as const, error: "APPROVE_FAILED" };
+  return { ok: true as const };
+}
+
+// Menolak draft: jejak keputusan tetap (status rejected; tanpa hard delete).
+export async function rejectAiDraft(input: unknown) {
+  const parsed = aiDraftIdSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: draft } = await supabase
+    .from("ai_feedback_drafts")
+    .select("id,status")
+    .eq("id", parsed.data.draftId)
+    .single();
+  const d = draft as { id: string; status: string } | null;
+  if (!d) return { ok: false as const, error: "NOT_FOUND" };
+  if (d.status === "approved") return { ok: false as const, error: "ALREADY_APPROVED" };
+  if (d.status === "rejected") return { ok: true as const }; // idempoten
+  const { error } = await supabase
+    .from("ai_feedback_drafts")
+    .update({ status: "rejected" })
+    .eq("id", parsed.data.draftId);
+  if (error) return { ok: false as const, error: "REJECT_FAILED" };
   return { ok: true as const };
 }
 

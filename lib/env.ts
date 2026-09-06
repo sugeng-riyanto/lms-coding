@@ -12,6 +12,15 @@ const serverEnvSchema = z.object({
     .transform((v) => v === "true"),
   BLOCKCHAIN_PROVIDER: z.string().optional(),
   BLOCKCHAIN_NETWORK: z.string().optional(),
+  AI_FEEDBACK_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  // Provider AI draft feedback (ADR-017): kosong = fitur menolak runtime
+  // AI_PROVIDER_UNCONFIGURED; file env tetap valid tanpa provider.
+  AI_PROVIDER: z.string().optional(),
+  AI_PROVIDER_BASE_URL: z.string().optional(),
+  AI_PROVIDER_API_KEY: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -29,6 +38,10 @@ export function getServerEnv(): ServerEnv {
     BLOCKCHAIN_ANCHOR_ENABLED: process.env.BLOCKCHAIN_ANCHOR_ENABLED,
     BLOCKCHAIN_PROVIDER: process.env.BLOCKCHAIN_PROVIDER,
     BLOCKCHAIN_NETWORK: process.env.BLOCKCHAIN_NETWORK,
+    AI_FEEDBACK_ENABLED: process.env.AI_FEEDBACK_ENABLED,
+    AI_PROVIDER: process.env.AI_PROVIDER,
+    AI_PROVIDER_BASE_URL: process.env.AI_PROVIDER_BASE_URL,
+    AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY,
   });
   if (!parsed.success) {
     throw new Error(

@@ -7,6 +7,10 @@ import { describe, expect, it } from "vitest";
  * diuji live di scripts/live-denial (grup t11_ dan p11_).
  */
 const migration = readFileSync("supabase/migrations/20260906000011_ai_feedback_consent.sql", "utf8");
+const envExample = readFileSync(".env.example", "utf8");
+const lib = readFileSync("lib/ai-feedback.ts", "utf8");
+const actions = readFileSync("features/actions.ts", "utf8");
+const queue = readFileSync("app/(teacher)/teacher/grading/grade-queue.tsx", "utf8");
 
 describe("migration 000011 — consent + draft AI", () => {
   it("consent per-org default false + timestamp", () => {
@@ -64,5 +68,61 @@ describe("migration 000011 — consent + draft AI", () => {
     expect(migration).toMatch(/insert into public\.grade_revisions/);
     expect(migration).toMatch(/auth\.uid\(\) is null then raise exception 'UNAUTHENTICATED'/);
     expect(migration).toMatch(/raise exception 'FORBIDDEN'/);
+  });
+});
+
+describe("slice AI — env, lib, actions, UI (AC-1/6/7/9)", () => {
+  it(".env.example memuat 4 key AI server-only, tanpa NEXT_PUBLIC_AI_", () => {
+    expect(envExample).toMatch(/AI_FEEDBACK_ENABLED=false/);
+    expect(envExample).toMatch(/^AI_PROVIDER=$/m);
+    expect(envExample).toMatch(/^AI_PROVIDER_BASE_URL=$/m);
+    expect(envExample).toMatch(/^AI_PROVIDER_API_KEY=$/m);
+    expect(envExample).not.toMatch(/NEXT_PUBLIC_AI_/);
+  });
+
+  it("lib/ai-feedback.ts: buildPrompt/extractAnswerText/provider mock+http/null + label", () => {
+    expect(lib).toMatch(/export interface AiDraftProvider/);
+    expect(lib).toMatch(/export function buildPrompt/);
+    expect(lib).toMatch(/export function extractAnswerText/);
+    expect(lib).toMatch(/export const AI_DRAFT_LABEL/);
+    expect(lib).toMatch(/export function createAiProvider/);
+    expect(lib).toMatch(/kind: "mock"/);
+    expect(lib).toMatch(/kind: "http"/);
+    expect(lib).toMatch(/return null;/); // unconfigured
+    expect(lib).toMatch(/AbortController/); // timeout 10s
+  });
+
+  it("actions: request/approve/reject + urutan consent→provider→draft; provider server-only", () => {
+    expect(actions).toMatch(/export async function requestAiDraft/);
+    expect(actions).toMatch(/export async function approveAiDraft/);
+    expect(actions).toMatch(/export async function rejectAiDraft/);
+    // Urutan gerbang: env → provider → consent → draft (fail closed).
+    const fn = actions.slice(actions.indexOf("export async function requestAiDraft"));
+    const gate = fn.indexOf("AI_FEEDBACK_ENABLED");
+    const provider = fn.indexOf("createAiProvider");
+    const consent = fn.indexOf("AI_NO_CONSENT");
+    const draft = fn.indexOf("upsert_ai_draft");
+    expect(gate).toBeGreaterThan(-1);
+    expect(provider).toBeGreaterThan(gate);
+    expect(consent).toBeGreaterThan(provider);
+    expect(draft).toBeGreaterThan(consent);
+    // Approval menulis feedback final via RPC (audit) — bukan body mentah.
+    expect(actions).toMatch(/apply_ai_feedback/);
+    expect(actions).toMatch(/ai_draft:approved/);
+    expect(actions).toMatch(/from "@\/lib\/ai-feedback"/);
+    expect(actions).toMatch(/getServerEnv\(\)/);
+  });
+
+  it("UI queue: tombol draft + panel label jelas + Setujui/Tolak; tanpa import lib AI di client", () => {
+    expect(queue).toMatch(/"use client"/);
+    expect(queue).toMatch(/Saran draf AI/);
+    expect(queue).toMatch(/DRAFT AI — perlu persetujuan guru/);
+    expect(queue).toMatch(/Setujui & pakai/);
+    expect(queue).toMatch(/Tolak/);
+    expect(queue).toMatch(/requestAiDraft/);
+    expect(queue).toMatch(/approveAiDraft/);
+    expect(queue).toMatch(/rejectAiDraft/);
+    // AC-6: provider lib TIDAK diimpor dari file client.
+    expect(queue).not.toMatch(/@\/lib\/ai-feedback/);
   });
 });

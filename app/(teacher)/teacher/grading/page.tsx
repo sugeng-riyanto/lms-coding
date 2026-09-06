@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getServerEnv } from "@/lib/env";
 import { GradeQueue } from "./grade-queue";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,12 @@ export interface QueueItem {
   manualScore: number | null;
   rubric: QueueRubric | null;
   revisions: { previous: number | null; new: number | null; reason: string; at: string }[];
+  aiDraft: { id: string; body: string; model: string; status: string } | null;
+}
+
+export interface AiConfig {
+  enabled: boolean;
+  consent: boolean;
 }
 
 /** Moderation queue: jawaban essay/file yang butuh nilai manual (cohort guru). */
@@ -57,6 +64,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
       | null) ?? []
   ).filter((a) => a.enrollments && cohortIds.includes(a.enrollments.cohort_id));
   const out: QueueItem[] = [];
+  const responseIds: string[] = [];
   for (const a of mine) {
     const { data: prof } = await supabase
       .from("profiles")
@@ -132,6 +140,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
           }),
         };
       }
+      responseIds.push(r.id);
       out.push({
         responseId: r.id,
         attemptId: a.id,
@@ -144,6 +153,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
         autoScore: r.auto_score,
         manualScore: r.manual_score,
         rubric,
+        aiDraft: null,
         revisions: (
           (revs as
             | {
@@ -162,6 +172,23 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
       });
     }
   }
+  // Draft AI per response (batch, tanpa N+1): tabel teacher-only (RLS).
+  if (responseIds.length > 0) {
+    const { data: drafts } = await supabase
+      .from("ai_feedback_drafts")
+      .select("id,response_id,body,model,status")
+      .in("response_id", responseIds);
+    const byResp = new Map(
+      (
+        (drafts as
+          { id: string; response_id: string; body: string; model: string; status: string }[] | null) ?? []
+      ).map((d) => [d.response_id, d]),
+    );
+    for (const item of out) {
+      const d = byResp.get(item.responseId);
+      if (d) item.aiDraft = { id: d.id, body: d.body, model: d.model, status: d.status };
+    }
+  }
   return out;
 }
 
@@ -175,13 +202,41 @@ export default async function GradingPage() {
   } catch {
     items = [];
   }
+
+  // AI draft feedback: gerbang env + consent org (ADR-014; default OFF).
+  let aiEnabled = false;
+  try {
+    aiEnabled = getServerEnv().AI_FEEDBACK_ENABLED;
+  } catch {
+    aiEnabled = false;
+  }
+  let aiConsent = false;
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  const orgId = (mem as { organization_id: string } | null)?.organization_id;
+  if (orgId) {
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("ai_feedback_consent")
+      .eq("id", orgId)
+      .single();
+    aiConsent = !!((org as { ai_feedback_consent: boolean } | null)?.ai_feedback_consent ?? false);
+  }
+  const aiConfig: AiConfig = { enabled: aiEnabled, consent: aiConsent };
+
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <h1 className="text-3xl font-bold">Antrian penilaian manual</h1>
       <p className="mt-1 text-sm text-slate-600">
         Esai & proyek. Perubahan nilai tercatat sebagai revisi + audit.
       </p>
-      <GradeQueue initialItems={items} />
+      <GradeQueue initialItems={items} aiConfig={aiConfig} />
     </main>
   );
 }
