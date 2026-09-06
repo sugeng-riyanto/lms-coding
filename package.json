@@ -6,6 +6,10 @@
     "node": ">=20 <25"
   },
   "scripts": {
+    "check:env": "node scripts/check-env.mjs",
+    "predev": "npm run check:env",
+    "prebuild": "npm run check:env",
+    "prestart": "npm run check:env",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
