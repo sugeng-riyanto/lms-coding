@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { robloxCompletionSchema } from "@/lib/validation";
 import { checkRateLimit } from "@/lib/ratelimit";
+import { createServiceClient } from "@/lib/supabase/service";
 
 /**
  * POST /api/integrations/roblox/completions
@@ -65,10 +66,41 @@ export async function POST(req: Request) {
       { status: 401 },
     );
   }
-  // TODO: simpan append-only receipt + nonce uniqueness di Postgres (migration fase lanjutan).
-  return NextResponse.json({
-    ok: true,
-    stored: false,
-    note: "Signature valid; persistensi menunggu migration receipts.",
-  });
+  // Append-only receipt + replay protection (service key, server-to-server).
+  // Skor tetap TIDAK langsung jadi nilai: butuh mapping enrollment + validasi LMS.
+  try {
+    const svc = createServiceClient();
+    const { data: dup } = await svc
+      .from("roblox_receipts")
+      .select("id")
+      .or(`event_id.eq.${p.event_id},nonce.eq.${p.nonce}`)
+      .limit(1);
+    if (((dup as { id: string }[] | null) ?? []).length > 0) {
+      return NextResponse.json(
+        { error: { code: "REPLAY", message: "Event/nonce sudah diproses." } },
+        { status: 409 },
+      );
+    }
+    const { error: insErr } = await svc.from("roblox_receipts").insert({
+      event_id: p.event_id,
+      nonce: p.nonce,
+      place_id: p.place_id,
+      roblox_user_id: p.roblox_user_id,
+      challenge_id: p.challenge_id,
+      score: p.score,
+      issued_at: p.issued_at,
+    });
+    if (insErr) {
+      return NextResponse.json(
+        { error: { code: "STORE_FAILED", message: "Gagal menyimpan receipt." } },
+        { status: 500 },
+      );
+    }
+  } catch {
+    return NextResponse.json(
+      { error: { code: "NOT_CONFIGURED", message: "Service backend belum tersedia." } },
+      { status: 503 },
+    );
+  }
+  return NextResponse.json({ ok: true, stored: true });
 }

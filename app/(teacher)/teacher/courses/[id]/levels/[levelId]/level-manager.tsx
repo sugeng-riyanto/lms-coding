@@ -51,6 +51,7 @@ export function LevelManager({
   const [actLesson, setActLesson] = useState("");
   const [actType, setActType] = useState<string>("article");
   const [actTitle, setActTitle] = useState("");
+  const [actContent, setActContent] = useState("{}");
 
   function fail(text: string) {
     setNotice({ kind: "err", text });
@@ -88,10 +89,21 @@ export function LevelManager({
   async function onAddActivity(e: React.FormEvent) {
     e.preventDefault();
     if (!actLesson) return fail("Pilih lesson dulu.");
+    let content: Record<string, unknown> = {};
+    try {
+      const parsedJson: unknown = JSON.parse(actContent || "{}");
+      if (typeof parsedJson !== "object" || parsedJson === null || Array.isArray(parsedJson)) {
+        return fail("Konten harus objek JSON.");
+      }
+      content = parsedJson as Record<string, unknown>;
+    } catch {
+      return fail("Konten bukan JSON valid.");
+    }
     setBusy(true);
-    const res = await createActivity({ lessonId: actLesson, type: actType, title: actTitle, content: {} });
+    const res = await createActivity({ lessonId: actLesson, type: actType, title: actTitle, content });
     if (!res.ok) return fail(`Gagal tambah activity: ${res.error}`);
     setActTitle("");
+    setActContent("{}");
     setNotice({ kind: "ok", text: "Activity ditambahkan." });
     setBusy(false);
     router.refresh();
@@ -260,6 +272,16 @@ export function LevelManager({
             minLength={3}
             maxLength={200}
             className="mt-1 w-full rounded-lg border px-3 py-2"
+          />
+          <label htmlFor="a-content" className="mt-2 block text-sm font-semibold">
+            Konten JSON (body/url/transcript/placeId/instruction/expectedEvidence)
+          </label>
+          <textarea
+            id="a-content"
+            rows={2}
+            value={actContent}
+            onChange={(e) => setActContent(e.target.value)}
+            className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs"
           />
           <button
             disabled={busy}
