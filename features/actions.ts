@@ -366,7 +366,10 @@ export async function reorderSiblings(input: unknown) {
   // Dua fase (offset +10000) agar tidak melanggar unique (parent, position).
   // Otorisasi ownership ditegakkan policy UPDATE (USING + WITH CHECK).
   for (const o of order) {
-    const { error } = await supabase.from(table).update({ position: o.position + 10000 }).eq("id", o.id);
+    const { error } = await supabase
+      .from(table)
+      .update({ position: o.position + 10000 })
+      .eq("id", o.id);
     if (error) return { ok: false as const, error: "REORDER_FAILED" };
   }
   for (const o of order) {
@@ -406,12 +409,20 @@ export async function duplicateCourse(input: unknown) {
   const ownerId = (claims.claims as { sub?: string }).sub;
   if (!ownerId) return { ok: false as const, error: "UNAUTHENTICATED" };
 
-  const { data: src } = await supabase.from("courses").select("id,organization_id,title,description").eq("id", parsed.data.courseId).single();
+  const { data: src } = await supabase
+    .from("courses")
+    .select("id,organization_id,title,description")
+    .eq("id", parsed.data.courseId)
+    .single();
   const srcCourse = src as { id: string; organization_id: string; title: string; description: string } | null;
   if (!srcCourse) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
 
   const { data: srcVersions } = await supabase
-    .from("course_versions").select("id").eq("course_id", srcCourse.id).order("version", { ascending: false }).limit(1);
+    .from("course_versions")
+    .select("id")
+    .eq("course_id", srcCourse.id)
+    .order("version", { ascending: false })
+    .limit(1);
   const srcVersion = ((srcVersions as { id: string }[] | null) ?? [])[0];
   if (!srcVersion) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
 
@@ -431,7 +442,10 @@ export async function duplicateCourse(input: unknown) {
   const dstCourseId = (dstCourse as { id: string }).id;
 
   const { data: dstVersion, error: vErr } = await supabase
-    .from("course_versions").insert({ course_id: dstCourseId, version: 1 }).select("id").single();
+    .from("course_versions")
+    .insert({ course_id: dstCourseId, version: 1 })
+    .select("id")
+    .single();
   if (vErr) return { ok: false as const, error: "DUPLICATE_FAILED" };
   const dstVersionId = (dstVersion as { id: string }).id;
 
@@ -446,52 +460,110 @@ export async function duplicateCourse(input: unknown) {
     return n;
   };
 
-  const { data: levels } = await supabase.from("levels").select("id,position,title,passing_score,mastery_threshold").eq("course_version_id", srcVersion.id).order("position");
-  for (const lv of (levels as { id: string; position: number; title: string; passing_score: number; mastery_threshold: number }[] | null) ?? []) {
+  const { data: levels } = await supabase
+    .from("levels")
+    .select("id,position,title,passing_score,mastery_threshold")
+    .eq("course_version_id", srcVersion.id)
+    .order("position");
+  for (const lv of (levels as
+    | { id: string; position: number; title: string; passing_score: number; mastery_threshold: number }[]
+    | null) ?? []) {
     const newLevelId = remap(lv.id);
     const { error } = await supabase.from("levels").insert({
-      id: newLevelId, course_version_id: dstVersionId, position: lv.position, title: lv.title,
-      passing_score: lv.passing_score, mastery_threshold: lv.mastery_threshold,
+      id: newLevelId,
+      course_version_id: dstVersionId,
+      position: lv.position,
+      title: lv.title,
+      passing_score: lv.passing_score,
+      mastery_threshold: lv.mastery_threshold,
     });
     if (error) return { ok: false as const, error: "DUPLICATE_FAILED" };
 
-    const { data: modules } = await supabase.from("modules").select("id,position,title").eq("level_id", lv.id).order("position");
+    const { data: modules } = await supabase
+      .from("modules")
+      .select("id,position,title")
+      .eq("level_id", lv.id)
+      .order("position");
     for (const md of (modules as { id: string; position: number; title: string }[] | null) ?? []) {
       const newModuleId = remap(md.id);
-      const { error: mErr } = await supabase.from("modules").insert({ id: newModuleId, level_id: newLevelId, position: md.position, title: md.title });
+      const { error: mErr } = await supabase
+        .from("modules")
+        .insert({ id: newModuleId, level_id: newLevelId, position: md.position, title: md.title });
       if (mErr) return { ok: false as const, error: "DUPLICATE_FAILED" };
 
-      const { data: lessons } = await supabase.from("lessons").select("id,position,title,estimated_minutes,required").eq("module_id", md.id).order("position");
-      for (const le of (lessons as { id: string; position: number; title: string; estimated_minutes: number; required: boolean }[] | null) ?? []) {
+      const { data: lessons } = await supabase
+        .from("lessons")
+        .select("id,position,title,estimated_minutes,required")
+        .eq("module_id", md.id)
+        .order("position");
+      for (const le of (lessons as
+        | { id: string; position: number; title: string; estimated_minutes: number; required: boolean }[]
+        | null) ?? []) {
         const newLessonId = remap(le.id);
         const { error: lErr } = await supabase.from("lessons").insert({
-          id: newLessonId, module_id: newModuleId, position: le.position, title: le.title,
-          estimated_minutes: le.estimated_minutes, required: le.required,
+          id: newLessonId,
+          module_id: newModuleId,
+          position: le.position,
+          title: le.title,
+          estimated_minutes: le.estimated_minutes,
+          required: le.required,
         });
         if (lErr) return { ok: false as const, error: "DUPLICATE_FAILED" };
 
-        const { data: acts } = await supabase.from("activities").select("id,position,type,title,content_json,required").eq("lesson_id", le.id).order("position");
-        for (const a of (acts as { id: string; position: number; type: string; title: string; content_json: unknown; required: boolean }[] | null) ?? []) {
+        const { data: acts } = await supabase
+          .from("activities")
+          .select("id,position,type,title,content_json,required")
+          .eq("lesson_id", le.id)
+          .order("position");
+        for (const a of (acts as
+          | {
+              id: string;
+              position: number;
+              type: string;
+              title: string;
+              content_json: unknown;
+              required: boolean;
+            }[]
+          | null) ?? []) {
           const newActId = remap(a.id);
           const { error: aErr } = await supabase.from("activities").insert({
-            id: newActId, lesson_id: newLessonId, position: a.position, type: a.type,
-            title: a.title, content_json: a.content_json, required: a.required,
+            id: newActId,
+            lesson_id: newLessonId,
+            position: a.position,
+            type: a.type,
+            title: a.title,
+            content_json: a.content_json,
+            required: a.required,
           });
           if (aErr) return { ok: false as const, error: "DUPLICATE_FAILED" };
 
-          const { data: asmt } = await supabase.from("assessments").select("id,settings_json,total_points").eq("activity_id", a.id).limit(1).single();
+          const { data: asmt } = await supabase
+            .from("assessments")
+            .select("id,settings_json,total_points")
+            .eq("activity_id", a.id)
+            .limit(1)
+            .single();
           const srcAsmt = asmt as { id: string; settings_json: unknown; total_points: number } | null;
           if (srcAsmt) {
             const newAsmtId = randomUUID();
             const { error: sErr } = await supabase.from("assessments").insert({
-              id: newAsmtId, activity_id: newActId, settings_json: srcAsmt.settings_json, total_points: srcAsmt.total_points,
+              id: newAsmtId,
+              activity_id: newActId,
+              settings_json: srcAsmt.settings_json,
+              total_points: srcAsmt.total_points,
             });
             if (sErr) return { ok: false as const, error: "DUPLICATE_FAILED" };
-            const { data: links } = await supabase.from("assessment_questions").select("question_version_id,position,points").eq("assessment_id", srcAsmt.id);
-            for (const link of (links as { question_version_id: string; position: number; points: number }[] | null) ?? []) {
+            const { data: links } = await supabase
+              .from("assessment_questions")
+              .select("question_version_id,position,points")
+              .eq("assessment_id", srcAsmt.id);
+            for (const link of (links as
+              { question_version_id: string; position: number; points: number }[] | null) ?? []) {
               const { error: qErr } = await supabase.from("assessment_questions").insert({
-                assessment_id: newAsmtId, question_version_id: link.question_version_id,
-                position: link.position, points: link.points,
+                assessment_id: newAsmtId,
+                question_version_id: link.question_version_id,
+                position: link.position,
+                points: link.points,
               });
               if (qErr) return { ok: false as const, error: "DUPLICATE_FAILED" };
             }
@@ -502,13 +574,27 @@ export async function duplicateCourse(input: unknown) {
   }
 
   // Salin prerequisite edges internal (kedua ujung ada di tree salinan).
-  const { data: prereqs } = await supabase.from("prerequisites").select("target_type,target_id,required_type,required_id,rule_json");
-  for (const p of (prereqs as { target_type: string; target_id: string; required_type: string; required_id: string; rule_json: unknown }[] | null) ?? []) {
+  const { data: prereqs } = await supabase
+    .from("prerequisites")
+    .select("target_type,target_id,required_type,required_id,rule_json");
+  for (const p of (prereqs as
+    | {
+        target_type: string;
+        target_id: string;
+        required_type: string;
+        required_id: string;
+        rule_json: unknown;
+      }[]
+    | null) ?? []) {
     const t = idMap.get(p.target_id);
     const r = idMap.get(p.required_id);
     if (t && r) {
       await supabase.from("prerequisites").insert({
-        target_type: p.target_type, target_id: t, required_type: p.required_type, required_id: r, rule_json: p.rule_json,
+        target_type: p.target_type,
+        target_id: t,
+        required_type: p.required_type,
+        required_id: r,
+        rule_json: p.rule_json,
       });
     }
   }

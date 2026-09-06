@@ -4,9 +4,9 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 
 ## Current phase
 
-- Phase: Prompt 02 SELESAI (static gates) — Phase 1 exit tersisa live-DB; siap Prompt 03 lanjutan
-- Branch: (bukan git repo — folder blueprint langsung; `git status` → fatal: not a git repository)
-- Last verified commit: n/a
+- Phase: Prompt 03 SELESAI (static gates) — siap Prompt 04
+- Branch: main (origin https://github.com/sugeng-riyanto/lms-coding.git)
+- Last verified commit: 75e502b first commit (102 files; node_modules/.next/.env excluded via .gitignore)
 - Blockers:
   - Supabase CLI + Docker tidak tersedia → migration manual, BELUM di-apply ke live Postgres; RLS terbukti statis, bukan live-DB.
   - `supabase/seed.sql` butuh auth.users via Auth admin API sebelum insert data domain.
@@ -27,12 +27,13 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 | 2026-09-06 | `npm run build` | PASS | 14 routes (+/api/health, /health) |
 | 2026-09-06 | secret scan (grep sb_secret/service_role/private key di luar node_modules) | PASS | hanya string guard di db-advisor; hanya `.env.example` berisi placeholder |
 | 2026-09-06 | Prompt 02 gates | PASS semua | format, lint, typecheck, test 12 files/77 tests, build 16 routes, db advisor (3 migrations) |
+| 2026-09-06 | Prompt 03 gates | PASS semua | format, lint, typecheck, test 14 files/85 tests, build 18 routes (+manage, preview, catalog), db advisor |
 
 ## Phase checklist
 
 - [x] Phase 0 Foundation — Next 16.3.4 + TS strict + Tailwind v4 + ESLint + Prettier + Vitest (unit/integration/component) + Playwright + CI (+format:check) + `.env.example` + shell publik/auth/murid/guru + `/api/health` + `/health` + `error.tsx`/`not-found.tsx` + `lib/time.ts` (Asia/Jakarta tampil, UTC simpan) + `supabase/config.toml` (dokumen; CLI belum ada). Exit: install bersih, build lolos, no secret — TERPENUHI per bukti di atas.
 - [x] Phase 1 Identity/RBAC — schema + RLS least-privilege + denial tests 8/8 RBAC.md + 12 tests Phase 1 (`tests/integration/phase1.test.ts`: audit trigger, wali-tertaut, cross-org denial, published-read, answer-key protection, predicate check 20+ policy, service-only jobs/anchors) + guards server (`lib/auth/guards.ts`, layout murid/guru force-dynamic) + halaman login/logout/unauthorized/inactive/profile + audit trigger memberships/profiles + policy wali/org/cohort_member + RLS content-tree + `20260906000002_phase1_hardening.sql` + db-advisor kini memindai semua migration. Exit: static PASS; live-DB PENDING (butuh CLI/Docker).
-- [~] Phase 2 Authoring/enrollment — hierarchy versioned + seed anonim + `validateCourseDraft` (6 kode issue) + `createCourse`/`publishCourseVersion` + form course baru. KURANG: reorder, preview-as-student, duplicate, archive, catalog/level-map UI.
+- [~] Phase 2 Authoring/enrollment — hierarchy versioned + seed anonim + `validateCourseDraft` (6 kode issue) + `createCourse`/`publishCourseVersion`/`reorderSiblings`/`duplicateCourse`/`archiveCourse` + form course baru + halaman kelola (naik/turun, publish + checklist validasi, duplikat, arsip) + preview-as-student + katalog/level-map murid (live query, unlock server-side). KURANG: editor tambah level/lesson/activity via UI, reorder drag-drop.
 - [~] Phase 3 Learning/progress — unlock server-side, next-best-action beralasan, autosave+offline player, event idempotent. KURANG: recompute job, retry queue sync, realtime/polling.
 - [~] Phase 4 Assessment — auto-grade 7 tipe + fixtures, attempt idempotent, manual grade → revision via RPC. KURANG: quiz builder UI, release policy UI, rubric UI.
 - [~] Phase 5 Analytics — matrix + risk explainable + CSV anti-injection. KURANG: drill-down, export route, item analysis.

@@ -11,7 +11,15 @@ export interface ManageLevel {
   title: string;
 }
 
-export function ManageCourse({ courseId, versionId, initialLevels }: { courseId: string; versionId: string; initialLevels: ManageLevel[] }) {
+export function ManageCourse({
+  courseId,
+  versionId,
+  initialLevels,
+}: {
+  courseId: string;
+  versionId: string;
+  initialLevels: ManageLevel[];
+}) {
   const router = useRouter();
   const [levels, setLevels] = useState<ManageLevel[]>(initialLevels);
   const [busy, setBusy] = useState<string | null>(null);
@@ -33,7 +41,7 @@ export function ManageCourse({ courseId, versionId, initialLevels }: { courseId:
     const res = await reorderSiblings({
       table: "levels",
       parentColumn: "course_version_id",
-      parentId: (document.querySelector("[data-version-id]") as HTMLElement | null)?.dataset.versionId ?? "",
+      parentId: versionId,
       orderedIds: next.map((l) => l.id),
     });
     setBusy(null);
@@ -53,8 +61,8 @@ export function ManageCourse({ courseId, versionId, initialLevels }: { courseId:
     if (res.ok) {
       setNotice({ kind: "ok", text: `Terbit versi ${res.version}.` });
       router.refresh();
-    } else if (res.error === "VALIDATION_FAILED" && "issues" in res) {
-      setIssues(res.issues);
+    } else if (res.error === "VALIDATION_FAILED") {
+      setIssues("issues" in res && Array.isArray(res.issues) ? res.issues : []);
       setNotice({ kind: "err", text: "Validasi gagal — perbaiki daftar di bawah." });
     } else {
       setNotice({ kind: "err", text: `Gagal publish: ${res.error}` });
@@ -78,15 +86,19 @@ export function ManageCourse({ courseId, versionId, initialLevels }: { courseId:
     setBusy("archive");
     const res = await archiveCourse({ courseId });
     setBusy(null);
-    setNotice(res.ok ? { kind: "ok", text: "Course diarsipkan." } : { kind: "err", text: `Gagal: ${res.error}` });
+    setNotice(
+      res.ok ? { kind: "ok", text: "Course diarsipkan." } : { kind: "err", text: `Gagal: ${res.error}` },
+    );
     if (res.ok) router.refresh();
   }
 
   return (
     <div className="mt-6 space-y-6">
       {notice && (
-        <p role={notice.kind === "err" ? "alert" : "status"}
-          className={`rounded-lg p-3 ${notice.kind === "err" ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800"}`}>
+        <p
+          role={notice.kind === "err" ? "alert" : "status"}
+          className={`rounded-lg p-3 ${notice.kind === "err" ? "bg-red-50 text-red-800" : "bg-green-50 text-green-800"}`}
+        >
           {notice.text}
         </p>
       )}
@@ -99,12 +111,26 @@ export function ManageCourse({ courseId, versionId, initialLevels }: { courseId:
           <ol className="mt-3 space-y-2">
             {levels.map((l, i) => (
               <li key={l.id} className="flex items-center justify-between rounded-lg border px-3 py-2">
-                <span><strong>{i + 1}.</strong> {l.title}</span>
+                <span>
+                  <strong>{i + 1}.</strong> {l.title}
+                </span>
                 <span className="flex gap-1">
-                  <button disabled={busy !== null || i === 0} onClick={() => move(i, -1)} aria-label={`Naikkan ${l.title}`}
-                    className="rounded border px-2 py-1 disabled:opacity-40">↑</button>
-                  <button disabled={busy !== null || i === levels.length - 1} onClick={() => move(i, 1)} aria-label={`Turunkan ${l.title}`}
-                    className="rounded border px-2 py-1 disabled:opacity-40">↓</button>
+                  <button
+                    disabled={busy !== null || i === 0}
+                    onClick={() => move(i, -1)}
+                    aria-label={`Naikkan ${l.title}`}
+                    className="rounded border px-2 py-1 disabled:opacity-40"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    disabled={busy !== null || i === levels.length - 1}
+                    onClick={() => move(i, 1)}
+                    aria-label={`Turunkan ${l.title}`}
+                    className="rounded border px-2 py-1 disabled:opacity-40"
+                  >
+                    ↓
+                  </button>
                 </span>
               </li>
             ))}
@@ -117,30 +143,61 @@ export function ManageCourse({ courseId, versionId, initialLevels }: { courseId:
           <h2 className="font-semibold text-red-800">Checklist sebelum publish</h2>
           <ul className="mt-2 list-disc pl-5 text-sm">
             {issues.map((iss, i) => (
-              <li key={i}><span className="font-mono font-bold">{iss.code}</span> — {iss.message} <span className="text-slate-500">({iss.path})</span></li>
+              <li key={i}>
+                <span className="font-mono font-bold">{iss.code}</span> — {iss.message}{" "}
+                <span className="text-slate-500">({iss.path})</span>
+              </li>
             ))}
           </ul>
         </section>
       )}
 
       <section aria-label="Aksi course" className="flex flex-wrap gap-2">
-        <button onClick={onPublish} disabled={busy !== null}
-          className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60">
+        <button
+          onClick={onPublish}
+          disabled={busy !== null}
+          className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+        >
           {busy === "publish" ? "Memvalidasi…" : "Validasi & publish"}
         </button>
-        <button onClick={onArchive} disabled={busy !== null}
-          className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60">Arsipkan</button>
-        <a href="preview" className="rounded-lg border px-4 py-2 font-semibold hover:bg-slate-50">Preview sebagai murid</a>
+        <button
+          onClick={onArchive}
+          disabled={busy !== null}
+          className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60"
+        >
+          Arsipkan
+        </button>
+        <a href="preview" className="rounded-lg border px-4 py-2 font-semibold hover:bg-slate-50">
+          Preview sebagai murid
+        </a>
       </section>
 
-      <form onSubmit={onDuplicate} aria-label="Form duplikat course" className="flex flex-wrap items-end gap-2 rounded-xl border p-5">
+      <form
+        onSubmit={onDuplicate}
+        aria-label="Form duplikat course"
+        className="flex flex-wrap items-end gap-2 rounded-xl border p-5"
+      >
         <div>
-          <label htmlFor="dup-slug" className="font-semibold">Slug salinan</label>
-          <input id="dup-slug" required value={slug} onChange={(e) => setSlug(e.target.value)}
-            pattern="[a-z0-9-]+" minLength={3} maxLength={80}
-            className="mt-1 block rounded-lg border px-3 py-2" placeholder="matematika-dasar-v2" />
+          <label htmlFor="dup-slug" className="font-semibold">
+            Slug salinan
+          </label>
+          <input
+            id="dup-slug"
+            required
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+            pattern="[a-z0-9-]+"
+            minLength={3}
+            maxLength={80}
+            className="mt-1 block rounded-lg border px-3 py-2"
+            placeholder="matematika-dasar-v2"
+          />
         </div>
-        <button type="submit" disabled={busy !== null} className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60">
+        <button
+          type="submit"
+          disabled={busy !== null}
+          className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60"
+        >
           {busy === "duplicate" ? "Menyalin…" : "Duplikat course"}
         </button>
       </form>
