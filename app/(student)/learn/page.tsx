@@ -44,8 +44,12 @@ interface QuizBar {
   hint?: string;
 }
 
-/** Dashboard murid live: enrollment aktif pertama + snapshot + prereq → rekomendasi. */
-async function getDashboard(userId: string): Promise<{
+/** Dashboard murid live: enrollment aktif (query `?enrollment=` bila ada, fallback
+ *  yang pertama) + snapshot + prereq → rekomendasi. */
+async function getDashboard(
+  userId: string,
+  requestedEnrollmentId?: string,
+): Promise<{
   levels: LiveLevel[];
   courseTitle: string;
   enrollmentId: string;
@@ -54,12 +58,17 @@ async function getDashboard(userId: string): Promise<{
   quizBars: QuizBar[];
 } | null> {
   const supabase = await createClient();
-  const { data: enrollments } = await supabase
+  let query = supabase
     .from("enrollments")
     .select("id,course_id,courses(title)")
     .eq("student_id", userId)
-    .eq("status", "active")
-    .limit(1);
+    .eq("status", "active");
+  // Catalog & nav mengarahkan ke enrollment spesifik (?enrollment=...). Tanpa
+  // filter, murid dengan >1 enrollment selalu mendarat di yang pertama — defect
+  // live: klik kursus Python tetap menampilkan Matematika. Patuhi permintaan.
+  if (requestedEnrollmentId) query = query.eq("id", requestedEnrollmentId);
+  query = query.limit(1);
+  const { data: enrollments } = await query;
   const enr = ((enrollments as
     { id: string; course_id: string; courses: { title: string } | null }[] | null) ?? [])[0];
   if (!enr?.courses) return null;
@@ -219,14 +228,19 @@ function weeklyRemaining(weekly: WeeklyInfo, unit: WeeklyGoalUnit): string {
   return `${weekly.goal - weekly.completed} aktivitas lagi untuk mencapai target minggu ini.`;
 }
 
-export default async function LearnPage() {
+export default async function LearnPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ enrollment?: string }>;
+}) {
+  const { enrollment } = await searchParams;
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
   let live: Awaited<ReturnType<typeof getDashboard>> = null;
   if (userId) {
     try {
-      live = await getDashboard(userId);
+      live = await getDashboard(userId, enrollment);
     } catch {
       live = null;
     }

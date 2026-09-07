@@ -21,6 +21,39 @@ interface ChildSummary {
   progressPct: number;
   masteryPct: number;
   lastActivityAt: string | null;
+  certificates: {
+    publicId: string;
+    serial: string;
+    status: string;
+    issuedAt: string;
+    level: string;
+  }[];
+}
+
+async function getChildCertificates(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  enrollmentIds: string[],
+): Promise<ChildSummary["certificates"]> {
+  if (enrollmentIds.length === 0) return [];
+  const { data: certs } = await supabase
+    .from("certificates")
+    .select("public_id,serial_no,status,issued_at,level_id")
+    .in("enrollment_id", enrollmentIds)
+    .order("issued_at", { ascending: false });
+  const out: ChildSummary["certificates"] = [];
+  for (const c of (certs as
+    { public_id: string; serial_no: string; status: string; issued_at: string; level_id: string }[] | null) ??
+    []) {
+    const { data: lv } = await supabase.from("levels").select("title").eq("id", c.level_id).single();
+    out.push({
+      publicId: c.public_id,
+      serial: c.serial_no,
+      status: c.status,
+      issuedAt: c.issued_at,
+      level: (lv as { title: string } | null)?.title ?? "—",
+    });
+  }
+  return out;
 }
 
 async function getChildren(userId: string): Promise<ChildSummary[]> {
@@ -89,6 +122,7 @@ async function getChildren(userId: string): Promise<ChildSummary[]> {
       progressPct,
       masteryPct,
       lastActivityAt,
+      certificates: await getChildCertificates(supabase, enrollmentIds),
     });
   }
   return children.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
@@ -201,6 +235,46 @@ export default async function GuardianPage() {
                     ? `Level tuntas ${c.levelCompleted} dari ${c.levelTotal} pada enrollment aktif.`
                     : "Belum ada progres tercatat — data muncul setelah anak mulai belajar."}
                 </p>
+
+                <div className="border-t px-5 py-4">
+                  <p className="text-sm font-bold">Sertifikat terbit otomatis</p>
+                  {c.certificates.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400" role="status">
+                      Belum ada sertifikat — akan muncul otomatis saat quiz 100% dan ujian akhir ≥ 70%.
+                    </p>
+                  ) : (
+                    <ul className="mt-3 space-y-2">
+                      {c.certificates.map((cert) => (
+                        <li key={cert.publicId} className="rounded-xl border p-3 dark:bg-slate-900">
+                          <p className="font-semibold">{cert.level}</p>
+                          <p className="font-mono text-xs text-slate-500 dark:text-slate-400">
+                            {cert.serial} · {cert.status} · {formatJakarta(cert.issuedAt)}
+                          </p>
+                          {cert.status === "active" ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <a
+                                href={`/api/certificates/${cert.publicId}/pdf`}
+                                className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-[var(--glow-btn)]"
+                              >
+                                Unduh PDF resmi
+                              </a>
+                              <Link
+                                href={`/verify/${cert.publicId}`}
+                                className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
+                              >
+                                Verifikasi
+                              </Link>
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                              Sertifikat ini dicabut; unduhan valid tidak tersedia.
+                            </p>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </li>
             );
           })}
