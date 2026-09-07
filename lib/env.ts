@@ -25,6 +25,15 @@ const serverEnvSchema = z.object({
   AI_PROVIDER: z.string().optional(),
   AI_PROVIDER_BASE_URL: z.string().optional(),
   AI_PROVIDER_API_KEY: z.string().optional(),
+  // Code runner multi-bahasa: NONAKTIF default (fail-closed). Eksekusi di
+  // sandbox EKSTERNAL (provider Piston-compatible), bukan server LMS.
+  CODE_RUNNER_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  CODE_RUNNER_PROVIDER: z.string().optional(),
+  CODE_RUNNER_BASE_URL: z.string().optional(),
+  CODE_RUNNER_API_KEY: z.string().optional(),
 });
 
 export type ServerEnv = z.infer<typeof serverEnvSchema>;
@@ -48,6 +57,10 @@ export function getServerEnv(): ServerEnv {
     AI_PROVIDER: process.env.AI_PROVIDER,
     AI_PROVIDER_BASE_URL: process.env.AI_PROVIDER_BASE_URL,
     AI_PROVIDER_API_KEY: process.env.AI_PROVIDER_API_KEY,
+    CODE_RUNNER_ENABLED: process.env.CODE_RUNNER_ENABLED,
+    CODE_RUNNER_PROVIDER: process.env.CODE_RUNNER_PROVIDER,
+    CODE_RUNNER_BASE_URL: process.env.CODE_RUNNER_BASE_URL,
+    CODE_RUNNER_API_KEY: process.env.CODE_RUNNER_API_KEY,
   });
   if (!parsed.success) {
     throw new Error(
