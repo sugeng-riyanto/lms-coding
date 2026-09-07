@@ -24,9 +24,20 @@
 3. Recompute progress aman dijalankan ulang (projection derived dari events/attempts).
 
 ## 5. Database restore
-1. Ambil backup point terbaru (point-in-time). Restore ke project ISOLATED dulu.
-2. Jalankan `tests/integration/rls.test.ts` + `npm run db:typecheck` di hasil restore.
-3. Swap setelah smoke test: login, submit, dashboard, PDF, verifier.
+1. Ambil backup point terbaru (point-in-time di Supabase dashboard, atau
+   `pg_dump` untuk clone). Restore ke project/DB ISOLATED dulu — jangan pernah
+   langsung ke produksi.
+2. **Rehearsal otomatis (terisolasi, tanpa menyentuh produksi):**
+   `bash scripts/restore-rehearsal/run.sh` — membangun sumber "seperti produksi"
+   (shim + migration repo verbatim + grants + seed + fixture), membuat artefak
+   backup `pg_dump`, me-restore ke DB baru yang kosong, lalu memverifikasi: RLS
+   aktif di semua exposed table, baris pokok hadir, dan anonim tetap 0 baris
+   (output `PASS=n FAIL=0`). Env: `PGHOST/PGPORT/PGUSER/PGPASSWORD`,
+   `RR_KEEP=1` untuk inspeksi, DB default `lms_rr_src`/`lms_rr_dst`.
+3. Setelah restore di lingkungan uji: `npm run db:typecheck` + verifikasi smoke
+   (login, submit, dashboard, PDF, verifier) sebelum swap.
+4. Swap hanya setelah smoke test hijau; simpan artefak backup + log di tempat
+   aman (contoh artefak: `.freebuff/restore-rehearsal/backup-*.sql`).
 
 ## 6. Revoke exposed secret
 1. Rotate di Supabase dashboard + env server (jangan commit).
@@ -37,3 +48,16 @@
 1. Verifikasi identitas pemohon (wali hanya via guardian link aktif).
 2. Koreksi via UPDATE dengan audit log before/after (redact token/email/nilai dari log teks).
 3. Retention: hapus hanya sesuai kebijakan sekolah; attempt/revision/certificate/audit TIDAK di-hard-delete — tandai suspended/revoked.
+
+## 8. Checklist setelah setiap perubahan database
+Setiap migration baru WAJIB melewati, sebelum merge:
+1. `npm run db:typecheck` (DB advisor statis — scan seluruh migration).
+2. `bash scripts/live-denial/run.sh` (RLS/denial sungguhan di Postgres — semua
+   migration diterapkan verbatim; target PASS=95+, FAIL=0).
+3. `bash scripts/restore-rehearsal/run.sh` (restore rehearsal — bukti artefak
+   backup→restore tetap sehat).
+4. Secret scan (`grep` service role/answer key di luar node_modules; lihat
+   PROGRESS) — cepat sebelum commit.
+CI (`.github/workflows/ci.yml`) menjalankan 1–3 otomatis per push/PR
+(`verify` → `live-denial` + `restore-rehearsal` + `e2e`); e2e hermetic men-skip
+spec yang butuh session bila tanpa env Supabase (tanpa `.env` di CI).
