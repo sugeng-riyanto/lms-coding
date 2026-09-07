@@ -51,8 +51,8 @@ async function isBackendReady(page: Page): Promise<boolean> {
 
 test("landing → login shell (public, tanpa backend)", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Belajar coding secara mandiri/i })).toBeVisible();
-  await page.getByRole("link", { name: "Masuk" }).click();
+  await expect(page.getByRole("heading", { name: /Learn to code at your own pace/i })).toBeVisible();
+  await page.getByRole("link", { name: "Sign in" }).first().click();
   await expect(page.getByRole("heading", { name: "Masuk" })).toBeVisible();
 });
 
@@ -73,9 +73,10 @@ test("student login → dashboard /learn (butuh Supabase lokal + seed)", async (
   await page.getByLabel("Kata sandi").fill(STUDENT_PASSWORD);
   await page.getByRole("button", { name: "Masuk", exact: true }).click();
 
-  // Login sukses → redirect /learn; dashboard murid merender heading utama.
+  // Login sukses → redirect /learn; dashboard murid merender judul kursus + hero rekomendasi.
   await expect(page).toHaveURL(/\/learn/, { timeout: 15_000 });
-  await expect(page.getByRole("heading", { name: /Target hari ini/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Matematika Dasar/ })).toBeVisible();
+  await expect(page.getByText("Langkah berikutnya")).toBeVisible();
 });
 
 test("public verifier demo tidak bocor PII", async ({ page }) => {
