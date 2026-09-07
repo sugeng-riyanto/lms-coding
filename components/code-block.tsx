@@ -32,9 +32,9 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-300 bg-slate-900 text-left dark:border-slate-600">
+    <div className="overflow-hidden rounded-xl border border-slate-300 bg-slate-900 text-left shadow-[var(--shadow-soft)] dark:border-slate-600">
       <div className="flex items-center justify-between gap-2 border-b border-slate-700 px-3 py-1.5">
-        <span className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+        <span className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-700 px-2 py-0.5 text-xs font-bold tracking-wide text-white uppercase">
           {language && language.trim() ? language.trim() : "kode"}
         </span>
         <button

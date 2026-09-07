@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { ProgressRing } from "@/components/dashboard";
 import { formatJakarta } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -119,7 +119,6 @@ export default async function GuardianPage() {
           <p className="text-sm font-semibold text-blue-700">Portal Orang Tua / Wali</p>
           <h1 className="mt-1 text-3xl font-bold">Ringkasan Perkembangan Anak</h1>
         </div>
-        <ThemeToggle />
       </div>
       <p className="mt-3 text-sm text-slate-600">
         Ringkasan hanya menampilkan anak yang tertaut melalui <em>guardian link</em> aktif dan data yang
@@ -127,70 +126,80 @@ export default async function GuardianPage() {
       </p>
 
       {children.length === 0 ? (
-        <p className="mt-6 rounded-xl border p-5" role="status">
+        <p className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900" role="status">
           Belum ada anak tertaut. Minta pihak sekolah menautkan akun Anda sebagai wali (guardian link aktif) —
           misalnya ke bagian{" "}
-          <Link href="/profile" className="text-blue-700 underline">
+          <Link href="/profile" className="text-blue-700 underline dark:text-blue-300">
             profil
           </Link>
           .
         </p>
       ) : (
-        <ul className="mt-6 space-y-4">
+        <ul className="mt-6 space-y-5">
           {children.map((c) => {
             const last = daysAgo(c.lastActivityAt);
+            const hasProgress = c.levelTotal > 0;
             return (
               <li
                 key={c.studentId}
                 aria-label={`Ringkasan ${c.displayName}`}
-                className="rounded-xl border p-5"
+                className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-blue-700 to-blue-900 p-5 text-white dark:from-blue-900 dark:to-slate-900">
                   <div className="flex items-center gap-3">
                     <span
                       aria-hidden="true"
-                      className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-lg font-bold text-blue-800"
+                      className="flex h-12 w-12 items-center justify-center rounded-full bg-white/20 text-xl font-extrabold"
                     >
                       {c.displayName.charAt(0).toUpperCase()}
                     </span>
                     <div>
-                      <p className="font-semibold">{c.displayName}</p>
-                      <p className="text-xs text-slate-500">
+                      <p className="text-lg font-extrabold">{c.displayName}</p>
+                      <p className="text-xs text-blue-100">
                         Tertaut sejak {c.linkedSinceIso ? formatJakarta(c.linkedSinceIso) : "—"}
                       </p>
                     </div>
                   </div>
                   <span
                     aria-label={`Status ${c.displayName}`}
-                    className="rounded-full bg-green-100 px-3 py-1 text-sm font-semibold text-green-800"
+                    className="rounded-full bg-white/20 px-3 py-1 text-sm font-semibold"
                   >
                     Tertaut aktif
                   </span>
                 </div>
 
-                <dl className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <dt className="text-xs text-slate-500">Enrollment aktif</dt>
-                    <dd className="mt-1 text-xl font-bold">{c.activeEnrollments}</dd>
+                <div className="grid gap-4 p-5 md:grid-cols-3">
+                  <div className="flex items-center justify-center">
+                    <ProgressRing pct={c.progressPct} label={`Progress belajar ${c.displayName}`} />
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <dt className="text-xs text-slate-500">Progress</dt>
-                    <dd className="mt-1 text-xl font-bold">{c.levelTotal > 0 ? `${c.progressPct}%` : "—"}</dd>
+                  <div className="grid grid-cols-2 gap-3 md:col-span-2">
+                    <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
+                      <p className="text-2xl font-extrabold">{c.activeEnrollments}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Enrollment aktif</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
+                      <p className="text-2xl font-extrabold">{hasProgress ? `${c.masteryPct}%` : "—"}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Mastery rata-rata</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
+                      <p className="text-2xl font-extrabold">
+                        {last === null ? "—" : last === 0 ? "Hari ini" : `${last} hari`}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Terakhir aktif</p>
+                    </div>
+                    <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
+                      <p className="text-2xl font-extrabold">
+                        {hasProgress ? `${c.levelCompleted}/${c.levelTotal}` : "—"}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Level tuntas</p>
+                    </div>
                   </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <dt className="text-xs text-slate-500">Mastery rata-rata</dt>
-                    <dd className="mt-1 text-xl font-bold">{c.levelTotal > 0 ? `${c.masteryPct}%` : "—"}</dd>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 p-3">
-                    <dt className="text-xs text-slate-500">Terakhir aktif</dt>
-                    <dd className="mt-1 text-xl font-bold">
-                      {last === null ? "—" : last === 0 ? "Hari ini" : `${last} hari lalu`}
-                    </dd>
-                  </div>
-                </dl>
+                </div>
 
-                <p className="mt-3 text-xs text-slate-500">
-                  Level tuntas {c.levelCompleted} dari {c.levelTotal || 0} pada enrollment aktif.
+                <p className="border-t px-5 py-3 text-xs text-slate-500 dark:text-slate-400">
+                  {hasProgress
+                    ? `Level tuntas ${c.levelCompleted} dari ${c.levelTotal} pada enrollment aktif.`
+                    : "Belum ada progres tercatat — data muncul setelah anak mulai belajar."}
                 </p>
               </li>
             );

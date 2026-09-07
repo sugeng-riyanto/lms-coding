@@ -56,7 +56,7 @@ export function UploadBox({ onUploaded }: { onUploaded: (path: string) => void }
         accept=".pdf,.png,.jpg,.jpeg"
         disabled={busy}
         onChange={(e) => onFile(e.target.files?.[0])}
-        className="mt-1 block w-full text-sm"
+        className="mt-1 block w-full cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm text-slate-600 transition file:mr-3 file:cursor-pointer file:rounded-lg file:border-0 file:bg-blue-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:border-blue-400 hover:bg-blue-50/50 hover:file:bg-blue-700 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-blue-500 dark:hover:bg-blue-950/40"
       />
       {busy && (
         <p role="status" className="text-sm text-slate-500">

@@ -6,7 +6,10 @@ import { recordLearningEvent, startAttempt } from "@/features/actions";
 import { makeClientEventId } from "@/lib/sync-queue";
 import { UploadBox } from "@/components/upload-box";
 import { CodeBlock } from "@/components/code-block";
+import { CodeRunner } from "@/components/code-runner";
 import { EmbedAudio, EmbedFile, EmbedPdf, EmbedYoutube } from "@/components/media-embed";
+import { LessonBlocks } from "@/components/lesson-blocks";
+import type { ContentBlock } from "@/lib/content-blocks";
 import { useEngagementHeartbeat, useOfflineFlush } from "./use-sync";
 import { ReflectionBox } from "./reflection-box";
 import type { ActivityData } from "./page";
@@ -80,10 +83,16 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
   );
 
   if (activity.type === "article") {
+    const blocks = Array.isArray(c["blocks"]) ? (c["blocks"] as ContentBlock[]) : [];
     const body = typeof c["body"] === "string" ? c["body"] : "Konten belum diisi guru.";
     return (
       <div className="mt-4">
-        <p className="whitespace-pre-wrap">{body}</p>
+        {blocks.length > 0 ? (
+          // Halaman materi kaya (gaya tutorial): blok teks + ilustrasi + media embed.
+          <LessonBlocks blocks={blocks} />
+        ) : (
+          <p className="whitespace-pre-wrap">{body}</p>
+        )}
         {completeBtn}
       </div>
     );
@@ -143,6 +152,9 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
             </p>
           </details>
         ) : null}
+        <div className="mt-3">
+          <CodeRunner starterCode={code} starterLanguage={language} />
+        </div>
         {completeBtn}
       </div>
     );

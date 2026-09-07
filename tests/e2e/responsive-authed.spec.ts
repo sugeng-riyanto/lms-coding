@@ -58,7 +58,17 @@ const SUBMITTED_QUIZ = "/quiz/36c1dfa1-ff0a-4595-898e-c9cc5734086b";
 
 const ROLE_ROUTES = [
   { role: "murid", email: "murid01@demo.local", paths: ["/learn", "/catalog", "/review", SUBMITTED_QUIZ] },
-  { role: "guru", email: "guru@demo.local", paths: ["/teacher", "/teacher/analytics", "/teacher/grading"] },
+  {
+    role: "guru",
+    email: "guru@demo.local",
+    paths: [
+      "/teacher",
+      "/teacher/analytics",
+      "/teacher/grading",
+      "/teacher/certificates",
+      "/teacher/cohorts",
+    ],
+  },
   { role: "wali", email: "wali@demo.local", paths: ["/guardian"] },
 ] as const;
 
