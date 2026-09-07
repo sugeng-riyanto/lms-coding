@@ -1,4 +1,21 @@
 import { notFound } from "next/navigation";
+import { createStrictClient as createClient } from "@/lib/supabase/server";
+
+/** PDF route (/api/certificates/{publicId}/pdf) requires owner-student or cohort-teacher (ADR-009). */
+async function canViewPdf(publicId: string): Promise<boolean> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return false;
+    // RLS on certificates (own / cohort teacher) decides; anon gets no row.
+    const { data } = await supabase.from("certificates").select("id").eq("public_id", publicId).maybeSingle();
+    return Boolean(data);
+  } catch {
+    return false;
+  }
+}
 
 async function fetchVerification(publicId: string, baseUrl: string) {
   const res = await fetch(`${baseUrl}/api/public/certificates/${encodeURIComponent(publicId)}`, {
@@ -38,6 +55,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
   if (!data) notFound();
 
   const valid = data.status === "valid";
+  const authorizedForPdf = valid ? await canViewPdf(publicId) : false;
   return (
     <main id="main" className="mx-auto max-w-xl px-4 py-16">
       <p className="text-sm font-semibold text-slate-500">Verifikasi sertifikat</p>
@@ -102,6 +120,32 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
           </dd>
         </div>
       </dl>
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:ring-emerald-800">
+          ✓ PDF 2 halaman (A4)
+        </span>
+        <span className="text-xs text-slate-500">
+          Halaman 2 berisi informasi umum &amp; kelengkapan konten (tabel + statistik), dengan QR dan kode
+          unik yang sama dengan halaman 1.
+        </span>
+      </div>
+      {valid && authorizedForPdf && (
+        <div className="mt-4">
+          <a
+            href={`/api/certificates/${encodeURIComponent(publicId)}/pdf`}
+            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+          >
+            Buka PDF sertifikat (2 halaman)
+            <span aria-hidden>↓</span>
+          </a>
+        </div>
+      )}
+      {valid && !authorizedForPdf && (
+        <p className="mt-4 text-xs text-slate-500">
+          PDF hanya dapat dibuka oleh penerima sertifikat atau guru kelas setelah masuk — demi privasi,
+          halaman publik ini tidak memuat dokumen tersebut.
+        </p>
+      )}
       <p className="mt-4 text-sm text-slate-500">
         Halaman publik ini tidak menampilkan email, tanggal lahir, jawaban, nilai detail, atau storage path.
       </p>

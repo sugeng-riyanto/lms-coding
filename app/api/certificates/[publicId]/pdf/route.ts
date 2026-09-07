@@ -6,10 +6,278 @@ import { checkRateLimit } from "@/lib/ratelimit";
 import { createStrictClient as createClient } from "@/lib/supabase/server";
 
 /**
- * GET /api/certificates/{publicId}/pdf — PDF A4 landscape resmi, on-demand.
- * Permission: murid pemilik ATAU guru cohort. Revoked → 410 tanpa dokumen valid.
- * (ADR-009: on-demand + permission check; persist ke private bucket menyusul.)
+ * GET /api/certificates/{publicId}/pdf — official A4-landscape PDF, generated on demand.
+ * Permission: the recipient student OR a teacher of the course cohort. Revoked → 410 with
+ * no valid document issued. (ADR-009: on-demand generation + permission check.)
+ *
+ * The document is TWO inseparable pages:
+ *  - Page 1: certificate face (recipient, course, level, serial, signature, QR).
+ *  - Page 2: general information + content completeness (tables, statistics and
+ *    completion charts), carrying the SAME QR code and unique code as page 1 —
+ *    scanning either page opens the same /verify/{publicId} page.
  */
+
+type CertRow = {
+  id: string;
+  status: string;
+  serial_no: string;
+  issued_at: string;
+  payload_hash: string;
+  enrollment_id: string;
+  level_id: string;
+};
+
+type ModuleRow = { id: string; title: string; position: number };
+type LessonRow = { id: string; module_id: string; title: string; position: number; required: boolean };
+type ActivityRow = {
+  id: string;
+  lesson_id: string;
+  type: string;
+  title: string;
+  position: number;
+  required: boolean;
+};
+
+/** Loads the level hierarchy + progress used on page 2 (all read through the RLS viewer). */
+async function loadCompletenessData(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  enrollmentId: string,
+  levelId: string,
+) {
+  const { data: modulesData } = await supabase
+    .from("modules")
+    .select("id,title,position")
+    .eq("level_id", levelId)
+    .order("position");
+  const modules = (modulesData ?? []) as ModuleRow[];
+
+  const moduleIds = modules.map((m) => m.id);
+  let lessons: LessonRow[] = [];
+  if (moduleIds.length > 0) {
+    const { data: lessonsData } = await supabase
+      .from("lessons")
+      .select("id,module_id,title,position,required")
+      .in("module_id", moduleIds)
+      .order("position");
+    lessons = (lessonsData ?? []) as LessonRow[];
+  }
+
+  const lessonIds = lessons.map((l) => l.id);
+  let activities: ActivityRow[] = [];
+  if (lessonIds.length > 0) {
+    const { data: activitiesData } = await supabase
+      .from("activities")
+      .select("id,lesson_id,type,title,position,required")
+      .in("lesson_id", lessonIds)
+      .order("position");
+    activities = (activitiesData ?? []) as ActivityRow[];
+  }
+
+  // Completed lessons — from this level's progress_snapshots (completed / percent 100).
+  const completedLessonIds = new Set<string>();
+  if (lessonIds.length > 0) {
+    const { data: snaps } = await supabase
+      .from("progress_snapshots")
+      .select("entity_id,status,percent")
+      .eq("enrollment_id", enrollmentId)
+      .eq("entity_type", "lesson")
+      .in("entity_id", lessonIds);
+    for (const s of (snaps ?? []) as { entity_id: string; status: string; percent: number }[]) {
+      if (s.status === "completed" || Number(s.percent) >= 100) completedLessonIds.add(s.entity_id);
+    }
+  }
+
+  // Completed activities — append-only activity_completed events (incl. submitted quizzes).
+  const completedActivityIds = new Set<string>();
+  if (activities.length > 0) {
+    const { data: events } = await supabase
+      .from("learning_events")
+      .select("entity_id")
+      .eq("enrollment_id", enrollmentId)
+      .eq("event_type", "activity_completed")
+      .eq("entity_type", "activity")
+      .in(
+        "entity_id",
+        activities.map((a) => a.id),
+      );
+    for (const ev of (events ?? []) as { entity_id: string }[]) completedActivityIds.add(ev.entity_id);
+  }
+
+  // Assessments on this level + best attempt.
+  const activityIds = activities.map((a) => a.id);
+  let assessmentCount = 0;
+  let submittedAttempts = 0;
+  let bestScore: number | null = null;
+  if (activityIds.length > 0) {
+    const { data: assessments } = await supabase
+      .from("assessments")
+      .select("id,activity_id")
+      .in("activity_id", activityIds);
+    const assessmentIds = ((assessments ?? []) as { id: string; activity_id: string }[]).map((a) => a.id);
+    assessmentCount = assessmentIds.length;
+    if (assessmentIds.length > 0) {
+      const { data: attempts } = await supabase
+        .from("attempts")
+        .select("final_score,status")
+        .eq("enrollment_id", enrollmentId)
+        .in("assessment_id", assessmentIds);
+      for (const a of (attempts ?? []) as { final_score: number | null; status: string }[]) {
+        if (a.status !== "submitted" || a.final_score == null) continue;
+        submittedAttempts += 1;
+        if (bestScore == null || a.final_score > bestScore) bestScore = a.final_score;
+      }
+    }
+  }
+
+  // Active study time (server-clamped heartbeats).
+  let activeSeconds = 0;
+  {
+    const { data: sessions } = await supabase
+      .from("study_sessions")
+      .select("active_seconds")
+      .eq("enrollment_id", enrollmentId);
+    for (const s of (sessions ?? []) as { active_seconds: number }[]) activeSeconds += s.active_seconds;
+  }
+
+  return {
+    modules,
+    lessons,
+    activities,
+    completedLessonIds,
+    completedActivityIds,
+    assessmentCount,
+    submittedAttempts,
+    bestScore,
+    activeSeconds,
+  };
+}
+
+function formatDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.round((totalSeconds % 3600) / 60);
+  if (h > 0 && m > 0) return `${h} hr ${m} min`;
+  if (h > 0) return `${h} hr`;
+  return `${m} min`;
+}
+
+type TableRow = (string | number)[];
+
+/** Draws a simple table; returns the y coordinate after the last row. */
+function drawTable(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  headers: string[],
+  rows: TableRow[],
+  widths: number[],
+  opts: { rowH?: number; headerH?: number; align?: ("left" | "center" | "right")[] } = {},
+): number {
+  const rowH = opts.rowH ?? 20;
+  const headerH = opts.headerH ?? 22;
+  const align = opts.align ?? headers.map(() => "left");
+  const totalW = widths.reduce((a, b) => a + b, 0);
+
+  const drawCell = (text: string, cy: number, ch: number, i: number, bold: boolean, fill?: string) => {
+    const w = widths[i] ?? 0;
+    const x0 = x + widths.slice(0, i).reduce((a, b) => a + b, 0);
+    if (fill) {
+      doc.rect(x0, cy, w, ch).fill(fill);
+      doc.fillColor("#0f172a");
+    }
+    doc
+      .font(bold ? "Helvetica-Bold" : "Helvetica")
+      .fontSize(9)
+      .fillColor("#0f172a")
+      .text(String(text), x0 + 6, cy + 5, {
+        width: Math.max(w - 12, 40),
+        align: align[i] ?? "left",
+        lineBreak: false,
+      });
+  };
+
+  drawCell(headers[0] ?? "", y, headerH, 0, true, "#e2e8f0");
+  for (let i = 1; i < headers.length; i += 1) {
+    const cx = x + widths.slice(0, i).reduce((a, b) => a + b, 0);
+    doc.rect(cx, y, widths[i] ?? 0, headerH).fill("#e2e8f0");
+    doc
+      .font("Helvetica-Bold")
+      .fontSize(9)
+      .fillColor("#0f172a")
+      .text(String(headers[i] ?? ""), cx + 6, y + 5, {
+        width: Math.max((widths[i] ?? 0) - 12, 40),
+        align: align[i] ?? "left",
+        lineBreak: false,
+      });
+  }
+  doc.rect(x, y, totalW, headerH).lineWidth(0.6).strokeColor("#94a3b8").stroke();
+  y += headerH;
+
+  rows.forEach((row, ri) => {
+    const fill = ri % 2 === 1 ? "#f8fafc" : undefined;
+    drawCell(String(row[0] ?? ""), y, rowH, 0, false, fill);
+    for (let i = 1; i < row.length; i += 1) {
+      const cx = x + widths.slice(0, i).reduce((a, b) => a + b, 0);
+      if (fill) doc.rect(cx, y, widths[i] ?? 0, rowH).fill(fill);
+      doc
+        .font("Helvetica")
+        .fontSize(9)
+        .fillColor("#0f172a")
+        .text(String(row[i] ?? ""), cx + 6, y + 5, {
+          width: Math.max((widths[i] ?? 0) - 12, 40),
+          align: align[i] ?? "left",
+          lineBreak: false,
+        });
+    }
+    doc.rect(x, y, totalW, rowH).lineWidth(0.4).strokeColor("#cbd5e1").stroke();
+    y += rowH;
+  });
+  return y;
+}
+
+/** Draws one chart row: label, horizontal completion bar, right-aligned value. */
+function drawBarRow(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  labelW: number,
+  barX: number,
+  barW: number,
+  valueX: number,
+  valueW: number,
+  barH: number,
+  label: string,
+  value: string,
+  pct: number | null,
+): void {
+  doc
+    .font("Helvetica")
+    .fontSize(8)
+    .fillColor("#334155")
+    .text(label, x, y + 1, {
+      width: labelW,
+      lineBreak: false,
+    });
+  if (pct != null) {
+    const p = Math.min(Math.max(pct, 0), 100);
+    // track
+    doc.rect(barX, y, barW, barH).fill("#e2e8f0");
+    // gradient fill — completion is real data, never decorative
+    const fillW = (p / 100) * barW;
+    if (fillW > 1) {
+      const grad = doc.linearGradient(barX, y, barX + fillW, y);
+      grad.stop(0, "#2563eb");
+      grad.stop(1, "#60a5fa");
+      doc.rect(barX, y, fillW, barH).fill(grad);
+    }
+    doc.rect(barX, y, barW, barH).lineWidth(0.5).strokeColor("#94a3b8").stroke();
+  }
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(8)
+    .fillColor("#0f172a")
+    .text(value, valueX, y + 1, { width: valueW, lineBreak: false, align: "left" });
+}
+
 export async function GET(_req: Request, ctx: { params: Promise<{ publicId: string }> }) {
   const { publicId } = await ctx.params;
   const parsed = verifyPublicIdSchema.safeParse({ publicId });
@@ -30,21 +298,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
       { status: 401 },
     );
   }
-  // RLS certificates (student own / teacher cohort) menegakkan otorisasi baca.
+  // RLS on certificates (own student / cohort teacher) enforces read authorization.
   const { data: cert } = await supabase
     .from("certificates")
     .select("id,status,serial_no,issued_at,payload_hash,enrollment_id,level_id")
     .eq("public_id", parsed.data.publicId)
     .single();
-  const c = cert as {
-    id: string;
-    status: string;
-    serial_no: string;
-    issued_at: string;
-    payload_hash: string;
-    enrollment_id: string;
-    level_id: string;
-  } | null;
+  const c = cert as CertRow | null;
   if (!c) return NextResponse.json({ status: "not_found" }, { status: 404 });
   if (c.status !== "active") {
     return NextResponse.json(
@@ -70,29 +330,34 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   const courseTitle = (course as { title: string } | null)?.title ?? "—";
   const levelTitle = (level as { title: string } | null)?.title ?? "—";
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
-  const qr = await QRCode.toBuffer(`${base}/verify/${encodeURIComponent(parsed.data.publicId)}`, {
-    type: "png",
-    width: 180,
-    margin: 1,
-  });
+  const verifyUrl = `${base}/verify/${encodeURIComponent(parsed.data.publicId)}`;
+  // One QR buffer shared by BOTH pages → identical scannable unique code.
+  const qr = await QRCode.toBuffer(verifyUrl, { type: "png", width: 180, margin: 1 });
+
+  const stats = await loadCompletenessData(supabase, c.enrollment_id, c.level_id);
 
   const doc = new PDFDocument({ size: "A4", layout: "landscape", margin: 48 });
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
 
+  // ================= Page 1 — certificate face =================
   doc.rect(24, 24, doc.page.width - 48, doc.page.height - 48).stroke();
-  doc.font("Helvetica").fontSize(11).fillColor("#64748b").text("SEKOLAH", { align: "center" });
+  doc.font("Helvetica").fontSize(11).fillColor("#64748b").text("ACADEMY", { align: "center" });
   doc
     .font("Helvetica-Bold")
     .fontSize(30)
     .fillColor("#0f172a")
     .text("Certificate of Completion", { align: "center" });
   doc.moveDown();
-  doc.font("Helvetica").fontSize(12).fillColor("#475569").text("Diberikan kepada", { align: "center" });
+  doc.font("Helvetica").fontSize(12).fillColor("#475569").text("Presented to", { align: "center" });
   doc.font("Helvetica-Bold").fontSize(24).fillColor("#0f172a").text(displayName, { align: "center" });
   doc.moveDown(0.5);
-  doc.font("Helvetica").fontSize(12).fillColor("#475569").text("atas penyelesaian", { align: "center" });
+  doc
+    .font("Helvetica")
+    .fontSize(12)
+    .fillColor("#475569")
+    .text("for the successful completion of", { align: "center" });
   doc
     .font("Helvetica-Bold")
     .fontSize(16)
@@ -103,14 +368,16 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     .font("Helvetica")
     .fontSize(10)
     .fillColor("#334155")
-    .text(`Tanggal terbit: ${c.issued_at}   Nomor serial: ${c.serial_no}`, { align: "center" })
+    .text(`Date of issue: ${c.issued_at}   Serial number: ${c.serial_no}`, { align: "center" })
     .text(`Fingerprint: ${c.payload_hash.slice(0, 12).toUpperCase()}`, { align: "center" });
   doc
     .fontSize(10)
     .fillColor("#64748b")
-    .text("Pernyataan kompetensi — bukan nilai detail.", { align: "center" });
+    .text("This certificate attests to demonstrated competence; detailed scores are not disclosed.", {
+      align: "center",
+    });
   doc.image(qr, doc.page.width - 200, doc.page.height - 200, { width: 120 });
-  // Area tanda tangan digital penerbit — nama penandatangan resmi di bawah garis.
+  // Digital signature area — the authorised signatory's name below the line.
   const sigY = doc.page.height - 96;
   doc.moveTo(56, sigY).lineTo(236, sigY).lineWidth(1).strokeColor("#94a3b8").stroke();
   doc
@@ -122,7 +389,189 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     .font("Helvetica")
     .fontSize(8)
     .fillColor("#64748b")
-    .text("Penerbit sertifikat", 56, sigY + 26);
+    .text("Certificate Issuer", 56, sigY + 26);
+
+  // ================= Page 2 — general information & content completeness =================
+  doc.addPage({ size: "A4", layout: "landscape", margin: 48 });
+  const W = doc.page.width;
+  const H = doc.page.height;
+  const maxY = H - 48; // pdfkit auto-inserts a page whenever a line crosses this bound.
+
+  doc.rect(24, 24, W - 48, H - 48).stroke();
+
+  // Small QR in the top-right corner — identical to page 1's buffer, kept clear of the
+  // centred title so no overlap occurs; still comfortably scannable.
+  const qrSize = 90;
+  doc.image(qr, W - 24 - qrSize - 16, 40, { width: qrSize });
+
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(18)
+    .fillColor("#0f172a")
+    .text("General Information & Content Completeness", 48, 48, {
+      align: "center",
+      width: W - 96 - qrSize - 16,
+    });
+  doc
+    .font("Helvetica")
+    .fontSize(9)
+    .fillColor("#64748b")
+    .text("Page 2 of 2 — an integral part of page 1 of this certificate.", 48, 74, {
+      align: "center",
+      width: W - 96 - qrSize - 16,
+    });
+
+  // --- General information table ---
+  const infoRows: TableRow[] = [
+    ["Recipient", displayName, "Issuer", "Sugeng Riyanto, M.Sc."],
+    ["Course", courseTitle, "Level", levelTitle],
+    ["Serial number", c.serial_no, "Unique code (public ID)", parsed.data.publicId],
+    ["Date of issue", c.issued_at, "Fingerprint", c.payload_hash.slice(0, 12).toUpperCase()],
+  ];
+  let y = drawTable(doc, 56, 104, ["Field", "Value", "Field", "Value"], infoRows, [115, 255, 115, 255], {
+    rowH: 20,
+    headerH: 20,
+    align: ["left", "left", "left", "left"],
+  });
+  y += 12;
+
+  // --- Content completeness by module ---
+  doc.font("Helvetica-Bold").fontSize(12).fillColor("#0f172a").text("Content Completeness by Module", 56, y);
+  y += 21;
+
+  const modulePct = stats.modules.map((m) => {
+    const lessons = stats.lessons.filter((l) => l.module_id === m.id);
+    const requiredLessons = lessons.filter((l) => l.required);
+    const doneLessons = lessons.filter((l) => stats.completedLessonIds.has(l.id)).length;
+    const acts = stats.activities.filter((a) => lessons.some((l) => l.id === a.lesson_id));
+    const requiredActs = acts.filter((a) => a.required);
+    const doneActs = acts.filter((a) => stats.completedActivityIds.has(a.id)).length;
+    const total = requiredLessons.length + requiredActs.length;
+    const done = doneLessons + doneActs;
+    const pct = total > 0 ? Math.round((done / total) * 100) : 100;
+    return {
+      title: m.title,
+      pct,
+      lessonsLabel: `${doneLessons}/${requiredLessons.length}`,
+      actsLabel: `${doneActs}/${requiredActs.length}`,
+    };
+  });
+  const moduleCompleteness: TableRow[] = modulePct.map((mp, idx) => [
+    idx + 1,
+    mp.title,
+    mp.lessonsLabel,
+    mp.actsLabel,
+    `${mp.pct}%`,
+  ]);
+
+  y = drawTable(
+    doc,
+    56,
+    y,
+    ["No.", "Module", "Lessons (completed/total)", "Activities (completed/total)", "Completeness"],
+    moduleCompleteness.length > 0 ? moduleCompleteness : [["—", "No modules", "—", "—", "—"]],
+    [40, 260, 160, 170, 110],
+    { rowH: 20, headerH: 20, align: ["center", "left", "center", "center", "center"] },
+  );
+  y += 12;
+
+  // --- Completion statistics with real-data charts ---
+  const requiredLessons = stats.lessons.filter((l) => l.required);
+  const requiredActs = stats.activities.filter((a) => a.required);
+  const lessonsDone = stats.lessons.filter((l) => stats.completedLessonIds.has(l.id)).length;
+  const actsDone = stats.activities.filter((a) => stats.completedActivityIds.has(a.id)).length;
+  const contentPct =
+    requiredLessons.length + requiredActs.length > 0
+      ? Math.round(((lessonsDone + actsDone) / (requiredLessons.length + requiredActs.length)) * 100)
+      : 100;
+
+  const assessmentCell =
+    stats.assessmentCount === 0
+      ? "—"
+      : stats.submittedAttempts > stats.assessmentCount
+        ? `${stats.assessmentCount} assessment${stats.assessmentCount === 1 ? "" : "s"} (${stats.submittedAttempts} attempt${stats.submittedAttempts === 1 ? "" : "s"})`
+        : `${stats.submittedAttempts}/${stats.assessmentCount}`;
+
+  type ChartRow = { label: string; value: string; pct: number | null };
+  const chartRows: ChartRow[] = [
+    { label: "Level content completed", value: `${contentPct}%`, pct: contentPct },
+    {
+      label: "Lessons completed",
+      value: `${lessonsDone}/${requiredLessons.length}`,
+      pct: requiredLessons.length > 0 ? (lessonsDone / requiredLessons.length) * 100 : 100,
+    },
+    {
+      label: "Activities completed",
+      value: `${actsDone}/${requiredActs.length}`,
+      pct: requiredActs.length > 0 ? (actsDone / requiredActs.length) * 100 : 100,
+    },
+    ...(stats.bestScore != null
+      ? [{ label: "Best assessment score", value: `${Math.round(stats.bestScore)}%`, pct: stats.bestScore }]
+      : []),
+    ...(stats.assessmentCount > 0
+      ? [{ label: "Summative assessment", value: assessmentCell, pct: null }]
+      : []),
+    { label: "Active study time", value: formatDuration(stats.activeSeconds), pct: null },
+  ];
+
+  // Keep every element above maxY so pdfkit never inserts a phantom page, and reserve
+  // the lower band for the footer.
+  if (y < maxY - 210) {
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#0f172a").text("Completion Statistics", 56, y);
+    y += 24;
+
+    const labelW = 175;
+    const barW = 300;
+    const barX = 56 + labelW + 12;
+    const valueX = barX + barW + 12;
+    const valueW = 200;
+    const avail = H - 146 - y;
+    const rowGap = 8;
+    const barH =
+      chartRows.length > 0 && avail > chartRows.length * (rowGap + 6)
+        ? Math.min(12, Math.max(6, Math.floor(avail / chartRows.length) - rowGap))
+        : 0;
+    if (barH >= 6) {
+      for (const row of chartRows) {
+        drawBarRow(doc, 56, y, labelW, barX, barW, valueX, valueW, barH, row.label, row.value, row.pct);
+        y += barH + rowGap;
+      }
+    }
+  }
+
+  // --- Page-2 footer: no QR (moved top-right); codes identical to page 1 ---
+  doc
+    .font("Helvetica")
+    .fontSize(8)
+    .fillColor("#64748b")
+    .text(
+      "The QR code and unique code on this page are identical to those on page 1 — scanning either page " +
+        "verifies the same certificate.",
+      56,
+      H - 146,
+      { align: "center", width: W - 112 },
+    );
+  doc
+    .font("Helvetica-Bold")
+    .fontSize(11)
+    .fillColor("#0f172a")
+    .text(`Unique code: ${parsed.data.publicId}`, 56, H - 124, { align: "center", width: W - 112 });
+  doc
+    .font("Helvetica")
+    .fontSize(9)
+    .fillColor("#334155")
+    .text(`Serial number: ${c.serial_no}   •   Verify: ${verifyUrl}`, 56, H - 104, {
+      align: "center",
+      width: W - 112,
+    });
+  // Positioned at H-64 (not H-56): a line at H-56 would cross maxY = H-48 and make
+  // pdfkit append an empty third page (reproduced & fixed earlier).
+  doc
+    .font("Helvetica")
+    .fontSize(8)
+    .fillColor("#94a3b8")
+    .text("Page 2 of 2", 56, H - 64, { align: "center", width: W - 112 });
+
   doc.end();
 
   const pdf = await done;
