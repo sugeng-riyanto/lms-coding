@@ -1278,3 +1278,19 @@ KURANG asli PROGRESS.md: "persist PDF ke bucket" (Phase 6). Bagian reissue (RPC
   bucket); inspeksi visual page 1 (ribbon, underline, layout utuh tanpa
   tabrakan) & page 2 (header gradien, bar chart, QR 67.5) — tetap 2/2 halaman.
 - Gates sesi: prettier · eslint 0 · tsc 0.
+
+## Sesi round-2 visual sertifikat — QR page 2 50% + border rounded (07 Sep 2026)
+
+- **QR halaman 2 diperkecil lagi ke 50%** (67.5 → **33.75 px**, `qrSize`).
+  Buffer khusus `qrSmall` (width 72) dipakai untuk halaman 2 — payload URL sama
+  persis (kode tetap identik dengan halaman 1), namun modul QR tetap tajam saat
+  diskala ke 33.75 pt sehingga masih bisa discan.
+- **Outer border rounded** di kedua halaman (radius 16 + inset 8): halaman 1
+  dekorasi (wash latar + ribbon) di-clip ke path rounded (pdfkit
+  save/roundedRect/clip/restore) agar tidak menyembul di sudut; halaman 2 frame
+  rounded ganda yang sama → kedua halaman terbaca sebagai satu dokumen.
+- Verifikasi live: re-render 15,413 B ter-persist (pdf_path + objek bucket
+  terisi); inspeksi visual — sudut rounded tampil rapi di kedua halaman, QR
+  page 2 kecil & tajam tanpa tumpang tindih, tabel/grafik/footer utuh, tetap
+  2/2 halaman.
+- Gates sesi: prettier · eslint 0 · tsc 0.
