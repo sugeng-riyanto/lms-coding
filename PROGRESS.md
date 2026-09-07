@@ -847,3 +847,331 @@ tanpa backend) · build 0 (route `/teacher/admin/map` ikut ter-build dynamic).
 
 Belum: push 000020–000022 ke hosted (000019 sudah); verifikasi visual
 `/teacher/admin/map` + refresh anchor menunggu backend hidup.
+
+## Catatan sesi — Modernisasi dashboard (semua peran, ekspektasi "tampilan modern")
+
+Keluhan "dashboard jauh dari harapan" → presentasi ulang ketiga dashboard peran
+(DATA + query + RLS TIDAK berubah — murni presentasi + redaksional):
+
+1. **Kit `components/dashboard.tsx` (baru, tanpa dep baru, SVG murni)**:
+   `StatCard` (aksen tone + hint), `ProgressRing` (SVG + teks % + role progressbar),
+   `MeterBar` (role progressbar + aria), `SectionHeader`, `StateBadge` (selalu
+   berteks — bukan warna saja). Palet slate/blue/emerald/amber + varian `dark:`.
+2. **Murid `/learn`**: eyebrow "Ruang Belajar" + h1 judul kursus (sapaan kasual
+   "Halo, Pelajar" dihapus); hero grid — kartu gradien "Langkah berikutnya"
+   (alasan + CTA) + kartu ring target mingguan; journey level vertikal (node
+   ✓/lock/nomor + konektor, badge state, MeterBar mastery, tautan "Buka level"
+   per level terbuka); ringkasan 3 StatCard (selesai/dikerjakan/terkunci).
+   E2E login diperbarui: heading judul kursus + teks "Langkah berikutnya".
+3. **Guru `/teacher`**: eyebrow nama cohort + h1; 5 StatCard bertone + hint;
+   matriks cohort dalam kartu (mobile cards + tabel desktop dipertahankan);
+   "Sinyal risiko" + "Kelola kelas" sebagai kartu aksi (6 alat + admin gated).
+4. **Wali `/guardian`**: kartu anak ber-header gradien (avatar, nama, badge);
+   ProgressRing + 4 tile; footer jujur bila kosong ("Belum ada progres tercatat
+   — data muncul setelah anak mulai belajar", ganti "Level tuntas 0 dari 0").
+5. **Kecil**: pesan INACTIVE dibatasi "30+ hari" (`lib/progress.ts`; ambang logika
+   tak berubah; fallback 999 = tanpa aktivitas tercatat tak tampil mentah).
+
+Tests: `dashboard-kit.test.tsx` (5, jsdom: teks/aria/clamp) +
+`dashboard-modern.test.ts` (5, statis: impor kit ×3 peran, hero/journey/tautan,
+kartu aksi + gate admin, wording wali) + 1 unit cap 30+; 3 test statis lama
+disesuaikan ke tautan data-driven (`href:` bukan `href=`, `adminCtx && [`).
+
+Gates: format 0 · lint 0 · typecheck 0 · test **406/406 +1 skip** (46 files)
+· db:typecheck 0 (38 tables, 2 views) · build 0 · e2e live-hosted **28/28**
+(24 responsive-authed + 4 critical, termasuk login murid→/learn) · live-denial
+tidak tersentuh (tanpa migration). Screenshot bukti:
+`C:\Users\User\AppData\Local\Temp\opencode\{learn,teacher,guardian}.png`
+(tool dir, tidak di-commit).
+
+UPDATE status "Belum" sesi lalu: 000020–000022 sudah remote (migration list
+local == remote 000000–000023); service key hosted diperbaiki (sb_secret mati
+401 → legacy service_role JWT via management API, terverifikasi 200); study loop
+penuh terbukti live (murid01 jawab+submit = 100, guru melihat submitted+skor);
+kunci RPC 000023 ter-push dan tersaji tanpa bocor grading.
+
+## Catatan sesi — App shell: sidebar + topbar + pengaturan + keluar semua RBAC
+
+Misi (navigasi jelas per peran, responsif, pengaturan & keluar di semua peran;
+RBAC.md TIDAK menambah kapabilitas — pengaturan = akun sendiri):
+
+1. **`lib/role-nav.ts` (baru, sumber tunggal)**: `navForRole(role, isOrgAdmin)` —
+   murid 5 tautan (Belajar/Katalog/Review/Sertifikat/Pengaturan), guru 6–7
+   (+Admin bila org-admin, ADR-008), wali 2 (Ringkasan/Pengaturan).
+2. **`components/app-shell.tsx` (Server) + `app-nav.tsx` (Client)**:
+   sidebar sticky `md:h-screen` (Keluar selalu terlihat desktop), topbar sticky
+   (hamburger mobile + eyebrow + font-scale murid + tema + ⚙), drawer mobile
+   (dialog, Escape/overlay/tautan menutup, aria-expanded). Halaman tetap
+   merender `<main>` sendiri (tanpa nested main).
+3. **Route `/settings` (semua peran)**: guard 3 peran → nav sesuai peran +
+   `SettingsPanel` (Akun: email/nama/peran-server + EditProfile; Preferensi:
+   tema + font-scale murid; Sesi: Keluar). Toggle tema ganda dihapus dari
+   halaman guru/wali (kini di shell).
+4. **Defect ditemukan**: footer sidebar tenggelam di halaman panjang (aside ikut
+   tinggi konten) → aside `md:sticky md:h-screen`.
+
+Tests: `app-nav.test.tsx` (5, jsdom: tautan per peran, aria-current, drawer
+buka/Escape/tautan, Keluar) + `app-shell.test.ts` (6: peta nav, layout×3 guard
++ AppShell, shell synchronize topbar/sidebar, settings guard+panel).
+E2E `shell.spec.ts` (live-only, 3 peran: sidebar/drawer/pengaturan/keluar).
+
+Gates: format 0 · lint 0 · typecheck 0 · test **417/417 +1 skip** (48 files)
+· build 0 · e2e live **24/24 responsive-authed + 3/3 shell + 4/4 critical**
+· live-denial/db tidak tersentuh (tanpa migration).
+
+## Catatan sesi — Bulk XLSX: template + ekspor + kontrak DB/API + layout modern
+
+Permintaan: template untuk semua bulk, match DB+API, berkas dibuang setelah
+sukses, menu download berisi data DB, layout modern responsif nyaman.
+
+1. **Template (`lib/bulk-template.ts`, single source of truth)**: 4 kind
+   (students/content/teachers/assignments) — header + contoh + kapasitas mirror
+   guard server. Route `GET /api/bulk/templates/[kind]` (guru utk
+   students/content; org-admin utk teachers/assignments; 404 kind asing).
+   Alias parser ditambah "subjek" agar header template terparse.
+2. **Ekspor XLSX round-trip**: roster per cohort (`Email, Nama, Status`) +
+   materi per course (6 header template + Content JSON), otorisasi pemilik,
+   escape anti formula-injection (mirror lib/csv). Unduhan → edit → impor
+   ulang terbukti live (roster 3 baris ber-email, materi 1 baris, 0 error parse).
+3. **Defect #1 — email resolution mati total**: `svc.schema("auth")` selalu 406
+   live (PostgREST tak mengekspos skema auth) → semua impor bulk berakhir
+   notFound diam-diam. Fix: `fetchAuthDirectory`/`resolveEmailsToIds` via Auth
+   Admin API di 3 aksi + ekspor roster.
+4. **Defect #2 — UUID seed ditolak**: `z.string().uuid()` (Zod 4) menolak bit
+   varian → SEMUA action ber-ID seed (c000…/b000…) balas INVALID_INPUT live.
+   Fix: `uuidSchema` = regex format hex 8-4-4-4-12 (DB penegak tipe akhir).
+5. **Hapus-setelah-sukses**: server tak pernah menulis disk (parse memori);
+   keempat kartu mereset form saat sukses + catatan di BulkCard.
+6. **Layout**: `components/bulk-card.tsx` (judul, template, ekspor, kapasitas,
+   hasil) dipakai keempat kartu; grid responsif; dark mode.
+
+Tests: `bulk-contract.test.ts` (15: template↔parser 0-error, kapasitas,
+workbook round-trip, escape, ekspor↔template, template roles, allowlist =
+CHECK 000014, tanpa fs/auth-schema, reset+templateLink ×4 kartu, uuid seed).
+Bukti live: template 2 baris 0 error, roster ber-email, materi 1 baris,
+403 cohort asing, impor UI murid existing → "sudah menjadi anggota".
+
+Gates: format/lint/typecheck 0 · test **432/432 +1 skip** (49 files) ·
+db 0 (38t/2v) · build 0. Tanpa migration → live-denial tetap 95/95.
+
+## Catatan sesi — Mobile: tabel sertifikat guru + perluasan audit route
+
+Audit 360px semua 20 route peran → 1 bocor: `/teacher/certificates` (tabel 5
+kolom + tanggal ISO, 456px). Fix pola matriks: kartu tumpuk `md:hidden` +
+tabel desktop + tanggal pendek YYYY-MM-DD. Spec responsif-authed diperluas
+(+certificates, +cohorts = 10 paths × 3 viewport).
+
+Gates: e2e live **30/30 responsive-authed** · test **432/432 +1 skip**.
+
+## Catatan sesi — Tanda tangan digital sertifikat + recovery script deterministik
+
+1. **Tanda tangan digital penerbit di PDF** (`app/api/certificates/[publicId]/pdf/route.ts`):
+   area garis + nama **"Sugeng Riyanto, M.Sc."** + label "Penerbit sertifikat" di
+   kiri-bawah A4 landscape (QR tetap kanan-bawah). Verifikasi LIVE: PDF DEMO-0001
+   via sesi guru → 200 application/pdf 4.822 byte; stream di-inflate + token hex
+   pdfkit didekode → `Sugeng Riyanto, M.Sc.`, `Penerbit sertifikat`, `DEMO-0001`,
+   `Matematika Dasar` semua TERKANDUNG. Test statis baru di hardening (P11).
+2. **`.freebuff/push-and-verify.sh` refactor ke cleanup deterministik**: hosted
+   mengembalikan POST body kosong tanpa `Prefer: return=representation`, sehingga
+   ekstraksi id lama bisa membiarkan baris probe tersisa. Kini id probe FIXED
+   (`c0000000-…-c0de`, `a0000000-…-b00d`) + `trap EXIT cleanup` by-id DAN
+   by content-marker (sweep title lama + merkle_root 1111…) — baris probe TIDAK
+   PERNAH tersisa walau assert gagal/body kosong. Run LIVE: bogus CHECK 400 ×2,
+   insert code_board 201, pending 201 → PATCH final 204, semua cleanup 204.
+3. Migration list --linked = 000000–000023, "Remote database is up to date".
+
+Gates: format/lint/typecheck 0 · test **433 passed +1 skip** (49 files, +1 hardening
+P11 signature) · build 0. Tanpa migration → db:typecheck/live-denial tak tersentuh.
+
+## Catatan sesi — Adopsi materi gaya codewithharry: halaman bacaan kaya (blok ter-allowlist)
+
+Permintaan: siswa membaca info/teks/ilustrasi + embed pdf/youtube/image/audio dalam
+SATU halaman, lalu assignment (bisa diulang) dan asesmen mengunci topik berikut.
+Gap dari recon: `article` hanya `content.body` teks polos; tak ada campuran media
+satu halaman; tak ada ilustrasi. Solusi tanpa migrasi (content_json sudah jsonb):
+
+1. **`lib/content-blocks.ts` (baru, pure)**: 8 kind allowlist
+   (heading/paragraph/image/code/embed_youtube/embed_pdf/embed_audio/embed_file) +
+   `sanitizeContentBlocks` (kind tak dikenal => BLOCK_INVALID; hanya field
+   allowlist; URL http(s); youtube direkonstruksi dari id; image WAJIB
+   alt/caption = aksesibilitas; MAX_BLOCKS 60; truncate). `isSafeHttpUrl`/
+   `youtubeEmbedSrc` DIPINDAH ke sini (single source) — media-embed re-export.
+2. **`components/lesson-blocks.tsx` (baru, client)**: renderer terkontrol — tidak
+   ada HTML arbitrer (React escape), gambar lazy+alt, iframe hanya youtube-nocookie,
+   audio+transcript, unduhan, CodeBlock. kind asing => null (lapis kedua).
+3. **Student**: cabang `article` merender `content.blocks` bila ada (fallback body).
+4. **Guru authoring**: createActivity kini memvalidasi `blocks` via sanitizer
+   (hanya tipe `article`; error `BLOCK_INVALID`), lalu menyimpan canonical; hint
+   JSON di level-manager diperbarui dengan contoh blocks.
+5. Teacher JSON authoring = pola existing (bulk import Content JSON); blok siap
+   dimakan template/bulk.
+
+Tests: `content-blocks.test.ts` (12: canonical, strip extras, kind asing, kapasitas,
+image alt-wajib, embed url aman, truncate, deterministik, HTML mentah tetap teks) +
+`lesson-blocks.test.tsx` (5, jsdom: semua kind, caption→alt, pdf/file, escape HTML,
+kind asing tidak dirender) + media-embed lama tetap hijau via re-export.
+
+Gates: format/lint/typecheck 0 · test **451 passed +1 skip** (51 files, +18) ·
+build 0. Tanpa migration → db:typecheck/live-denial tak tersentuh.
+
+Tersisa (luar slice ini): UI block-builder drag&drop guru, importer bulk khusus
+codewithharry, dan kebijakan "kuis unlock lesson berikut" per requirement (sudah ada
+prereq/unlock server-authoritative Phase 3 — perlu penyetelan per lesson).
+
+## Catatan sesi — Bugfix: drawer mobile runtuh setinggi header (~54px)
+
+Laporan: sidebar di HP/tablet rusak. Probe Playwright @360 (guru) menemukan akar
+masalah: overlay drawer `position: fixed` adalah ANAK header yang memakai
+`backdrop-blur` — backdrop-filter menjadikan header sebagai containing block
+fixed, sehingga drawer ter-ukur 54px (setinggi header) dan nav terpotong,
+bukan 700px penuh. Fix `components/app-nav.tsx`: drawer kini di-render lewat
+`createPortal(…, document.body)` (fixed = viewport; tidak ter-clip header).
+Bukti sebelum/sesudah @360: overlay 360×54 → 360×700; drawer h-full 700; nav
+554 dengan 8 tautan terlihat; Escape menutup; @820 sidebar flex 256px tanpa
+overflowX (tetap). Verifikasi: probe 3/3 → shell.spec live 3/3 → component
+app-nav 5/5 + app-shell 6/6 → full suite 451 +1 skip → lint/typecheck 0.
+
+## Catatan sesi — Design pass: depth halus + micro-interaction (modern, tetap profesional)
+
+Permintaan: modern, terkesan 3D, hover beranimasi, tetap profesional/elegant.
+
+1. **`app/globals.css` — token elevation**: `--ambient` (radial glow lembut di
+   body light/dark), `--shadow-soft/-lift/--glow-btn` (bayangan berlapis 3D halus,
+   inner-highlight tombol), kelas `.card-lift` (hover: translateY(-3px) + shadow
+   lift, 160/200ms cubic-bezier), tekan tombol global (`active: translateY(1px)
+   scale(.99)`), glow focus + selection. Semua gerak dibungkus
+   `prefers-reduced-motion: no-preference` (aturan reduce global lama tetap).
+2. **Shell**: sidebar gradient light/dark + brand monogram "CS" (chip gradient
+   blue→indigo + glow), NavLinks aktif jadi pill gradient + shadow lembut dan
+   inactive hover translate-x halus; drawer mobile memakai permukaan sama +
+   monogram di header.
+3. **Dashboard**: StatCard `.card-lift` + aksen atas kini gradien per tone
+   (blue→indigo, emerald→teal, amber→orange, rose→pink).
+4. **Login**: kartu terangkat `rounded-3xl + --shadow-lift`, header monogram,
+   CTA gradien + glow + hover ke shade lebih tua.
+
+Kontras/aksesibilitas dijaga (teks putih di atas gradien gelap; status tetap
+berteks; reduced-motion). Verifikasi visual live: login light+dark, drawer guru
+dark (pill aktif Dasbor gradien, item jelas, Keluar di footer). Gates: lint 0
+(css di-ignore eslint, ekspektasi) · tsc 0 · test 451 +1 skip · build 0.
+
+## Catatan sesi — Tokens elevation dirambat ke seluruh permukaan bersama
+
+`--ambient/--shadow-soft/-lift/--glow-btn` + `.card-lift` + gradien kini dipakai
+di: hero publik (CTA Masuk gradien+glow; tombol sekunder lift hover; kartu
+Status MVP accent gradien), CodeBlock (shadow + chip bahasa gradien),
+media-embed (embed youtube/pdf/audio/file = permukaan putih/gelap + lift +
+tombol Unduh gradien), UploadBox (dropzone dashed rounded + hover blue + tombol
+file gradien via `file:`), BulkCard (accent atas gradien + header gradien +
+tombol template solid), level map murid (kartu level + kartu mingguan/setting +
+CTA "Buka level" gradien). Verifikasi visual: hero dark, admin map (accent
+gradien + tombol template). Gates: lint/tsc 0 · test 451 +1 skip · build 0.
+
+## Catatan sesi — Authoring massal guru: materi Markdown + question pack (MCQ/esai)
+
+1. **Materi Markdown** (`lib/markdown-blocks.ts`, pure): baris per baris →
+   heading `#`, ``` fenced code, gambar `![alt](url)`, paragraf (fence state
+   eksplisit) → `content.blocks` canonical via sanitizeContentBlocks (tanpa HTML
+   arbitrer). Wiring: createActivity & bulkImportContent menerima
+   `content.markdown` (hanya article) → MARKDOWN_INVALID bila rusak; kotak
+   authoring level-manager menerima Markdown MENTAH (tanpa `{}`) untuk article.
+2. **Question pack** (`lib/question-pack.ts`, pure): template baris
+   `TIPE|Prompt|OpsiA–D|Kunci|Poin|Catatan` — tipe sc/mc/tf/essay (alias
+   singkat), kunci huruf (A atau A;C) divalidasi terhadap opsi nyata, tf
+   benar/salah, esai dinilai manual. UI "Import bank soal (pack)" di
+   /teacher/questions (textarea + contoh template collapsible); action
+   `bulkImportQuestionPack` (guru org aktif, cap 500, error per baris tak
+   menggagalkan baris lain) membuat question + question_versions v1 + kunci +
+   catatan guru (explanation_json).
+3. **Kunci jawaban**: dibawa baris pack (Kunci+Poin), tersimpan grading_json
+   server-only, tak pernah ke browser murid; versi berikutnya tetap lewat
+   publishQuestionVersion (riwayat immutabel).
+
+Bukti LIVE (hosted, guru): import 4 baris contoh → "4 soal dibuat" → daftar
+bank: sc v1(10p), mc v1(15p) A;B;C, tf v1(5p) benar, essay v1(20p) dengan
+Catatan. Tests: markdown-blocks 6 + question-pack 7 (parser, kunci mapping,
+kontrak sample). Gates: lint/tsc 0 · test **464 passed +1 skip** (53 files)
+· build 0. Rencana Edpuzzle/H5P (video+soal tertanam) → docs/
+plan-interactive-video-content.md (PROPOSED, belum di-coding).
+
+## Sesi — Template prompt AI + format untuk authoring materi (article)
+
+- **Baru `lib/markdown-ai-prompt.ts`** (pure): `MARKDOWN_FORMAT_GUIDE` (grammar yang didukung parser: heading ATX, fence kode dengan bahasa, gambar `![alt](url)` baris sendiri wajib alt, paragraf; daftar apa yang TIDAK dirender) dan `buildMarkdownAiPrompt({topic?, extra?})` — prompt siap-salin berbahasa Indonesia: peran penulis materi LMS coding, format, struktur halaman, kontrak keluaran (hanya Markdown, tanpa pengantar, tanpa HTML/iframe).
+- **UI authoring**: panel "🤖 Template prompt AI + format materi" (collapsible) pada form activity saat tipe `article` — menampilkan prompt + ringkasan format, tombol **Salin prompt AI** (clipboard + fallback, "Tersalin ✓"), label kolom konten jadi "Markdown (atau JSON)". Hasil AI ditempel langsung ke kolom konten → diubah jadi blok ter-allowlist oleh `parseMarkdownToBlocks` + `sanitizeContentBlocks` di server.
+- **README**: seksi "Dokumentasi penting" menautkan `docs/design-system.md` (+ runbooks, release-checklist, PROGRESS.md).
+- **Bukti gate**: eslint 0 · `tsc --noEmit` 0 · vitest **469 passed +1 skip** (54 files, +5 test baru untuk prompt builder) · prettier bersih. Contoh keluaran AI (heading→paragraf→kode→gambar→rangkuman) diverifikasi bisa diparse ulang menjadi blok canonical.
+- **Belum dikerjakan** (luar scope sesi ini): aturan lint custom untuk hex shadow/gradient hardcoded; templating prompt yang sama untuk question pack AI.
+
+## Sesi — Grafik nyata (bukan pajangan): guru & murid
+
+- **Baru `components/charts.tsx`** (server-safe, tanpa dependensi/JS klien): `ColumnChart` (batang responsif, nilai TETAP teks di atas batang + <title>, daftar sr-only, skala dinamis atau tetap 0–100, token gradien light/dark) dan `ChartPanel` (judul + definisi + "Diperbarui" + catatan kaki + empty state jujur).
+- **Murid `/learn`**: dua panel baru yang semuanya bersumber data asli —
+  1. "Menit aktif minggu ini" (7 batang Sen–Min) dari `study_sessions` (detik aktif di-clamp per heartbeat — bukan buka-halaman), agregasi murni `weekActiveMinutesByDay` di `lib/progress-planning.ts` (terkonsiliasi dengan ring target: sumber sama);
+  2. "Skor kuis terakhir" (maks 6 percobaan ber-`final_score`) dari `attempts` + judul asesmen, skala 0–100, "skor dihitung server".
+- **Guru `/teacher/analytics`**: seksi baru "Distribusi kelas" — histogram kemajuan murid (lesson selesai vs total lesson di versi terbit kursusnya, dari `progress_snapshots`, per-kursus benar) + histogram skor asesmen (filter-aware, dari `attempts.final_score`). Murni `percentDistribution` (6 ember tetap, jumlah ember = n) di `lib/analytics-teacher.ts`; tidak ada query baru/N+1 (data batch yang sudah ada).
+- **Kejujuran angka**: definisi berversi (`CLASS_DISTRIBUTION_DEFINITIONS_VERSION 2026-09-07/v1`), `n` sample size, rata-rata, "Diperbarui" per panel; empty state eksplisit saat belum ada data (bukan grafik palsu); tanpa ranking publik.
+- **Bukti gate**: eslint 0 · tsc 0 · vitest **481 passed +1 skip** (55 files; +12: 5 weekActiveMinutesByDay, 4 percentDistribution, 5 static student-charts, 1 static analytics) · `npm run build` 0. Live preview (hosted, dark): seksi Distribusi kelas tampil dengan kontrak metrik & empty-state jujur (n=0 karena demo hosted belum punya attempt ber-skor / snapshot lesson — bukan cacat grafik).
+
+## Sesi — Prompt AI untuk bank soal + aturan lint token elevasi
+
+- **Baru `lib/question-pack-ai-prompt.ts`** (pure): `QUESTION_PACK_FORMAT_GUIDE` (grammar pack persis `parseQuestionPack`: 9 kolom `|`, tipe sc/mc/tf/essay, kunci A–D / `A;C` / benar|salah, poin default 10, aturan mutu soal) + `buildQuestionPackAiPrompt({topic?, count?, extra?})` — prompt siap-salin Bahasa Indonesia; kontrak keluaran melarang menebak kunci (bila sumber tak memuat kunci → jadikan essay dengan pedoman di Catatan).
+- **UI bank soal**: panel "🤖 Template prompt AI + format bank soal" (collapsible) di kartu Import pack `/teacher/questions` — prompt + ringkasan format + tombol **Salin prompt AI** ("Tersalin ✓"), cermin dari panel article di level-manager. Hasil AI ditempel langsung ke kolom import pack.
+- **Rule lint baru `lms/no-hardcoded-elevation-hex`** (warn) di `eslint.config.mjs`: memflag hex hardcoded (`#rrggbb`) pada nilai className (Literal/TemplateLiteral/expression) dan menyarankan token elevasi (`--shadow-soft`/`--shadow-lift`/`--glow-btn`, kelas gradien palet, `--surface-grad-*`). Divalidasi dengan probe stdin: `from-[#123456]` → 1 warning sesuai pesan.
+- **Refactor demi kepatuhan**: dua gradien permukaan gelap yang memakai hex (drawer `app-nav`, sidebar `app-shell`) kini memakai token `--surface-grad-from/--surface-grad-to` di `globals.css` (blok `.dark`).
+- **Bukti gate**: prettier · eslint repo **0 warning** (rule aktif) · tsc 0 · vitest **486 passed +1 skip** (56 files; +5: unit question-pack-ai-prompt) · build 0. Live preview `/teacher/questions` (dark): panel prompt AI tampil benar + tombol Salin.
+
+## Sesi — Panel prompt AI dipersonalisasi per topik
+
+- Panel AI article (level-manager) + bank soal (`/teacher/questions`) kini punya input **Topik materi** (opsional) yang langsung membangun ulang preview prompt (`buildMarkdownAiPrompt({topic})` / `buildQuestionPackAiPrompt({topic, count})`) dan dipakai tombol Salin. Bank soal juga dapat mengatur **jumlah soal** (default 10).
+- Verifikasi live (preview, guru): isi "Perulangan Python" + jumlah 5 → preview prompt berubah jadi "Topik materi: Perulangan Python" dan "susun 5 soal". Gates: tsc 0 · eslint 0 · vitest **486 passed +1 skip**.
+
+## Sesi — Landing page (/) bahasa Inggris profesional
+
+- `app/page.tsx` ditulis ulang penuh dalam Bahasa Inggris: header brand + ThemeToggle, hero (pill "Self-paced learning · teacher oversight · verifiable outcomes", H1, sub-copy), CTA row (Sign in / Student demo / Teacher dashboard / Guardian view), 6 kartu fitur, 3 kartu peran (students/teachers/guardians), seksi "Trusted by design" (RLS, kunci server-side, append-only audit, verifier minimal-PII, aksesibilitas, blok konten tanpa HTML arbitrer), CTA bawah + footer. Token elevasi + `card-lift` + gradien dipertahankan; tetap server-safe.
+- Klaim produk dijaga akurat (tanpa klaim blockchain "live"; anchoring opsional di belakang feature flag).
+- `tests/e2e/critical.spec.ts` disesuaikan: landing sekarang meng-assert H1 Inggris + link "Sign in" (login page tetap "Masuk").
+- Gates: prettier · eslint 0 · tsc 0 · vitest **486 passed +1 skip** · build 0. Live preview dark: hero, fitur, peran, dan CTA render benar.
+
+## Sesi — Code runner multi-bahasa (sandbox eksternal) + copy prompt AI kode
+
+- **Baru `lib/code-runner.ts`** (pure): allowlist 11 bahasa (Python, JS, TS, C, C++, Java, Go, Rust, Ruby, PHP, C#) + alias (py/js/ts/c++/golang/cs), batas kode/stdin, `buildPistonPayload`/`parsePistonResponse` (Piston-compatible), provider **mock** (deterministik tanpa jaringan) & **http** (POST `/execute`, timeout 15 s, apiKey Bearer opsional, fetch diinjeksi utk tests), factory **fail-closed** (`CODE_RUNNER_ENABLED` default false → CODE_RUNNER_DISABLED), dan `buildCodeAiPrompt` (copy prompt "pahami/perbaiki kode" — hanya kode+output, tanpa data murid).
+- **Route `POST /api/code/run`**: wajib login; validasi body/ukuran/bahasa; memanggil provider; kode/output TIDAK disimpan/dilog.
+- **UI `components/code-runner.tsx`** (client): pilih bahasa, starter code per bahasa, stdin, tombol ▶ Jalankan, pane output (stdout/stderr + exit code), "Salin kode", dan panel "🤖 Prompt AI — pahami/perbaiki kode ini" dengan tombol salin — ditempel di aktivitas `code_board` (ActivityView murid). Landing page diperbarui (feature "Coding-first content" menyebut playground multi-bahasa sandbox).
+- **Env baru (semua opsional, default off)**: `CODE_RUNNER_ENABLED`, `CODE_RUNNER_PROVIDER` (mock|http), `CODE_RUNNER_BASE_URL`, `CODE_RUNNER_API_KEY` — ditambahkan ke schema lib/env.ts + `.env.example`.
+- **Bukti gate**: eslint 0 · tsc 0 · vitest **502 passed +1 skip** (58 files; +16: 12 unit code-runner + 3 component CodeRunner) · build 0. Test komponen membuktikan jalur fail-closed (503 → pesan jelas) & jalur sukses (stdout/exit tampil, payload benar).
+- **Catatan jujur**: eksekusi nyata butuh provider (Piston-compatible) yang dikonfigurasi admin; default server menolak dengan pesan ramah (tidak pernah "diam"). `provider=mock` untuk preview/tests.
+
+## Sesi — Positioning AI-era: jalur Coding → Agentic AI / ML / AGI literacy
+
+- Landing page (EN): tagline brand jadi "From first program to agentic AI"; hero menyebut LMS sebagai base layer kurikulum era-AI (loop belajar → praktik → bukti → kredensial); seksi baru "One honest loop, from first program to agentic AI & AGI literacy" = timeline 5 anak tangga (Coding & computational thinking → Data/logika/matematika ML → Applied ML → Agentic AI & tool-using systems → AGI literacy & responsible AI), masing-masing memetakan fitur platform yang SUDAH ada (versi kursus, code runner sandbox, kuis server-graded, rubrik, sertifikat QR). Copy sengaja anti-hype: "tidak menjanjikan mengajar AI magic".
+- **Dokumen baru `docs/roadmap-ai-pathway.md`**: prinsip (LMS menjamin loop, guru menyusun anak tangga, bukti-bukti, kejujuran alat), tabel anak tangga × dukungan platform, yang TIDAK diklaim, dan kebijakan "next" kurikulum.
+- Gates: prettier · eslint 0 · tsc 0 · vitest **502 passed +1 skip** · build 0. Live preview dark: tagline/hero + timeline 5 tahap + "Trusted by design" render benar.
+
+## Sesi — UI/UX "latest version": kohesi global tanpa refactor massal
+
+- Audit pola lama lintas app: 33 tombol solid `bg-blue-700` + 15 file kartu polos `rounded-xl border p-4` masih "pra-token". Solusi terpusat di `app/globals.css` (tanpa menyentuh tiap file, aman & mudah direvert): `.bg-blue-700` → CTA gradien blue→indigo + `--glow-btn` (+ varian `.dark` & hover brightness); `.rounded-xl.border.p-4` → permukaan terangkat (white / #111a2e + `--shadow-soft`).
+- `docs/design-system.md` ditambah seksi "Legacy auto-upgrade" (aturan selector-level; komponen baru tetap menulis kelas eksplisit).
+- Verifikasi: build 0; preview dark `/teacher/questions` — kartu Import pack/+ Soal baru terangkat konsisten dengan panel AI & tombol gradien; landing & login tidak terpengaruh (sudah token modern). Tidak ada perubahan markup/test.
+
+## Sesi — Auto-fill topik AI dari judul activity (panel article, level-manager)
+
+- `level-manager.tsx`: kolom topik pada "Template prompt AI + format materi" kini TERISI OTOMATIS dari judul activity yang sedang diketik (`actTitle`, max 120). Nilai di-*derive* saat render (`aiTopicValue = edited ? manual : actTitle…`) — bukan setState dalam effect (patuh react-hooks/set-state-in-effect). Begitu guru menyentuh kolom topik, nilainya terkunci manual dan tidak ditimpa oleh perubahan judul. Ada keterangan kecil "Terisi otomatis dari judul activity — boleh diganti manual."
+- Panel bank soal tetap manual (tidak ada "judul lesson" di konteks bank soal).
+- Gates: prettier · tsc 0 · eslint 0 · vitest **502 passed +1 skip**.
+
+## Sesi — Pref AI tersimpan di perangkat (localStorage) per panel
+
+- **Baru `lib/client-storage.ts`** (SSR-safe): `loadLocalPref`/`saveLocalPref` prefix `lms-ui:`, try/catch (private/quota), null → hapus.
+- Panel AI article (level-manager): topik manual terakhir guru disimpan & dipulihkan (`ai:article-topic`); auto-fill dari judul tetap berjalan untuk sesi baru tanpa pref.
+- Panel AI bank soal (`/teacher/questions`): topik (`ai:pack-topic`) & jumlah soal (`ai:pack-count`, clamp 1–100) disimpan/dipulihkan.
+- Pemulihan lewat efek setTimeout 0 (setelah hidrasi) — patuh `react-hooks/set-state-in-effect`.
+- Bukti: unit client-storage 3 (roundtrip, null-hapus, data rusak→null) · **live preview**: seed localStorage → reload+login ulang → panel terbuka dengan topik "Perulangan Python lanjutan", jumlah 7, dan prompt berisi keduanya. Gates: tsc 0 · eslint 0 · vitest **505 passed +1 skip** (59 files).
+
+## Sesi — Kehandalan lintas mapel: notasi ilmiah + normalisasi unicode/IME
+
+- Latar: audit primitif penilaian untuk matematika/fisika/kimia/biologi/geografi/English/Mandarin. Dua gap nyata yang ditutup:
+- **`lib/grading.ts`** — `parseNumericAnswer` kini menerima notasi ilmiah: `6.022e23`, `1e-9`, `2.5E+3`, `.5e-2` (regex `-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?`), tetap memakai unit-factor (`1e3 g` = `1 kg`). Penting untuk fisika/kimia (konstanta, molaritas, pH) & matematika.
+- **`lib/grading.ts`** — `normalizeShortText` menambah opsi `normalize.unicode`: NFKC (melipat full-width IME: `Ｈ２Ｏ` → `H2O`) + lipat apostrof/kutip melengkung (`it’s` → `it's`, `“x”` → `"x"`) untuk English & input IME Mandarin. Back-compat: tanpa `unicode` (default) perilaku lama tidak berubah.
+- **`lib/attempt.ts`** — `buildGradingRule` mengekspos kolom `normalize` (`unicode` / `plain`) pada rule short_text dari grading_json.
+- Fixture test baru di `tests/unit/grading.test.ts` (7): parse e-notation, autoGrade dalam/batas toleransi (fixture diperbaiki: |6.02e23−6.022e23|=2e20 → tolerance 1e21), konversi unit + e-notation, NFKC full-width, back-compat tanpa unicode, apostrof melengkung, teks Mandarin biasa.
+- Gates: prettier · eslint 0 · tsc 0 · vitest **512 passed +1 skip** (59 files) · build 0.
