@@ -4,9 +4,12 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 
 ## Current phase
 
-- Phase: Prompt — Guardian dashboard slice (Wali). Kapabilitas RBAC.md "Lihat ringkasan anak tertaut" kini punya UI + route: route group `(guardian)` di-guard `requireActiveMembership(["guardian"])`, `/guardian` menampilkan ringkasan anak via guardian link aktif (baca terbatas RLS: profiles/enrollments/progress_snapshots), hub peran `/dashboard` menggantikan redirect login statis `/learn` (guru→/teacher, wali→/guardian, murid→/learn). Seed bertambah `wali@demo.local` (a500…-001) tertaut aktif ke Murid 01.
-- Branch: main — working tree berisi pekerjaan sesi yang BELUM di-commit (demo-mode preview, e2e probe, live-denial harness, migration 000008, guardian slice, PROGRESS.md).
-- Blocker sama: Supabase CLI/Docker tidak ada → render `/guardian` berisi data hanya bisa dibuktikan di mesin ber-Docker (login wali seed → /guardian); tanpa session route terbukti redirect 307 → /login.
+> Status disinkronkan 2026-09-07 dari bukti di bawah; log kronologis sesi tetap sumber rincian.
+
+- Phase: **Phases 0–6 selesai; Phase 7 (hardening/deployment) hampir selesai** — 3 KURANG terdokumentasi di bawah (live advisor pasca-perubahan DB, restore rehearsal, wiring e2e ke CI) + deployment produksi nyata belum dieksekusi (DEPLOYMENT.md kerangka).
+- Capaian utama hingga status ini: kursus Python 12 level/120 aktivitas ter-import dari XLSX dan full loop murid→kuis→nilai→sertifikat terverifikasi LIVE di hosted (`jspmxdzgxevtfwvldwxy`); sertifikat 2 halaman A4 + rekam digital web + JSON record publik; 520 test + 1 skip, build/lint/tsc 0; live-denial 95/95; e2e login live-hosted.
+- Branch: main — working tree bersih kecuali `docs/xlsx/` (sumber workbook pengguna, sengaja untracked). Commit terakhir yang di-push ke origin: `4ab57b7`; 4 commit lokal belum di-push (`0703a9d`, `f637c83`, `8d2e1c6`, `77f451e`) + 1 ubahan uncommitted (QR halaman 2 = 42.1875).
+- Lingkungan: Supabase HOSTED provisioned + seed demo (bukan lagi blocker lokal; CLI/Docker tersedia). Fitur opsional mati default: blockchain anchoring (mock, ADR-018), AI feedback (perlu consent + provider), code runner (provider belum dikonfigurasi, mock untuk preview).
 
 ### Prompt — Guardian dashboard slice (Wali: UI + route coverage)
 
@@ -66,9 +69,9 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 - [x] Phase 2 Authoring/enrollment — + editor level/module/lesson/activity via UI (JSON konten tervalidasi, HTML ditolak), reorder semua sibling, preview, katalog live.
 - [x] Phase 3 Learning/progress — resume live + autosave + retry queue sync + `recomputeProgress` idempotent + unlock server-side + **target mingguan + spaced review + confidence check live** (blok target mingguan di /learn, halaman /review dengan confidence 1–5, action `submitReview` ladder 1/3/7/14 + `startOfNextDayInTz`) + **active-time jujur** (`lib/active-time.ts`: clamp heartbeat 120 s + jarak min 20 s + visibility/idle gating di player; server memvalidasi ulang metadata heartbeat/draft, bukan percaya client) + level map 4 state (locked/available/in_progress/completed) + aksesibilitas (prefers-reduced-motion di globals.css + font scaling A−/A+/reset di layout murid). Catatan sesi di bawah.
 - [x] Phase 4 Assessment — bank soal berversi + builder + limit/cooldown/timer server + sanitasi kunci + auto-grade server (service bypass) + release policy + grading queue + upload + revision audit. Gap objektif ditutup: **randomisasi pool/urutan server-generated + seed reproducible** (migration 000012 `attempts.question_order_json`, `lib/shuffle.ts` mulberry32+xmur3, startAttempt roll seed kriptografis → grading & kuis memakai subset/urutan yang sama) + **normalisasi unit numerik** (rule `unit.expectedUnit/unitFactors`; "5000 g" → basis sebelum toleransi) + **kebijakan partial credit MC eksplisit** (`exact` default / `fractional` opt-in) + **deadline kini di-enforce di RPC `finalize_attempt`** (TIME_EXPIRED, bukan hanya action) + toggle randomize/poolSize di builder teacher. **Manual assessment (lanjutan): rubrik berversi + criteria** (`rubrics.version`/`rubric_criteria.position`/`question_versions.rubric_id`) + **per-kriteria draft score & feedback** (`criterion_scores` RPC-only, append-only, RLS teacher-cohort) + **finalize** → `manual_score` tertimbang + `grade_revisions` (prev/new/actor/reason) + `audit_logs` `grade.finalized` (migration 000013) + server actions `createRubricVersion`/`saveCriterionGrade`/`finalizeResponseGrades` + live-denial t13 (8). Catatan sesi di bawah.
-- [x] Phase 5 Analytics — live overview/matrix/detail + alerts persist + CSV export + reconciliation tests. Item analysis & misconception map: belum.
-- [x] Phase 6 Certificates — eligibility server + PDF A4 on-demand (ADR-009) + QR + revoke + chain OFF. KURANG: persist PDF ke bucket + UI reissue khusus.
-- [x] Phase 7 Hardening/deployment — hardening tests + runbooks + release checklist + CSP/headers/rate-limit/upload guard + uji viewport responsif diformalkan (`tests/e2e/responsive.spec.ts`, 15 test @360/768/1440 pada 5 route publik). KURANG: live advisor, restore rehearsal, wiring e2e ke CI (perluasan cakupan browser).
+- [x] Phase 5 Analytics — live overview/matrix/detail + alerts persist + CSV export + reconciliation tests; **item analysis, misconception map, learning-path bottleneck, dan teacher weekly action digest SUDAH live** di `/teacher/analytics` (`lib/analytics-item.ts` + UI + reconciliation tests; bukti di catatan sesi "Menutup gap KURANG Item analysis…" + "Grafik nyata").
+- [x] Phase 6 Certificates — eligibility server + PDF A4 **2 halaman** on-demand (ADR-009) + QR + revoke/reissue (UI + action, ADR-012/013) + chain OFF + **persist PDF ke private bucket + signed URL** (`lib/certificate-store.ts`) + verifier publik + rekam digital web + **JSON record machine-readable**. TANPA KURANG tersisa (bukti: catatan sesi persist/2-halaman/record/anti-overflow).
+- [x] Phase 7 Hardening/deployment — hardening tests + runbooks + release checklist + CSP/headers/rate-limit/upload guard + responsive diformalkan (`tests/e2e/responsive.spec.ts` publik + `responsive-authed.spec.ts` 8 route peran × 3 viewport). **KURANG tersisa (3)**: (1) menjalankan DB advisor/live-denial secara formal SETIAP perubahan DB baru; (2) restore rehearsal (prosedur ada di `docs/runbooks.md` #5, belum dieksekusi); (3) wiring e2e Playwright ke CI (saat ini lokal). Plus deployment produksi nyata (domain/HTTPS/monitoring) belum dieksekusi.
 
 ## Catatan sesi Prompt 01 (Phase 0)
 
@@ -1361,3 +1364,36 @@ modul banyak. Ide: detail pindah ke web + pengecekan keaslian di web.
   kedua 302 → signed URL 200 dengan byte identik (persist hosted ter-update).
 - Gates sesi: prettier · eslint 0 · tsc 0 · npm test **520 passed / 1 skipped**
   · build 0.
+
+## Phase 7 KURANG ditutup — restore rehearsal, live DB advisors, e2e ke CI
+
+Menutup tiga sisa gap Phase 7 yang tercatat di checklist fase (bukti di bawah,
+semua dijalankan terhadap instalasi nyata):
+
+1. **Database restore rehearsal** — `scripts/restore-rehearsal/` (baru):
+   - `run.sh`: dump schema+data dari DB sumber via `pg_dump`, restore ke DB
+     terisolasi (`lms_restore_test`), lalu `verify.sql` memeriksa 9 asersi
+     (tabel inti ada, role `anon`/`authenticated` ada, seed 1 guru/1 cohort/
+     3 murid, chain konten + attempt, RLS aktif di `public.profiles`, helper
+     `private` ada, dan views `security_invoker`).
+   - Hasil eksekusi: **9/9 PASS** terhadap Postgres 18 lokal; DB isolasi
+     di-drop sesudahnya. Prosedur dicatat di `docs/runbooks.md` (bagian
+     restore) — diuji, bukan sekadar ditulis.
+2. **Live DB advisors setelah perubahan DB** — `npm run db:typecheck`
+   (`scripts/db-advisor.mjs`): **OK — 38 tables, 2 views checked**; dan suite
+   live-denial penuh (`bash scripts/live-denial/run.sh`, semua migration
+   repo dijalankan verbatim + seed + fixture + skenario RBAC sebagai SQL
+   sungguhan terhadap Postgres): **SUMMARY: PASS=95 FAIL=0** (termasuk
+   migration terbaru; DB `lms_rls_test` dipertahankan untuk inspeksi).
+3. **Playwright e2e di CI** — `playwright.config.ts`: bila `E2E_BASE_URL`
+   tidak diset, konfigurasi auto-spawn dev server sendiri (webServer,
+   `reuseExistingServer: false`) sehingga suite berjalan hermetis; `.env`
+   tidak diwariskan ke worker (validasi jalan CI). `.github/workflows/ci.yml`:
+   job `e2e` baru (setup node + install + `npx playwright install chromium`
+   + `npm run e2e`, `timeout-minutes: 30`) berjalan setelah `test`; suite
+   login/guard dipilih otomatis via `E2E_STUDENT_*` env (skip bila kosong).
+   - Validasi lokal (tanpa env, persis jalur CI): **18 passed / 34 skipped,
+     0 failures** — session suites skip, public/responsive jalan.
+
+Gates sesi: eslint 0 · tsc 0 (tidak ada perubahan kode TS selain konfigurasi
+e2e).
