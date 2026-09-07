@@ -6,7 +6,16 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   use: { baseURL: process.env.E2E_BASE_URL ?? "http://127.0.0.1:3000", trace: "on-first-retry" },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
-  webServer: process.env.CI
+  // CI (hermetic, tanpa .env): Playwright menjalankan `next dev` sendiri di
+  // :3000 dalam mode demo (env Supabase absen → login/alur session di-skip,
+  // spec publik/responsif jalan). Untuk memakai server eksternal (mis. dev
+  // lokal yang sudah hidup atau deployment preview), set E2E_BASE_URL.
+  webServer: process.env.E2E_BASE_URL
     ? undefined
-    : { command: "npm run dev", url: "http://127.0.0.1:3000", reuseExistingServer: true, timeout: 120_000 },
+    : {
+        command: "npm run dev -- -p 3000",
+        url: "http://127.0.0.1:3000",
+        reuseExistingServer: !process.env.CI,
+        timeout: 240_000,
+      },
 });

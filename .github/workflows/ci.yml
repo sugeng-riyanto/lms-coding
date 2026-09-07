@@ -42,10 +42,62 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-client
-      - name: Run live RLS denial suite
+      - name: Run live RLS denial suite (semua migration verbatim)
         run: bash scripts/live-denial/run.sh
         env:
           PGHOST: 127.0.0.1
           PGPORT: 5432
           PGUSER: postgres
           PGPASSWORD: postgres
+
+  restore-rehearsal:
+    runs-on: ubuntu-latest
+    needs: verify
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql + pg_dump clients
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+      - name: Rehearse DB restore (backup -> isolated restore -> verify)
+        run: bash scripts/restore-rehearsal/run.sh
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright chromium
+        run: npx playwright install --with-deps chromium
+      # Hermetic: fresh checkout TANPA .env (gitignored) → mode demo dev-only;
+      # spec yang butuh session/login di-skip eksplisit, spec publik/responsif
+      # tetap jalan (0 failure). Untuk mode penuh (login live-hosted), set repo
+      # secrets: E2E_BASE_URL + NEXT_PUBLIC_SUPABASE_URL + _PUBLISHABLE_KEY +
+      # E2E_STUDENT_EMAIL/E2E_STUDENT_PASSWORD — env ini diteruskan otomatis
+      # oleh runner bila didefinisikan sebagai secret.
+      - name: Run Playwright e2e
+        run: npm run e2e
+        env:
+          CI: "true"
