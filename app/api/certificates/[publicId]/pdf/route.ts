@@ -527,13 +527,23 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
       actsLabel: `${doneActs}/${requiredActs.length}`,
     };
   });
-  const moduleCompleteness: TableRow[] = modulePct.map((mp, idx) => [
-    idx + 1,
-    mp.title,
-    mp.lessonsLabel,
-    mp.actsLabel,
-    `${mp.pct}%`,
-  ]);
+  // Deterministic 2-page document: cap per-module rows so a level with MANY modules
+  // can never push page 2 past its bound (pdfkit would otherwise add pages). Modules
+  // beyond the cap are summarised; full detail belongs on the web certificate view.
+  const MODULE_ROWS_MAX = 6;
+  const moduleCompleteness: TableRow[] = modulePct
+    .slice(0, MODULE_ROWS_MAX)
+    .map((mp, idx) => [idx + 1, mp.title, mp.lessonsLabel, mp.actsLabel, `${mp.pct}%`]);
+  const hiddenModules = modulePct.length - moduleCompleteness.length;
+  if (hiddenModules > 0) {
+    moduleCompleteness.push([
+      "…",
+      `+${hiddenModules} more module${hiddenModules === 1 ? "" : "s"}`,
+      "…",
+      "…",
+      "…",
+    ]);
+  }
 
   y = drawTable(
     doc,
@@ -544,6 +554,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     [40, 260, 160, 170, 110],
     { rowH: 20, headerH: 20, align: ["center", "left", "center", "center", "center"] },
   );
+  if (hiddenModules > 0) {
+    doc
+      .font("Helvetica")
+      .fontSize(8)
+      .fillColor("#64748b")
+      .text(
+        "Only the first few modules are listed on paper; the full breakdown is available on the certificate's web page.",
+        56,
+        y + 5,
+        { width: 740 },
+      );
+    y += 16;
+  }
   y += 12;
 
   // --- Completion statistics with real-data charts ---

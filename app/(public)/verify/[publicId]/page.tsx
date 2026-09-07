@@ -17,6 +17,114 @@ async function canViewPdf(publicId: string): Promise<boolean> {
   }
 }
 
+type ModuleRow = { id: string; title: string; position: number };
+type LessonRow = { id: string; module_id: string; required: boolean };
+type ActivityRow = { id: string; lesson_id: string; required: boolean };
+
+type DigitalRecord = {
+  serialNo: string;
+  payloadHash: string;
+  contentPct: number;
+  rows: { title: string; lessonsLabel: string; actsLabel: string; pct: number }[];
+};
+
+/**
+ * Full per-module completeness + payload hash for an authorised viewer
+ * (recipient student or cohort teacher — RLS enforced). The web record is never
+ * truncated, unlike the paper PDF which caps the module table to keep 2 pages.
+ */
+async function fetchDigitalRecord(publicId: string): Promise<DigitalRecord | null> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    const { data: cert } = await supabase
+      .from("certificates")
+      .select("level_id,enrollment_id,serial_no,payload_hash")
+      .eq("public_id", publicId)
+      .maybeSingle();
+    if (!cert) return null;
+
+    const { data: mods } = await supabase
+      .from("modules")
+      .select("id,title,position")
+      .eq("level_id", cert.level_id)
+      .order("position");
+    const modules = (mods ?? []) as ModuleRow[];
+    const moduleIds = modules.map((m) => m.id);
+    const { data: les } = moduleIds.length
+      ? await supabase.from("lessons").select("id,module_id,required").in("module_id", moduleIds)
+      : { data: [] as unknown };
+    const lessons = (les ?? []) as LessonRow[];
+    const lessonIds = lessons.map((l) => l.id);
+    const { data: acts } = lessonIds.length
+      ? await supabase.from("activities").select("id,lesson_id,required").in("lesson_id", lessonIds)
+      : { data: [] as unknown };
+    const activities = (acts ?? []) as ActivityRow[];
+
+    const completedLessons = new Set<string>();
+    if (lessonIds.length > 0) {
+      const { data: snaps } = await supabase
+        .from("progress_snapshots")
+        .select("entity_id,status,percent")
+        .eq("enrollment_id", cert.enrollment_id)
+        .eq("entity_type", "lesson")
+        .in("entity_id", lessonIds);
+      for (const s of (snaps ?? []) as { entity_id: string; status: string; percent: number }[]) {
+        if (s.status === "completed" || Number(s.percent) >= 100) completedLessons.add(s.entity_id);
+      }
+    }
+    const completedActs = new Set<string>();
+    if (activities.length > 0) {
+      const { data: evs } = await supabase
+        .from("learning_events")
+        .select("entity_id")
+        .eq("enrollment_id", cert.enrollment_id)
+        .eq("event_type", "activity_completed")
+        .eq("entity_type", "activity")
+        .in(
+          "entity_id",
+          activities.map((a) => a.id),
+        );
+      for (const ev of (evs ?? []) as { entity_id: string }[]) completedActs.add(ev.entity_id);
+    }
+
+    // Mirrors the PDF's page-2 arithmetic exactly so the web record and the paper
+    // certificate never disagree.
+    let totalDone = 0;
+    let totalReq = 0;
+    const rows = modules.map((m) => {
+      const ls = lessons.filter((l) => l.module_id === m.id);
+      const reqL = ls.filter((l) => l.required);
+      const doneL = ls.filter((l) => completedLessons.has(l.id)).length;
+      const as = activities.filter((a) => ls.some((l) => l.id === a.lesson_id));
+      const reqA = as.filter((a) => a.required);
+      const doneA = as.filter((a) => completedActs.has(a.id)).length;
+      const req = reqL.length + reqA.length;
+      const done = doneL + doneA;
+      totalReq += req;
+      totalDone += done;
+      return {
+        title: m.title,
+        lessonsLabel: `${doneL}/${reqL.length}`,
+        actsLabel: `${doneA}/${reqA.length}`,
+        pct: req > 0 ? Math.round((done / req) * 100) : 100,
+      };
+    });
+
+    return {
+      serialNo: cert.serial_no,
+      payloadHash: cert.payload_hash,
+      contentPct: totalReq > 0 ? Math.round((totalDone / totalReq) * 100) : 100,
+      rows,
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function fetchVerification(publicId: string, baseUrl: string) {
   const res = await fetch(`${baseUrl}/api/public/certificates/${encodeURIComponent(publicId)}`, {
     cache: "no-store",
@@ -56,6 +164,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
 
   const valid = data.status === "valid";
   const authorizedForPdf = valid ? await canViewPdf(publicId) : false;
+  const digitalRecord = valid && authorizedForPdf ? await fetchDigitalRecord(publicId) : null;
   return (
     <main id="main" className="mx-auto max-w-xl px-4 py-16">
       <p className="text-sm font-semibold text-slate-500">Verifikasi sertifikat</p>
@@ -145,6 +254,68 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
           PDF hanya dapat dibuka oleh penerima sertifikat atau guru kelas setelah masuk — demi privasi,
           halaman publik ini tidak memuat dokumen tersebut.
         </p>
+      )}
+      {digitalRecord && (
+        <section className="mt-6 rounded-xl border p-5" aria-labelledby="digital-record-heading">
+          <h2 id="digital-record-heading" className="text-sm font-bold text-slate-800 dark:text-slate-200">
+            Rekam digital &amp; keaslian
+          </h2>
+          <dl className="mt-2 space-y-1.5 text-sm">
+            <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+              <dt className="text-slate-500">Payload hash (SHA-256)</dt>
+              <dd className="break-all font-mono text-xs">{digitalRecord.payloadHash}</dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+              <dt className="text-slate-500">Cara pengecekan keaslian</dt>
+              <dd className="max-w-xs text-xs text-slate-600 dark:text-slate-300">
+                Hash dikunci saat sertifikat terbit; verifier menghitung ulang dari catatan — perubahan data
+                apa pun membuat pemeriksaan gagal (payload hash tidak cocok).
+              </dd>
+            </div>
+          </dl>
+          <p className="mt-4 text-xs text-slate-500">
+            Rincian lengkap per modul (PDF di kertas hanya mencantumkan 6 modul pertama agar tetap 2 halaman —
+            halaman ini selalu menampilkan semua modul).
+          </p>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-left text-sm">
+              <thead>
+                <tr className="border-b text-xs uppercase tracking-wide text-slate-500">
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    No.
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Module
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Lessons (done/total)
+                  </th>
+                  <th scope="col" className="py-2 pr-3 font-semibold">
+                    Activities (done/total)
+                  </th>
+                  <th scope="col" className="py-2 font-semibold">
+                    Completeness
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {digitalRecord.rows.map((row, i) => (
+                  <tr key={`${row.title}-${i}`} className="border-b last:border-0">
+                    <td className="py-2 pr-3 text-slate-500">{i + 1}</td>
+                    <td className="py-2 pr-3 font-medium">{row.title}</td>
+                    <td className="py-2 pr-3">{row.lessonsLabel}</td>
+                    <td className="py-2 pr-3">{row.actsLabel}</td>
+                    <td className="py-2 font-semibold">{row.pct}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-3 text-sm">
+            <span className="text-slate-500">Konten level selesai: </span>
+            <span className="font-semibold">{digitalRecord.contentPct}%</span>
+          </p>
+        </section>
       )}
       <p className="mt-4 text-sm text-slate-500">
         Halaman publik ini tidak menampilkan email, tanggal lahir, jawaban, nilai detail, atau storage path.
