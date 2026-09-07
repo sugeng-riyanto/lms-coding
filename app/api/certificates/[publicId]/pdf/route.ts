@@ -197,21 +197,24 @@ function drawTable(
       });
   };
 
-  drawCell(headers[0] ?? "", y, headerH, 0, true, "#e2e8f0");
-  for (let i = 1; i < headers.length; i += 1) {
+  // Header row: light indigo gradient fill with navy text — reads as a clean
+  // light band when printed in grayscale.
+  const hdrGrad = doc.linearGradient(x, y, x + totalW, y);
+  hdrGrad.stop(0, "#eef2ff").stop(0.5, "#e0e7ff").stop(1, "#dbeafe");
+  doc.rect(x, y, totalW, headerH).fill(hdrGrad);
+  for (let i = 0; i < headers.length; i += 1) {
     const cx = x + widths.slice(0, i).reduce((a, b) => a + b, 0);
-    doc.rect(cx, y, widths[i] ?? 0, headerH).fill("#e2e8f0");
     doc
       .font("Helvetica-Bold")
       .fontSize(9)
-      .fillColor("#0f172a")
+      .fillColor("#1e3a8a")
       .text(String(headers[i] ?? ""), cx + 6, y + 5, {
         width: Math.max((widths[i] ?? 0) - 12, 40),
         align: align[i] ?? "left",
         lineBreak: false,
       });
   }
-  doc.rect(x, y, totalW, headerH).lineWidth(0.6).strokeColor("#94a3b8").stroke();
+  doc.rect(x, y, totalW, headerH).lineWidth(0.6).strokeColor("#c7d2fe").stroke();
   y += headerH;
 
   rows.forEach((row, ri) => {
@@ -350,14 +353,47 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
 
   // ================= Page 1 — certificate face =================
-  doc.rect(24, 24, doc.page.width - 48, doc.page.height - 48).stroke();
-  doc.font("Helvetica").fontSize(11).fillColor("#64748b").text("ACADEMY", { align: "center" });
+  const W1 = doc.page.width;
+  const H1 = doc.page.height;
+
+  // Subtle vertical background wash (prints as an even, near-white professional tint).
+  const bgGrad = doc.linearGradient(24, 24, 24, H1 - 24);
+  bgGrad.stop(0, "#ffffff").stop(0.55, "#f6f9ff").stop(1, "#e8effc");
+  doc.rect(24, 24, W1 - 48, H1 - 48).fill(bgGrad);
+
+  // Double frame: outer hairline + inner accent line.
+  doc
+    .rect(24, 24, W1 - 48, H1 - 48)
+    .lineWidth(1)
+    .strokeColor("#cbd5e1")
+    .stroke();
+  doc
+    .rect(29, 29, W1 - 58, H1 - 58)
+    .lineWidth(0.75)
+    .strokeColor("#dbe3f0")
+    .stroke();
+
+  // Gradient ribbons (navy → blue → sky) top & bottom — colour that separates into
+  // a clean dark→mid band even in grayscale printing.
+  const ribbonTop = doc.linearGradient(24, 32, W1 - 24, 32);
+  ribbonTop.stop(0, "#1e3a8a").stop(0.5, "#2563eb").stop(1, "#38bdf8");
+  doc.rect(24, 32, W1 - 48, 10).fill(ribbonTop);
+  const ribbonBottom = doc.linearGradient(24, H1 - 42, W1 - 24, H1 - 42);
+  ribbonBottom.stop(0, "#38bdf8").stop(0.5, "#2563eb").stop(1, "#1e3a8a");
+  doc.rect(24, H1 - 42, W1 - 48, 10).fill(ribbonBottom);
+
+  doc.font("Helvetica").fontSize(11).fillColor("#475569").text("ACADEMY", { align: "center" });
   doc
     .font("Helvetica-Bold")
     .fontSize(30)
-    .fillColor("#0f172a")
+    .fillColor("#1e3a8a")
     .text("Certificate of Completion", { align: "center" });
-  doc.moveDown();
+  // Gradient underline beneath the title.
+  const titleUnderline = doc.linearGradient(W1 / 2 - 180, doc.y + 9, W1 / 2 + 180, doc.y + 9);
+  titleUnderline.stop(0, "#1e3a8a").stop(0.5, "#2563eb").stop(1, "#38bdf8");
+  doc.rect(W1 / 2 - 180, doc.y + 9, 360, 3.5).fill(titleUnderline);
+  doc.moveDown(1.35);
+  doc.fillColor("#0f172a");
   doc.font("Helvetica").fontSize(12).fillColor("#475569").text("Presented to", { align: "center" });
   doc.font("Helvetica-Bold").fontSize(24).fillColor("#0f172a").text(displayName, { align: "center" });
   doc.moveDown(0.5);
@@ -369,9 +405,9 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   doc
     .font("Helvetica-Bold")
     .fontSize(16)
-    .fillColor("#0f172a")
+    .fillColor("#1e3a8a")
     .text(`${courseTitle} — ${levelTitle}`, { align: "center" });
-  doc.moveDown();
+  doc.moveDown(1.1);
   doc
     .font("Helvetica")
     .fontSize(10)
@@ -409,7 +445,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
 
   // Small QR in the top-right corner — identical to page 1's buffer, kept clear of the
   // centred title so no overlap occurs; still comfortably scannable.
-  const qrSize = 90;
+  const qrSize = 67.5; // 75% dari ukuran sebelumnya (90)
   doc.image(qr, W - 24 - qrSize - 16, 40, { width: qrSize });
 
   doc
@@ -428,6 +464,10 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
       align: "center",
       width: W - 96 - qrSize - 16,
     });
+  // Gradient accent line beneath the page-2 header (small, decorative).
+  const p2Accent = doc.linearGradient(W / 2 - 170, 96, W / 2 + 170, 96);
+  p2Accent.stop(0, "#1e3a8a").stop(0.5, "#2563eb").stop(1, "#38bdf8");
+  doc.rect(W / 2 - 170, 96, 340, 3).fill(p2Accent);
 
   // --- General information table ---
   const infoRows: TableRow[] = [
