@@ -1341,3 +1341,23 @@ modul banyak. Ide: detail pindah ke web + pengecekan keaslian di web.
   whitelist tanpa PII, revoked, route memakai RPC + force-dynamic).
 - Gates sesi: prettier · eslint 0 · tsc 0 · npm test **520 passed / 1 skipped**
   · build 0.
+
+## Content Completeness by Module dipindah dari PDF ke web record
+
+- Keputusan pengguna: tabel rincian per modul TIDAK lagi dicetak di sertifikat.
+  PDF halaman 2 kini berjudul **"General Information & Completion Summary"**:
+  tabel informasi umum + note pointer + **Completion Statistics** (grafik bar
+  data nyata, bar lebih besar: rowGap 10, barH ≤ 14). Rincian per modul (tanpa
+  cap) tetap di rekam digital web `/verify` dan endpoint JSON record.
+- `pdf/route.ts`: blok `Content Completeness by Module` + `MODULE_ROWS_MAX`/"+N
+  more" dihapus total — risiko overflow >2 halaman karena banyak modul hilang
+  by design (bukan hanya di-cap). Komentar header dokumen diperbarui.
+- Verifier page: teks badge & rekam digital diperbarui (halaman 2 = ringkasan
+  agregat; rincian modul ada di web, bukan kertas).
+- Verifikasi live (CERT-20260907-53f80c): re-render paksa (hapus object +
+  pdf_path) → 200 PDF baru **14.678 B**, `/Count 2`; dekompresi + rekonstruksi
+  string TJ membuktikan: header baru ada, string tabel modul lama ABSEN, note
+  pointer & chart & footer "Page 2 of 2" & kode unik & URL verify ADA; fetch
+  kedua 302 → signed URL 200 dengan byte identik (persist hosted ter-update).
+- Gates sesi: prettier · eslint 0 · tsc 0 · npm test **520 passed / 1 skipped**
+  · build 0.
