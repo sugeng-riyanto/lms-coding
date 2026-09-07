@@ -13,9 +13,14 @@ import { createPdfSignedUrl, persistPdf } from "@/lib/certificate-store";
  *
  * The document is TWO inseparable pages:
  *  - Page 1: certificate face (recipient, course, level, serial, signature, QR).
- *  - Page 2: general information + content completeness (tables, statistics and
- *    completion charts), carrying the SAME QR code and unique code as page 1 —
- *    scanning either page opens the same /verify/{publicId} page.
+ *  - Page 2: general information + aggregate completion statistics (real-data
+ *    charts), carrying the SAME QR code and unique code as page 1 — scanning
+ *    either page opens the same /verify/{publicId} page.
+ *
+ * Per-module content completeness is intentionally NOT printed: the detailed
+ * breakdown lives on the certificate's web record (authorized /verify panel +
+ * machine-readable JSON record), so the fixed 2-page document can never overflow
+ * no matter how many modules a level has.
  */
 
 type CertRow = {
@@ -475,7 +480,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     .font("Helvetica-Bold")
     .fontSize(18)
     .fillColor("#0f172a")
-    .text("General Information & Content Completeness", 48, 48, {
+    .text("General Information & Completion Summary", 48, 48, {
       align: "center",
       width: W - 96 - qrSize - 16,
     });
@@ -506,70 +511,21 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   });
   y += 12;
 
-  // --- Content completeness by module ---
-  doc.font("Helvetica-Bold").fontSize(12).fillColor("#0f172a").text("Content Completeness by Module", 56, y);
-  y += 21;
-
-  const modulePct = stats.modules.map((m) => {
-    const lessons = stats.lessons.filter((l) => l.module_id === m.id);
-    const requiredLessons = lessons.filter((l) => l.required);
-    const doneLessons = lessons.filter((l) => stats.completedLessonIds.has(l.id)).length;
-    const acts = stats.activities.filter((a) => lessons.some((l) => l.id === a.lesson_id));
-    const requiredActs = acts.filter((a) => a.required);
-    const doneActs = acts.filter((a) => stats.completedActivityIds.has(a.id)).length;
-    const total = requiredLessons.length + requiredActs.length;
-    const done = doneLessons + doneActs;
-    const pct = total > 0 ? Math.round((done / total) * 100) : 100;
-    return {
-      title: m.title,
-      pct,
-      lessonsLabel: `${doneLessons}/${requiredLessons.length}`,
-      actsLabel: `${doneActs}/${requiredActs.length}`,
-    };
-  });
-  // Deterministic 2-page document: cap per-module rows so a level with MANY modules
-  // can never push page 2 past its bound (pdfkit would otherwise add pages). Modules
-  // beyond the cap are summarised; full detail belongs on the web certificate view.
-  const MODULE_ROWS_MAX = 6;
-  const moduleCompleteness: TableRow[] = modulePct
-    .slice(0, MODULE_ROWS_MAX)
-    .map((mp, idx) => [idx + 1, mp.title, mp.lessonsLabel, mp.actsLabel, `${mp.pct}%`]);
-  const hiddenModules = modulePct.length - moduleCompleteness.length;
-  if (hiddenModules > 0) {
-    moduleCompleteness.push([
-      "…",
-      `+${hiddenModules} more module${hiddenModules === 1 ? "" : "s"}`,
-      "…",
-      "…",
-      "…",
-    ]);
-  }
-
-  y = drawTable(
-    doc,
-    56,
-    y,
-    ["No.", "Module", "Lessons (completed/total)", "Activities (completed/total)", "Completeness"],
-    moduleCompleteness.length > 0 ? moduleCompleteness : [["—", "No modules", "—", "—", "—"]],
-    [40, 260, 160, 170, 110],
-    { rowH: 20, headerH: 20, align: ["center", "left", "center", "center", "center"] },
-  );
-  if (hiddenModules > 0) {
-    doc
-      .font("Helvetica")
-      .fontSize(8)
-      .fillColor("#64748b")
-      .text(
-        "Only the first few modules are listed on paper; the full breakdown is available on the certificate's web page.",
-        56,
-        y + 5,
-        { width: 740 },
-      );
-    y += 16;
-  }
-  y += 12;
-
   // --- Completion statistics with real-data charts ---
+  // Per-module completeness is deliberately NOT printed here: the detailed
+  // breakdown lives on the certificate's web record (authorized /verify panel and
+  // the public JSON record), where it can never overflow this 2-page document.
+  doc
+    .font("Helvetica")
+    .fontSize(8.5)
+    .fillColor("#64748b")
+    .text(
+      "Per-module content completeness is available in this certificate's online digital record, not on paper.",
+      56,
+      y,
+      { width: W - 112, align: "left" },
+    );
+  y += 16;
   const requiredLessons = stats.lessons.filter((l) => l.required);
   const requiredActs = stats.activities.filter((a) => a.required);
   const lessonsDone = stats.lessons.filter((l) => stats.completedLessonIds.has(l.id)).length;
@@ -619,13 +575,13 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     const barX = 56 + labelW + 12;
     const valueX = barX + barW + 12;
     const valueW = 200;
-    const avail = H - 146 - y;
-    const rowGap = 8;
+    const avail = H - 150 - y;
+    const rowGap = 10;
     const barH =
       chartRows.length > 0 && avail > chartRows.length * (rowGap + 6)
-        ? Math.min(12, Math.max(6, Math.floor(avail / chartRows.length) - rowGap))
+        ? Math.min(14, Math.max(7, Math.floor(avail / chartRows.length) - rowGap))
         : 0;
-    if (barH >= 6) {
+    if (barH >= 7) {
       for (const row of chartRows) {
         drawBarRow(doc, 56, y, labelW, barX, barW, valueX, valueW, barH, row.label, row.value, row.pct);
         y += barH + rowGap;

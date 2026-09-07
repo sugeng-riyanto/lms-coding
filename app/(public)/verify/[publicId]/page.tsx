@@ -234,8 +234,8 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
           ✓ PDF 2 halaman (A4)
         </span>
         <span className="text-xs text-slate-500">
-          Halaman 2 berisi informasi umum &amp; kelengkapan konten (tabel + statistik), dengan QR dan kode
-          unik yang sama dengan halaman 1.
+          Halaman 2 berisi informasi umum &amp; statistik ringkas kelengkapan (tabel + grafik), dengan QR dan
+          kode unik yang sama dengan halaman 1. Rincian per modul ada di rekam digital web, bukan di kertas.
         </span>
       </div>
       {valid && authorizedForPdf && (
@@ -274,8 +274,8 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
             </div>
           </dl>
           <p className="mt-4 text-xs text-slate-500">
-            Rincian lengkap per modul (PDF di kertas hanya mencantumkan 6 modul pertama agar tetap 2 halaman —
-            halaman ini selalu menampilkan semua modul).
+            Rincian lengkap per modul tidak dicetak di sertifikat (PDF halaman 2 hanya memuat ringkasan
+            agregat agar dokumen selalu 2 halaman) — halaman ini selalu menampilkan semua modul.
           </p>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-sm">
