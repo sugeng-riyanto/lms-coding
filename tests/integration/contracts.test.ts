@@ -196,3 +196,55 @@ describe("migration 000023 — RPC soal attempt tersanitasi (murid pemilik, in_p
     expect(fn).not.toMatch(/from\("questions"\)/);
   });
 });
+
+describe("migration 20260907123000 — digital record publik (payload hash + kelengkapan per modul)", () => {
+  const m = readFileSync("supabase/migrations/20260907123000_public_certificate_record_rpc.sql", "utf8");
+  const route = readFileSync("app/api/public/certificates/[publicId]/record/route.ts", "utf8");
+
+  it("fungsi security definer + search_path + revoke PUBLIC + grant anon/authenticated", () => {
+    expect(m).toMatch(/create or replace function public\.get_public_certificate_record\(p_public_id text\)/);
+    expect(m).toMatch(/security definer set search_path = private, public, pg_temp/);
+    expect(m).toMatch(/revoke all on function public\.get_public_certificate_record\(text\) from public/);
+    expect(m).toMatch(
+      /grant execute on function public\.get_public_certificate_record\(text\) to anon, authenticated/,
+    );
+  });
+
+  it("whitelist: payloadHash penuh + contentPercent + modules, tanpa PII/nilai/path", () => {
+    expect(m).toMatch(/payloadHash/);
+    expect(m).toMatch(/contentPercent/);
+    expect(m).toMatch(/'modules'/);
+    expect(m).toMatch(/lessonsCompleted/);
+    expect(m).toMatch(/lessonsTotal/);
+    expect(m).toMatch(/activitiesCompleted/);
+    expect(m).toMatch(/activitiesTotal/);
+    // Scope ke badan fungsi (setelah komentar header) untuk cek negatif.
+    const build = m.slice(m.indexOf("jsonb_build_object"));
+    expect(build).not.toMatch(/email/i);
+    expect(build).not.toMatch(/answer_json|grading_json/);
+    expect(build).not.toMatch(/pdf_path|qr_path/);
+    expect(build).not.toMatch(/score|nilai|study_time|active_seconds/i);
+  });
+
+  it("validasi format public_id + status revoked hanya issuedAt", () => {
+    expect(m).toMatch(/!~ '\^\[a-z0-9-\]\+\$'/);
+    expect(m).toMatch(/'revoked', 'issuedAt', v_issued/);
+  });
+
+  it("route record: RPC kurasi + force-dynamic + rate limit, envelope tanpa PII", () => {
+    expect(route).toMatch(/rpc\("get_public_certificate_record"/);
+    expect(route).toMatch(/export const dynamic = "force-dynamic"/);
+    expect(route).toMatch(/checkRateLimit/);
+    expect(route).toMatch(/certificate\.digital-record\/v1/);
+    expect(route).toMatch(/authenticity:/);
+    expect(route).toMatch(/completeness:/);
+    expect(route).toMatch(/payloadHash/);
+    expect(route).toMatch(/modules/);
+    // Scope ke kode (setelah komentar header) untuk cek negatif.
+    const code = route.slice(route.indexOf("export const dynamic"));
+    expect(code).not.toMatch(/email/i);
+    expect(code).not.toMatch(/answer_json|grading_json/);
+    expect(code).not.toMatch(/pdf_path|qr_path/);
+    expect(code).not.toMatch(/final_score|raw_score/);
+  });
+});

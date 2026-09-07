@@ -1,0 +1,5 @@
+-- No-op (duplikat tidak disengaja): `supabase migration new public_certificate_record_rpc`
+-- yang terputus (timeout 60 s) ternyata sempat membuat file ini SEBELUM versi
+-- 20260907123000 ditulis manual. Keduanya sudah ter-rekam di hosted sebagai applied.
+-- File ini sengaja DIKOSONGKAN dan dipertahankan agar riwayat migration lokal tetap
+-- identik dengan remote (tanpa drift); tidak ada skema baru di sini.
