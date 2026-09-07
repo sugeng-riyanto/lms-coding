@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import { verifyPublicIdSchema } from "@/lib/validation";
 import { checkRateLimit } from "@/lib/ratelimit";
 import { createStrictClient as createClient } from "@/lib/supabase/server";
+import { createPdfSignedUrl, persistPdf } from "@/lib/certificate-store";
 
 /**
  * GET /api/certificates/{publicId}/pdf — official A4-landscape PDF, generated on demand.
@@ -25,6 +26,7 @@ type CertRow = {
   payload_hash: string;
   enrollment_id: string;
   level_id: string;
+  pdf_path: string | null;
 };
 
 type ModuleRow = { id: string; title: string; position: number };
@@ -301,7 +303,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   // RLS on certificates (own student / cohort teacher) enforces read authorization.
   const { data: cert } = await supabase
     .from("certificates")
-    .select("id,status,serial_no,issued_at,payload_hash,enrollment_id,level_id")
+    .select("id,status,serial_no,issued_at,payload_hash,enrollment_id,level_id,pdf_path")
     .eq("public_id", parsed.data.publicId)
     .single();
   const c = cert as CertRow | null;
@@ -311,6 +313,12 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
       { error: { code: "REVOKED", message: "Sertifikat dicabut; PDF valid tidak diterbitkan." } },
       { status: 410 },
     );
+  }
+  // Persisted PDF → short-lived signed URL (permission sudah dipaksa RLS di atas).
+  if (c.pdf_path) {
+    const signed = await createPdfSignedUrl(c.pdf_path, 300);
+    if (signed) return NextResponse.redirect(signed, 302);
+    // signed URL gagal → fall through ke render on-demand (degradasi anggun).
   }
   const { data: enr } = await supabase
     .from("enrollments")
@@ -575,6 +583,15 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   doc.end();
 
   const pdf = await done;
+
+  // Render sekali lalu simpan (best-effort): kalau storage tak tersedia/gagal,
+  // respons PDF-stream tetap jalan & pdf_path tetap null (perilaku lama).
+  try {
+    await persistPdf(parsed.data.publicId, pdf);
+  } catch {
+    // best-effort — jangan gagalkan unduhan karena persist gagal.
+  }
+
   return new NextResponse(new Uint8Array(pdf), {
     headers: {
       "Content-Type": "application/pdf",

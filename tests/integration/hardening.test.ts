@@ -77,7 +77,7 @@ describe("P11: sertifikat PDF — tanda tangan digital penerbit", () => {
   it("PDF memuat nama penandatangan resmi + label penerbit + fingerprint", () => {
     const src = readFileSync("app/api/certificates/[publicId]/pdf/route.ts", "utf8");
     expect(src).toMatch(/Sugeng Riyanto, M\.Sc\./);
-    expect(src).toMatch(/Penerbit sertifikat/);
+    expect(src).toMatch(/Certificate Issuer/);
     expect(src).toMatch(/layout: "landscape"/);
     expect(src).toMatch(/payload_hash\.slice\(0, 12\)/);
   });
