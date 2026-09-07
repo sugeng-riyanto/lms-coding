@@ -976,9 +976,17 @@ async function evaluateLevelEligibility(
       if (le.required) requiredIds.push(le.id);
     }
   }
-  const completedIds = ss.filter((s) => s.status === "completed").map((s) => s.entity_id);
-  const levelPercent = ss.length > 0 ? ss.reduce((a, s) => a + Number(s.percent), 0) / ss.length : 0;
-  const avgMastery = ss.length > 0 ? ss.reduce((a, s) => a + Number(s.mastery), 0) / ss.length : 0;
+  // Defect live: levelPercent/avgMastery dirata-rata atas SEMUA lesson snapshot
+  // enrollment (termasuk level lain yang belum digarap) → level dengan banyak
+  // level saudara di bawah passing_score meski level ini tuntas (contoh: 24
+  // lesson → level tuntas terlihat 8.3/70). Koreksi: hitung hanya lesson yang
+  // merupakan bagian dari level yang dievaluasi (requiredIds).
+  const levelSs = ss.filter((s) => requiredIds.includes(s.entity_id));
+  const completedIds = levelSs.filter((s) => s.status === "completed").map((s) => s.entity_id);
+  const levelPercent =
+    levelSs.length > 0 ? levelSs.reduce((a, s) => a + Number(s.percent), 0) / levelSs.length : 0;
+  const avgMastery =
+    levelSs.length > 0 ? levelSs.reduce((a, s) => a + Number(s.mastery), 0) / levelSs.length : 0;
   const { data: atts } = await supabase
     .from("attempts")
     .select("final_score,status")
@@ -1740,6 +1748,22 @@ export async function recomputeProgress(input: unknown) {
       const { error } = await supabase.from("review_items").insert(fresh);
       if (error) return { ok: false as const, error: "REVIEW_SCHEDULE_FAILED" };
       reviewScheduled = fresh.length;
+    }
+  }
+
+  // Auto-issue sertifikat (ADR/aturan guru: semua lesson wajib selesai + quiz
+  // 100% + ujian akhir >= 70%). Evaluasi ulang penuh terjadi di RPC security
+  // definer `auto_issue_certificates` — murid tidak bisa memalsukan skor karena
+  // hanya attempts hasil grade server yang dihitung. Idempoten: sertifikat
+  // ACTIVE untuk (enrollment, level) di-skip. Best-effort seperti agregasi
+  // heartbeat: kegagalan auto-issue tidak boleh menggagalkan recompute.
+  if (levelResults.some((l) => l.done)) {
+    try {
+      await supabase.rpc("auto_issue_certificates", {
+        p_enrollment_id: parsed.data.enrollmentId,
+      });
+    } catch {
+      // best-effort
     }
   }
 
