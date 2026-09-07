@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const uuidSchema = z.string().uuid();
+/** UUID format 8-4-4-4-12 hex TANPA memaksa bit varian/versi (z.string().uuid()
+ * menolak UUID seed tetap repo seperti c0000000-… yang sah di kolom uuid DB —
+ * defect live: semua action ber-ID seed balas INVALID_INPUT). DB tetap penegak
+ * tipe akhir; di sini hanya format. */
+export const uuidSchema = z
+  .string()
+  .regex(/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/);
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -114,6 +120,10 @@ export const publishQuestionVersionSchema = z.object({
   questionId: uuidSchema,
   points: z.coerce.number().min(0).max(1000),
   grading: z.record(z.string(), z.unknown()),
+});
+
+export const bulkImportQuestionPackSchema = z.object({
+  pack: z.string().trim().min(1).max(200_000),
 });
 
 export const createAssessmentSchema = z.object({

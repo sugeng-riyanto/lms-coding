@@ -1,11 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createQuestion, publishQuestionVersion } from "@/features/actions";
+import { bulkImportQuestionPack, createQuestion, publishQuestionVersion } from "@/features/actions";
 import { buildGradingRule } from "@/lib/attempt";
 import type { QuestionType } from "@/lib/grading";
+import { questionPackTemplateSample } from "@/lib/question-pack";
+import { QUESTION_PACK_FORMAT_GUIDE, buildQuestionPackAiPrompt } from "@/lib/question-pack-ai-prompt";
 import { RubricEditor } from "@/components/rubric-editor";
+import { loadLocalPref, saveLocalPref } from "@/lib/client-storage";
+
+const PACK_TOPIC_KEY = "ai:pack-topic";
+const PACK_COUNT_KEY = "ai:pack-count";
 
 export interface RubricInfo {
   id: string;
@@ -42,7 +48,25 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
   const [versionQ, setVersionQ] = useState("");
   const [points, setPoints] = useState("10");
   const [gradingText, setGradingText] = useState("");
+  const [pack, setPack] = useState("");
+  const [packErrors, setPackErrors] = useState<string[]>([]);
+  const [aiCopied, setAiCopied] = useState(false);
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiCount, setAiCount] = useState(10);
   const needsOptions = type === "single_choice" || type === "multiple_choice";
+
+  // Pulihkan topik & jumlah soal AI terakhir dari perangkat (setelah hidrasi).
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const topic = loadLocalPref<string>(PACK_TOPIC_KEY);
+      if (topic && topic.trim().length > 0) setAiTopic(topic);
+      const count = loadLocalPref<number>(PACK_COUNT_KEY);
+      if (typeof count === "number" && Number.isFinite(count)) {
+        setAiCount(Math.min(100, Math.max(1, Math.floor(count))));
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -96,6 +120,60 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
     setBusy(false);
   }
 
+  function builtPackAiPrompt(): string {
+    return buildQuestionPackAiPrompt({
+      topic: aiTopic.trim() || undefined,
+      count: aiCount,
+    });
+  }
+
+  async function copyPackAiPrompt() {
+    const text = builtPackAiPrompt();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(ta);
+      }
+    }
+    setAiCopied(true);
+    window.setTimeout(() => setAiCopied(false), 2000);
+  }
+
+  async function onImportPack(e: React.FormEvent) {
+    e.preventDefault();
+    if (pack.trim().length === 0) {
+      setPackErrors(["Tempel dulu isi template (baris per soal)."]);
+      return;
+    }
+    setBusy(true);
+    const res = await bulkImportQuestionPack({ pack });
+    setBusy(false);
+    if (!res.ok) {
+      setPackErrors([`Import gagal: ${res.error}`, ...(res.errors ?? [])].slice(0, 8));
+      return;
+    }
+    setPackErrors(
+      [`${res.created} soal dibuat.`]
+        .concat(res.errors ?? [])
+        .concat(res.created === 0 ? ["Tidak ada soal valid."] : [])
+        .slice(0, 8),
+    );
+    if (res.created > 0) {
+      setPack("");
+      setNotice(`${res.created} soal diimpor ke bank.`);
+      router.refresh();
+    }
+  }
+
   return (
     <div className="mt-6 space-y-6">
       {notice && (
@@ -103,6 +181,124 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
           {notice}
         </p>
       )}
+      <form onSubmit={onImportPack} aria-label="Import bank soal (pack)" className="rounded-xl border p-4">
+        <h2 className="font-semibold">Import bank soal (pack) — MCQ/esai/kombinasi</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Satu baris = satu soal. Kolom dipisah <code>|</code>: TIPE | Prompt | OpsiA–D | Kunci | Poin |
+          Catatan. Tipe: <code>sc</code>/<code>mc</code>/<code>tf</code>/<code>essay</code>. Kunci = huruf
+          opsi (mis. <code>B</code> atau <code>A;C</code>), <code>benar</code>/<code>salah</code> untuk tf;
+          esai dinilai manual (Catatan jadi pedoman guru).
+        </p>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-sm font-semibold text-blue-700 dark:text-blue-300">
+            Lihat contoh template (salin lalu tempel)
+          </summary>
+          <pre className="mt-2 overflow-x-auto rounded-lg border bg-slate-50 p-3 font-mono text-xs whitespace-pre dark:bg-slate-900">
+            {questionPackTemplateSample()}
+          </pre>
+        </details>
+        <details className="mt-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2 dark:border-blue-800 dark:bg-blue-950/40">
+          <summary className="cursor-pointer text-xs font-semibold text-blue-800 select-none dark:text-blue-300">
+            🤖 Template prompt AI + format bank soal
+          </summary>{" "}
+          <div className="mt-2 space-y-2">
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Salin prompt di bawah, kirim ke AI bersama materi/teks sumber. AI mengembalikan baris pack (1
+              baris = 1 soal) yang langsung diterima kolom import di atas — termasuk kunci untuk soal yang
+              kuncinya ada di sumber.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="q-ai-topic"
+                  className="text-xs font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  Topik materi (opsional — prompt otomatis dipersonalisasi)
+                </label>
+                <input
+                  id="q-ai-topic"
+                  type="text"
+                  value={aiTopic}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setAiTopic(v);
+                    if (v.trim().length > 0) saveLocalPref(PACK_TOPIC_KEY, v.trim());
+                    else saveLocalPref(PACK_TOPIC_KEY, null);
+                  }}
+                  maxLength={120}
+                  placeholder="Mis. Perulangan Python"
+                  className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="q-ai-count"
+                  className="text-xs font-semibold text-slate-600 dark:text-slate-300"
+                >
+                  Jumlah soal
+                </label>
+                <input
+                  id="q-ai-count"
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={aiCount}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setAiCount(n);
+                    if (Number.isFinite(n) && n >= 1 && n <= 100)
+                      saveLocalPref(PACK_COUNT_KEY, Math.floor(n));
+                    else saveLocalPref(PACK_COUNT_KEY, null);
+                  }}
+                  className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs"
+                />
+              </div>
+            </div>
+            <pre className="max-h-64 overflow-auto rounded-lg border bg-white p-2 text-[11px] leading-relaxed whitespace-pre-wrap text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+              {builtPackAiPrompt()}
+            </pre>
+            <details className="rounded-lg border px-2 py-1">
+              <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 select-none dark:text-slate-400">
+                Lihat ringkasan format (aturan cepat)
+              </summary>
+              <p className="mt-1 text-[11px] whitespace-pre-wrap text-slate-600 dark:text-slate-300">
+                {QUESTION_PACK_FORMAT_GUIDE}
+              </p>
+            </details>
+            <button
+              type="button"
+              onClick={copyPackAiPrompt}
+              className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-[var(--shadow-soft)] transition hover:-translate-y-px hover:shadow-[var(--shadow-lift)]"
+            >
+              {aiCopied ? "Tersalin ✓" : "Salin prompt AI"}
+            </button>
+          </div>
+        </details>
+        <textarea
+          id="q-pack"
+          rows={8}
+          value={pack}
+          onChange={(e) => {
+            setPack(e.target.value);
+            setPackErrors([]);
+          }}
+          placeholder={"sc | Output dari print(2 ** 3)? | 6 | 8 | 9 | 5 | B | 10"}
+          className="mt-2 w-full rounded-lg border px-3 py-2 font-mono text-sm"
+        />
+        {packErrors.length > 0 && (
+          <ul role="status" className="mt-2 space-y-1 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
+            {packErrors.map((m, i) => (
+              <li key={i}>{m}</li>
+            ))}
+          </ul>
+        )}
+        <button
+          disabled={busy}
+          className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+        >
+          Import pack
+        </button>
+      </form>
       <form onSubmit={onCreate} aria-label="Tambah soal" className="rounded-xl border p-4">
         <h2 className="font-semibold">+ Soal baru</h2>
         <div className="mt-2 grid gap-2 md:grid-cols-2">

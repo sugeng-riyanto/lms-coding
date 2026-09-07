@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createActivity, createLesson, createModule, reorderSiblings } from "@/features/actions";
 import { EditNode } from "@/components/edit-node";
+import { MARKDOWN_FORMAT_GUIDE, buildMarkdownAiPrompt } from "@/lib/markdown-ai-prompt";
+import { loadLocalPref, saveLocalPref } from "@/lib/client-storage";
+
+/** Pref perangkat: topik AI article terakhir (dipakai bila guru mengetik manual). */
+const ARTICLE_TOPIC_KEY = "ai:article-topic";
 
 export interface ManagerActivity {
   id: string;
@@ -44,7 +49,8 @@ const ACTIVITY_TYPES = [
 
 /** Petunjuk isian JSON per tipe aktivitas (dokumentasi ringkas di UI authoring). */
 const CONTENT_HINTS: Record<string, string> = {
-  article: '{"body": "Teks materi (plain text, line break dihormati)"}',
+  article:
+    'Markdown mentah (tanpa kurung kurawal) — # judul, ``` kode, ![alt](url) gambar, teks → paragraf. \nJSON juga tetap diterima: {"blocks":[…]} atau {"body":"teks polos"}',
   video_link: '{"url": "https://…", "transcript": "Transkrip aksesibel"}',
   resource: '{"url": "https://…"}',
   reflection: "{}",
@@ -77,10 +83,54 @@ export function LevelManager({
   const [actType, setActType] = useState<string>("article");
   const [actTitle, setActTitle] = useState("");
   const [actContent, setActContent] = useState("{}");
+  const [aiCopied, setAiCopied] = useState(false);
+  const [aiTopic, setAiTopic] = useState("");
+  const [aiTopicEdited, setAiTopicEdited] = useState(false);
+
+  // Auto-fill topik prompt AI dari judul activity/lesson yang diketik, SELAMA
+  // guru belum mengedit topik secara manual (setelah diedit → tidak ditimpa).
+  const aiTopicValue = aiTopicEdited ? aiTopic : actTitle.trim().slice(0, 120);
+
+  // Pulihkan topik manual terakhir guru dari perangkat (setelah hidrasi).
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      const stored = loadLocalPref<string>(ARTICLE_TOPIC_KEY);
+      if (stored && stored.trim().length > 0) {
+        setAiTopic(stored);
+        setAiTopicEdited(true);
+      }
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, []);
 
   function fail(text: string) {
     setNotice({ kind: "err", text });
     setBusy(false);
+  }
+
+  function builtAiPrompt(): string {
+    return buildMarkdownAiPrompt({ topic: aiTopicValue.trim() || undefined });
+  }
+
+  async function copyAiPrompt() {
+    const text = builtAiPrompt();
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } finally {
+        document.body.removeChild(ta);
+      }
+    }
+    setAiCopied(true);
+    window.setTimeout(() => setAiCopied(false), 2000);
   }
 
   async function onAddModule(e: React.FormEvent) {
@@ -115,14 +165,18 @@ export function LevelManager({
     e.preventDefault();
     if (!actLesson) return fail("Pilih lesson dulu.");
     let content: Record<string, unknown> = {};
+    const raw = actContent.trim();
     try {
-      const parsedJson: unknown = JSON.parse(actContent || "{}");
+      const parsedJson: unknown = JSON.parse(raw || "{}");
       if (typeof parsedJson !== "object" || parsedJson === null || Array.isArray(parsedJson)) {
         return fail("Konten harus objek JSON.");
       }
       content = parsedJson as Record<string, unknown>;
     } catch {
-      return fail("Konten bukan JSON valid.");
+      // Article menerima MARKDOWN mentah (tanpa kurung kurawal) — di-server
+      // diubah jadi blok ter-allowlist (lib/markdown-blocks).
+      if (actType !== "article" || raw.length === 0) return fail("Konten bukan JSON valid.");
+      content = { markdown: raw };
     }
     setBusy(true);
     const res = await createActivity({ lessonId: actLesson, type: actType, title: actTitle, content });
@@ -299,7 +353,7 @@ export function LevelManager({
             className="mt-1 w-full rounded-lg border px-3 py-2"
           />
           <label htmlFor="a-content" className="mt-2 block text-sm font-semibold">
-            Konten JSON
+            Konten {actType === "article" ? "Markdown (atau JSON)" : "JSON"}
           </label>
           <textarea
             id="a-content"
@@ -310,6 +364,64 @@ export function LevelManager({
             className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs"
           />
           <p className="mt-1 text-xs text-slate-500">Contoh: {CONTENT_HINTS[actType] ?? "{}"}</p>
+          {actType === "article" && (
+            <details className="mt-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2 dark:border-blue-800 dark:bg-blue-950/40">
+              <summary className="cursor-pointer text-xs font-semibold text-blue-800 select-none dark:text-blue-300">
+                🤖 Template prompt AI + format materi
+              </summary>{" "}
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-slate-600 dark:text-slate-300">
+                  Salin prompt di bawah, kirim ke AI bersama teks sumber (mis. halaman tutorial yang
+                  diadopsi). AI mengembalikan Markdown yang langsung diterima platform — tempel hasilnya ke
+                  kolom konten di atas.
+                </p>
+                <div>
+                  <label
+                    htmlFor="ai-topic"
+                    className="text-xs font-semibold text-slate-600 dark:text-slate-300"
+                  >
+                    Topik materi (opsional — prompt otomatis dipersonalisasi)
+                  </label>
+                  <input
+                    id="ai-topic"
+                    type="text"
+                    value={aiTopicValue}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAiTopic(v);
+                      setAiTopicEdited(true);
+                      if (v.trim().length > 0) saveLocalPref(ARTICLE_TOPIC_KEY, v.trim());
+                      else saveLocalPref(ARTICLE_TOPIC_KEY, null);
+                    }}
+                    maxLength={120}
+                    placeholder="Mis. Perulangan for di Python"
+                    className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400 dark:text-slate-500">
+                    Terisi otomatis dari judul activity — boleh diganti manual.
+                  </p>
+                </div>
+                <pre className="max-h-64 overflow-auto rounded-lg border bg-white p-2 text-[11px] leading-relaxed whitespace-pre-wrap text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200">
+                  {builtAiPrompt()}
+                </pre>
+                <details className="rounded-lg border px-2 py-1">
+                  <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 select-none dark:text-slate-400">
+                    Lihat ringkasan format (aturan cepat)
+                  </summary>
+                  <p className="mt-1 text-[11px] whitespace-pre-wrap text-slate-600 dark:text-slate-300">
+                    {MARKDOWN_FORMAT_GUIDE}
+                  </p>
+                </details>
+                <button
+                  type="button"
+                  onClick={copyAiPrompt}
+                  className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-[var(--shadow-soft)] transition hover:-translate-y-px hover:shadow-[var(--shadow-lift)]"
+                >
+                  {aiCopied ? "Tersalin ✓" : "Salin prompt AI"}
+                </button>
+              </div>
+            </details>
+          )}
           <button
             disabled={busy}
             className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
