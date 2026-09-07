@@ -1,7 +1,69 @@
 import flatConfig from "eslint-config-next/core-web-vitals";
 
+/**
+ * Rule lokal: larang hex hardcoded (#rrggbb) di dalam nilai className
+ * komponen. Bayangan & gradien harus memakai token elevasi
+ * (--shadow-soft / --shadow-lift / --glow-btn, kelas gradien palet, atau
+ * --surface-grad-* untuk permukaan sidebar/drawer gelap). Lihat
+ * docs/design-system.md.
+ */
+const HEX_RE = /#[0-9a-fA-F]{3,8}\b/;
+
+function textOf(value) {
+  if (!value) return null;
+  if (value.type === "Literal" || value.type === "StringLiteral") {
+    return typeof value.value === "string" ? value.value : null;
+  }
+  if (value.type === "TemplateLiteral" && value.expressions.length === 0) {
+    return value.quasis.map((q) => q.value.cooked ?? "").join("");
+  }
+  return null;
+}
+
+const noHardcodedElevationHex = {
+  meta: {
+    type: "suggestion",
+    docs: {
+      description: "Flags raw hex colors inside className that should use the elevation tokens",
+      recommended: false,
+    },
+    messages: {
+      rawHex:
+        'Hex hardcoded "{{hex}}" di className. Pakai token elevasi (shadow-[var(--shadow-soft)] / var(--shadow-lift) / var(--glow-btn)), kelas gradien palet (from-…/to-…), atau --surface-grad-* untuk permukaan gelap — lihat docs/design-system.md.',
+    },
+    schema: [],
+  },
+  create(context) {
+    const check = (node, text) => {
+      if (!text) return;
+      const m = HEX_RE.exec(text);
+      if (m?.[0]) {
+        context.report({ node, messageId: "rawHex", data: { hex: m[0] } });
+      }
+    };
+    return {
+      JSXAttribute(node) {
+        if (!node.name || node.name.name !== "className") return;
+        const value = node.value;
+        if (!value) return;
+        if (value.type === "JSXExpressionContainer") {
+          check(node, textOf(value.expression));
+        } else {
+          check(node, textOf(value));
+        }
+      },
+    };
+  },
+};
+
 const config = [
   ...flatConfig,
+  {
+    plugins: {
+      lms: { rules: { "no-hardcoded-elevation-hex": noHardcodedElevationHex } },
+    },
+    rules: { "lms/no-hardcoded-elevation-hex": "warn" },
+  },
   {
     ignores: ["node_modules/**", ".next/**", "playwright-report/**", "test-results/**"],
   },

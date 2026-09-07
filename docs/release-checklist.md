@@ -6,9 +6,9 @@ Legenda: ✅ Ready · ⚠️ Ready with limitation · ⛔ Blocked eksternal · �
 
 | Kriteria | Status | Bukti |
 |---|---|---|
-| Login/logout + session refresh | ✅ | `app/(auth)/login`, `signOut`, `proxy.ts` (getClaims refresh) |
-| Semua exposed tables RLS-enabled | ✅ | `npm run db:typecheck` PASS (34 tabel, 8 migration) |
-| Denial tests RBAC.md lulus | ⚠️ | `rls.test.ts` + `phase1.test.ts` PASS statis; live-DB ⛔ (tanpa CLI/Docker) |
+| Login/logout + session refresh | ✅ | `app/(auth)/login`, `signOut`, `proxy.ts` (getClaims refresh) — terbukti live (murid/guru/wali login → /learn, /teacher, /guardian) |
+| Semua exposed tables RLS-enabled | ✅ | `npm run db:typecheck` PASS (38 tabel, 2 view, migration 000000–000023) |
+| Denial tests RBAC.md lulus | ✅ | `rls.test.ts` + `phase1.test.ts` statis + **live-denial 95/95** (`scripts/live-denial/`, Postgres 18, migration verbatim) |
 | Role tak bisa diubah browser | ✅ | `phase1.test.ts` (tanpa UPDATE/INSERT memberships) + trigger audit |
 
 ## Learning
@@ -48,19 +48,24 @@ Legenda: ✅ Ready · ⚠️ Ready with limitation · ⛔ Blocked eksternal · �
 | QR → HTTPS verifier | ✅ | `/api/.../qr` + `/verify/[publicId]` |
 | Hash deterministik, tamper terdeteksi | ✅ | `crypto.test.ts` |
 | Verifier tanpa PII/score | ✅ | `certificates_public` view + `rls.test.ts` + e2e PII check |
-| Revocation & reissue | ⚠️ | revoke ✅ + audit; reissue = issue baru idempotent (riwayat via tabel, tanpa UI khusus reissue) |
+| Revocation & reissue | ✅ | revoke + audit + reissue UI (`reissue-button`) + action eligibility-ulang + live t10 (riwayat revoked+active, retry-safe) |
 | Tanpa klaim blockchain palsu | ✅ | flag OFF + `NoopChainAdapter` + UI "tidak di-anchor" + `contracts.test.ts` |
 
 ## Quality
 
 | Kriteria | Status | Bukti |
 |---|---|---|
-| Mobile 360 & desktop 1440 | ⚠️ | Tailwind responsif + `not-found`/`error`; belum uji visual 2 viewport |
-| Keyboard-only critical path | ⚠️ | skip-link, focus-visible, label; e2e tab-check ada tapi browser ⛔ |
+| Mobile 360 & desktop 1440 | ✅ | `responsive.spec.ts` (5 route publik × 3 viewport) + `responsive-authed.spec.ts` (8 route peran × 3 viewport) — 0 overflow, live 28/28 |
+| Keyboard-only critical path | ✅ | skip-link, focus-visible, label; e2e tab-check PASS (chromium) |
 | Loading/empty/offline/forbidden/error | ✅ | empty/empty/offline states per halaman + `error.tsx` + `unauthorized` + `account-inactive` |
-| Lint/typecheck/tests/build/security | ✅ | CI hijau lokal: format, lint, typecheck, 109 tests, build, advisor, hardening tests |
-| README/runbooks akurat | ✅ | `docs/runbooks.md` + `docs/release-checklist.md` (file ini) |
+| Lint/typecheck/tests/build/security | ✅ | lokal hijau: format, lint, typecheck, 406 tests, build, advisor (38t/2v), live-denial 95/95, hardening tests |
+| README/runbooks akurat | ✅ | `docs/runbooks.md` + `docs/release-checklist.md` (file ini) + kredensial demo RBAC di `README.md` |
 
-## Rekomendasi: CONDITIONAL GO (preview, tanpa data murid nyata)
+## Rekomendasi: GO untuk uji kelas percontohan (data demo)
 
-Sebelum data murid nyata: apply migration live + denial live-DB + seed users + E2E browser + audit keamanan Prompt Audit (2 org, 2 guru, wali linked/unlinked, anonymous). Rollback: `git revert` per commit prompt (riwayat atomik: 75e502b, 2060703, 6a02690, 6a88e13, eb373a2, d99474f, 64323bc).
+Study loop penuh terbukti live melawan hosted (murid jawab+submit = 100 via RPC
+tersanitasi 000023; guru melihat submitted + skor; wali melihat ringkasan).
+Sebelum data murid nyata: rotasi kredensial demo (`DemoPass-2026!`), set
+`BLOCKCHAIN_ANCHOR_ENABLED=false` di production, dan jalankan audit keamanan
+Prompt Audit (2 org, 2 guru, wali linked/unlinked, anonymous). Rollback:
+`git revert` per commit atomik.

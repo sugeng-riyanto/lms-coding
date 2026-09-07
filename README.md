@@ -57,6 +57,14 @@ Akun seed anonim untuk local/preview (lihat `docs/e2e-setup.md` dan `RBAC.md`). 
 
 Jika ada konflik, dokumen dengan urutan lebih tinggi menang. Jangan menebak aturan penilaian atau kebijakan data; buat konfigurasi dan tandai keputusan yang memerlukan guru.
 
+## Dokumentasi penting
+
+- `RBAC.md` / `SECURITY_PRIVACY.md` — peran, RLS, dan kebijakan data (wajib dibaca sebelum menulis kode akses).
+- `docs/design-system.md` — token elevasi, `.card-lift`, aturan gradien, pemetaan dark mode, dan kebijakan reduced-motion. **Baca sebelum memberi style pada komponen baru** agar konsisten.
+- `docs/runbooks.md` — prosedur operasional (migration, seed, live-denial, backup/restore).
+- `docs/release-checklist.md` — daftar rilis dan smoke test.
+- `PROGRESS.md` — status fase, bukti gate, dan pekerjaan yang belum selesai.
+
 ## MVP selesai ketika
 
 - Guru dapat membuat course → level → lesson → activity → assessment.

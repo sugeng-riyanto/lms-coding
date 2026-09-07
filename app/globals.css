@@ -150,8 +150,82 @@ body {
 }
 
 :focus-visible {
-  outline: 3px solid #1d4ed8;
+  outline: 3px solid #2563eb;
   outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgb(37 99 235 / 0.15);
+}
+
+/* ===== Depth & micro-interaction: 3D halus, tetap profesional ===== */
+:root {
+  --ambient:
+    radial-gradient(1100px 560px at 85% -10%, rgb(37 99 235 / 0.07), transparent 60%),
+    radial-gradient(900px 520px at -5% 112%, rgb(99 102 241 / 0.06), transparent 55%);
+  --shadow-soft: 0 1px 2px rgb(15 23 42 / 0.05), 0 6px 14px -4px rgb(15 23 42 / 0.1);
+  --shadow-lift:
+    0 1px 2px rgb(15 23 42 / 0.05), 0 3px 8px -2px rgb(15 23 42 / 0.1), 0 16px 28px -10px rgb(15 23 42 / 0.2);
+  --glow-btn:
+    0 1px 0 rgb(255 255 255 / 0.25) inset, 0 2px 4px -1px rgb(15 23 42 / 0.15),
+    0 10px 18px -6px rgb(37 99 235 / 0.45);
+}
+.dark {
+  --ambient:
+    radial-gradient(1100px 560px at 85% -10%, rgb(59 130 246 / 0.13), transparent 60%),
+    radial-gradient(900px 520px at -5% 112%, rgb(129 140 248 / 0.07), transparent 55%);
+  --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.45), 0 8px 16px -6px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 1px 2px rgb(0 0 0 / 0.5), 0 12px 24px -8px rgb(0 0 0 / 0.55);
+  --glow-btn: 0 1px 0 rgb(255 255 255 / 0.08) inset, 0 6px 16px -6px rgb(37 99 235 / 0.6);
+  /* Permukaan gradien sidebar/drawer gelap (token — jangan tulis hex di komponen). */
+  --surface-grad-from: #14203a;
+  --surface-grad-to: #0c1322;
+}
+
+body {
+  background-image: var(--ambient);
+  background-attachment: fixed;
+}
+
+/* Kartu & permukaan: angkat halus saat hover (dipasang via kelas .card-lift). */
+.card-lift {
+  transition:
+    transform 160ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 200ms ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .card-lift:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lift);
+  }
+  button:not(:disabled):active {
+    transform: translateY(1px) scale(0.99);
+  }
+}
+
+/* ===== Upgrade otomatis permukaan & tombol lama (legacy) ke tampilan "latest" =====
+ * Halaman yang belum di-refactor tetap tampil konsisten TANPA menyentuh tiap
+ * file: tombol solid biru tua -> CTA gradien + glow; kartu/form polos
+ * (rounded-xl + border + p-4) -> permukaan terangkat (seperti .card-lift).
+ */
+.bg-blue-700 {
+  background-image: linear-gradient(90deg, #2563eb, #4f46e5);
+  box-shadow: var(--glow-btn);
+}
+.bg-blue-700:not(:disabled):hover {
+  filter: brightness(1.08);
+}
+.dark .bg-blue-700 {
+  background-image: linear-gradient(90deg, #1d4ed8, #4338ca);
+}
+
+.rounded-xl.border.p-4 {
+  background-color: #ffffff;
+  box-shadow: var(--shadow-soft);
+}
+.dark .rounded-xl.border.p-4 {
+  background-color: #111a2e;
+}
+
+::selection {
+  background: rgb(37 99 235 / 0.22);
 }
 
 /* Aksesibilitas (STUDENT_EXPERIENCE.md): hormati preferensi gerak OS. */
