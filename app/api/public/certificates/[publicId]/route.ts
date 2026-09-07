@@ -21,37 +21,36 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   }
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("certificates_public")
-      .select(
-        "status, display_name, course_title, level_title, issued_at, serial_no, payload_hash, chain_anchored, chain_anchor_status",
-      )
-      .eq("public_id", parsed.data.publicId)
-      .single();
+    // RPC kurasi (000019): security definer, granted ke anon, mengembalikan persis
+    // kolom whitelist. View certificates_public TETAP terkunci utk anon (0 baris),
+    // jadi satu-satunya jalur verifikasi publik adalah RPC ini.
+    const { data, error } = await supabase.rpc("get_public_certificate", {
+      p_public_id: parsed.data.publicId,
+    });
     if (error || !data) {
       return NextResponse.json({ status: "not_found" }, { status: 404 });
     }
     const row = data as Record<string, unknown>;
     if (row["status"] === "revoked") {
-      return NextResponse.json({ status: "revoked", issuedAt: row["issued_at"] });
+      return NextResponse.json({ status: "revoked", issuedAt: row["issuedAt"] });
     }
-    const rawAnchorStatus = row["chain_anchor_status"];
+    const rawAnchorStatus = row["chainAnchorStatus"];
     const anchorStatus: "none" | "pending" | "final" | "failed" =
       rawAnchorStatus === "pending" || rawAnchorStatus === "final" || rawAnchorStatus === "failed"
         ? rawAnchorStatus
         : "none";
     return NextResponse.json({
       status: "valid",
-      displayName: row["display_name"],
-      courseTitle: row["course_title"],
-      levelTitle: row["level_title"],
-      issuedAt: row["issued_at"],
-      serialNo: row["serial_no"],
+      displayName: row["displayName"],
+      courseTitle: row["courseTitle"],
+      levelTitle: row["levelTitle"],
+      issuedAt: row["issuedAt"],
+      serialNo: row["serialNo"],
       fingerprint:
-        typeof row["payload_hash"] === "string"
-          ? String(row["payload_hash"]).slice(0, 12).toUpperCase()
+        typeof row["payloadHash"] === "string"
+          ? String(row["payloadHash"]).slice(0, 12).toUpperCase()
           : undefined,
-      chainAnchored: row["chain_anchored"] === true,
+      chainAnchored: row["chainAnchored"] === true,
       chainAnchor: { status: anchorStatus },
     });
   } catch {

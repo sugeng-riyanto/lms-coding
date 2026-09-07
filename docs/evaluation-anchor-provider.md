@@ -110,6 +110,32 @@ Jawab YA/TIDAK; semua YA ke #1–#3 → lanjut #4; bila #2 TIDAK → tetap no-ch
    `lib/chain.ts`), set `BLOCKCHAIN_ANCHOR_ENABLED=true` + `BLOCKCHAIN_PROVIDER`/
    `_NETWORK`, jalankan e2e chain tests, baru aktifkan di production.
 
+### 6a. Jawaban tercatat (sesi finalisasi ADR-018)
+
+Diisi atas dasar bukti proyek (ADR-001 baseline lulus seluruh test; anchoring = fitur
+opsional ber-flag OFF; matriks §3 menempatkan no-chain tertinggi). Jawaban #3 hanya
+bisa benar-benar dikomit oleh manusia pemegang dana — tidak ada wallet yang diarang:
+
+1. **TIDAK saat ini** — baseline DB+SHA-256+QR (ADR-001) sudah memenuhi kebutuhan
+   verifikasi sekolah; tidak ada requirement yang menuntut non-repudiation pihak ketiga.
+2. **YA** — sudah menjadi desain sejak awal: `chain_anchors` menyimpan HANYA
+   `merkle_root` + `transaction_ref` (+ provider/network), verifier publik menampilkan
+   hanya fingerprint hash. Persetujuan permanen hash-only berlaku.
+3. **TIDAK saat ini** — belum ada funding wallet, belum ada komitmen operasional
+   monitoring pending→final + retry. Bila pemegang dana muncul, jawab ulang #3→YA.
+4. **Keputusan: tetap no-chain untuk production.** `BLOCKCHAIN_ANCHOR_ENABLED=false`
+   (default); `MockChainAdapter` hanya untuk dev/test. Provider publik TIDAK dipilih
+   sekarang — jika #1 dan #3 berubah jadi YA, default yang disarankan matriks §5.2
+   adalah **Algorand** (finality deterministik = janji "final" tegas; biaya ≈ $0,00015
+   /batch; root 32 byte muat di memo; hash-only bersih untuk data anak), dengan
+   Solana/Base sebagai alternatif dan permissioned TIDAK direkomendasikan.
+5. Belum dieksekusi (menunggu #1/#3); saat eksekusi: `HttpChainAdapter` di
+   `lib/chain.ts`, env `BLOCKCHAIN_*`, e2e chain tests, baru aktifkan di production.
+
+Ringkasan: **ADR-018 final = baseline no-chain; anchoring opsional nonaktif di
+produksi; keputusan provider ditangguhkan bersyarat (hanya dibuka bila kebutuhan
+pihak ketiga nyata + wallet terdanai + komitmen monitoring ada).**
+
 ## 7. Sumber (periksa ulang saat keputusan)
 
 - Algorand: fee/finality — Chainspect (chainspect.app/chain/algorand, 2026) & Algorand

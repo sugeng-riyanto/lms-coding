@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_ASSIGNMENT_ROWS,
   MAX_CONTENT_ROWS,
   MAX_STUDENT_ROWS,
+  MAX_TEACHER_ROWS,
   MAX_UPLOAD_BYTES,
   groupContentRows,
   parseContentRows,
+  parseStudentAssignmentRows,
   parseStudentRows,
+  parseTeacherRows,
   rowsOverCap,
   xlsxFileError,
   type ContentRow,
@@ -77,6 +81,71 @@ describe("parseStudentRows", () => {
   it("tanpa nama → fallback bagian lokal email", () => {
     const { rows } = parseStudentRows([{ Email: "citra@school.id" }]);
     expect(rows[0]?.displayName).toBe("citra");
+  });
+});
+
+describe("parseTeacherRows — bulk upload guru", () => {
+  it("email/nama + kelas opsional (; atau , terpisah, dedupe)", () => {
+    const { rows, errors } = parseTeacherRows([
+      { Email: " guru1@school.id ", Nama: "Guru Satu", Kelas: "7A; 7B , 7A" },
+      { "email guru": "guru2@school.id", display_name: "Guru Dua" },
+    ]);
+    expect(errors).toEqual([]);
+    expect(rows).toEqual([
+      { email: "guru1@school.id", displayName: "Guru Satu", classNames: ["7A", "7B"] },
+      { email: "guru2@school.id", displayName: "Guru Dua", classNames: [] },
+    ]);
+  });
+  it("email tidak valid / kosong / duplikat → error per baris", () => {
+    const { rows, errors } = parseTeacherRows([
+      { Email: "bukan-email", Nama: "X" },
+      { Email: "" },
+      { Email: "guru3@school.id" },
+      { Email: "guru3@school.id" },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(errors.length).toBe(3);
+    expect(errors.some((e) => e.includes("tidak valid"))).toBe(true);
+    expect(errors.some((e) => e.includes("kosong"))).toBe(true);
+    expect(errors.some((e) => e.includes("duplikat"))).toBe(true);
+  });
+  it("batas baris guru (MAX_TEACHER_ROWS)", () => {
+    expect(rowsOverCap(MAX_TEACHER_ROWS + 1, MAX_TEACHER_ROWS)).toBe(true);
+    expect(rowsOverCap(MAX_TEACHER_ROWS, MAX_TEACHER_ROWS)).toBe(false);
+  });
+});
+
+describe("parseStudentAssignmentRows — penugasan murid ke kelas/subjek", () => {
+  it("mengenali alias kelas/mapel; email dinormalisasi", () => {
+    const { rows, errors } = parseStudentAssignmentRows([
+      { Email: " ANDI@school.id ", Kelas: "7A", Mapel: "Matematika" },
+      { "email siswa": "budi@school.id", "nama kelas": "7B", course: "IPA" },
+      { Email: "citra@school.id", Class: "7C" }, // hanya kelas
+      { Email: "doni@school.id", Subject: "Olahraga" }, // hanya subjek
+    ]);
+    expect(errors).toEqual([]);
+    expect(rows).toEqual([
+      { email: "andi@school.id", className: "7A", subjectName: "Matematika" },
+      { email: "budi@school.id", className: "7B", subjectName: "IPA" },
+      { email: "citra@school.id", className: "7C", subjectName: "" },
+      { email: "doni@school.id", className: "", subjectName: "Olahraga" },
+    ]);
+  });
+  it("kelas DAN mapel kosong → error; kombinasi duplikat → error", () => {
+    const { rows, errors } = parseStudentAssignmentRows([
+      { Email: "andi@school.id", Kelas: "", Mapel: "" },
+      { Email: "budi@school.id", Kelas: "7A", Mapel: "Math" },
+      { Email: "budi@school.id", Kelas: "7A", Mapel: "Math" },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(errors.length).toBe(2);
+    expect(errors[0]).toContain("wajib");
+    expect(errors[1]).toContain("duplikat");
+  });
+  it("email tak valid → error; batas baris (MAX_ASSIGNMENT_ROWS)", () => {
+    const { errors } = parseStudentAssignmentRows([{ Email: "bukan-email", Kelas: "7A" }]);
+    expect(errors[0]).toContain("tidak valid");
+    expect(rowsOverCap(MAX_ASSIGNMENT_ROWS + 1, MAX_ASSIGNMENT_ROWS)).toBe(true);
   });
 });
 

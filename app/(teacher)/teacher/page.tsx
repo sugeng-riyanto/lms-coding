@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getOrgAdminContext } from "@/lib/org-admin";
 import { summarizeCohort, type StudentRow } from "@/lib/analytics";
 import { detectRisk } from "@/lib/progress";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -151,6 +152,10 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
       </main>
     );
   }
+  // Org-admin (facet Owner, ADR-008): guru aktif org yang memiliki ≥1 course —
+  // hanya mereka yang melihat tautan admin mapping.
+  const adminCtx = await getOrgAdminContext();
+
   if (!data.active) {
     return (
       <main id="main" className="mx-auto max-w-5xl px-4 py-10">
@@ -211,39 +216,67 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
           Belum ada murid di cohort ini.
         </p>
       ) : (
-        <div className="mt-3 overflow-x-auto">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="border-b">
-                <th className="p-2">Murid</th>
-                <th className="p-2">Progress</th>
-                <th className="p-2">Mastery</th>
-                <th className="p-2">Submit</th>
-                <th className="p-2">Status</th>
-                <th className="p-2">Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.rows.map((r) => (
-                <tr key={r.studentId} className="border-b">
-                  <td className="p-2 font-semibold">{r.displayName}</td>
-                  <td className="p-2">{r.progressPct}%</td>
-                  <td className="p-2">{Math.round(r.mastery * 100)}%</td>
-                  <td className="p-2">{r.submittedCount}</td>
-                  <td className="p-2">{r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}</td>
-                  <td className="p-2">
-                    <Link
-                      href={`/teacher/students/${r.studentId}?cohort=${data.active?.id}`}
-                      className="text-blue-700 underline"
-                    >
-                      Detail
-                    </Link>
-                  </td>
+        <>
+          {/* Kartu tumpuk untuk layar kecil: tabel 6 kolom tidak muat @360px
+              tanpa scroll horizontal (gate responsif). Data & status sama. */}
+          <ul className="mt-3 space-y-3 md:hidden">
+            {data.rows.map((r) => (
+              <li key={r.studentId} className="rounded-xl border p-4">
+                <p className="font-semibold">
+                  <Link
+                    href={`/teacher/students/${r.studentId}?cohort=${data.active?.id}`}
+                    className="text-blue-700 underline"
+                  >
+                    {r.displayName}
+                  </Link>
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                  <dt className="text-slate-500">Progress</dt>
+                  <dd>{r.progressPct}%</dd>
+                  <dt className="text-slate-500">Mastery</dt>
+                  <dd>{Math.round(r.mastery * 100)}%</dd>
+                  <dt className="text-slate-500">Submit</dt>
+                  <dd>{r.submittedCount}</dd>
+                  <dt className="text-slate-500">Status</dt>
+                  <dd>{r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}</dd>
+                </dl>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-3 hidden overflow-x-auto md:block">
+            <table className="w-full border-collapse text-left">
+              <thead>
+                <tr className="border-b">
+                  <th className="p-2">Murid</th>
+                  <th className="p-2">Progress</th>
+                  <th className="p-2">Mastery</th>
+                  <th className="p-2">Submit</th>
+                  <th className="p-2">Status</th>
+                  <th className="p-2">Detail</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {data.rows.map((r) => (
+                  <tr key={r.studentId} className="border-b">
+                    <td className="p-2 font-semibold">{r.displayName}</td>
+                    <td className="p-2">{r.progressPct}%</td>
+                    <td className="p-2">{Math.round(r.mastery * 100)}%</td>
+                    <td className="p-2">{r.submittedCount}</td>
+                    <td className="p-2">{r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}</td>
+                    <td className="p-2">
+                      <Link
+                        href={`/teacher/students/${r.studentId}?cohort=${data.active?.id}`}
+                        className="text-blue-700 underline"
+                      >
+                        Detail
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       <h2 className="mt-8 text-xl font-semibold">Sinyal risiko (explainable)</h2>
@@ -268,6 +301,14 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         <Link href="/teacher/certificates" className="text-blue-700 underline">
           Sertifikat &amp; anchoring
         </Link>
+        {adminCtx && (
+          <>
+            {" · "}
+            <Link href="/teacher/admin/map" className="text-blue-700 underline">
+              Admin: mapping kelas &amp; subjek
+            </Link>
+          </>
+        )}
       </p>
     </main>
   );

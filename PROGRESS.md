@@ -679,3 +679,171 @@ keputusan manusia ADR-018, data titik 2026 (web-sourced):
   keputusan final di manusia; implementasi tetap mock-only sampai itu).
 
 Tidak ada perubahan kode; flag/implementasi tidak berubah (ADR-018 masih menunggu keputusan).
+
+## Catatan sesi — Hosted pulih + push 000012–000018 & verifikasi live
+
+Hosted pulih (auth health 200, PostgREST merespons) setelah beberapa sesi down. Menjalankan `.freebuff/push-and-verify.sh` end-to-end:
+
+- **`supabase db push --linked`** → 000012–000018 semua ter-push (000000–000011 + seed sudah dari sesi awal). `migration list` menunjukkan local == remote untuk seluruh 000000–000018.
+- **V1 (000012)** `attempts?select=question_order_json` → 200 (kolom ada).
+- **V2 (000013/000015)** `rubrics` → 200, `rubric_criteria` → 200; `rpc/update_rubric_version` dengan 3 argumen → 400 (fungsi dieksekusi; 404 pada smoke-probe `{}` hanya arity-mismatch, bukan fungsi hilang).
+- **V3 (000014)** tipe aktivitas coding live: `bogus_type` → 400 (CHECK aktif), `code_board` → 201 diterima. Probe pertama gagal hanya karena posisi 999998 sudah terisi oleh probe run pertama (23505) — dibersihkan, re-probe sukses.
+- **V4 (000017)** `certificates_public?select=public_id,chain_anchor_status` → 200 (kolom terekspos di verifier publik); status `bogus` → 400 (CHECK), `pending` → 201, PATCH `final` → 204 (baris menjadi `final`), semua probe dihapus.
+- **Tidak ada sisa probe**: activities ber-title `probe` = 0, `chain_anchors` network `test-local` = 0.
+- Catatan: hosted PostgREST mengembalikan body kosong pada POST (tanpa representation), sehingga ekstraksi id berbasis response-grep gagal — probe final memakai filter deterministik (title/merkle_root/network) untuk cleanup yang andal.
+
+## Catatan sesi — Smoke flow mock-anchor live (preview) + 3 defect ditemukan-diperbaiki
+
+Menjalankan smoke flow anchor end-to-end di preview terhadap hosted yang sudah pulih
+(flags lokal `BLOCKCHAIN_ANCHOR_ENABLED=true`, `BLOCKCHAIN_PROVIDER=mock`,
+`BLOCKCHAIN_NETWORK=mock` — HANYA untuk uji; default produksi tetap false):
+
+1. Login guru (`guru@demo.local` / seed) → `/teacher/certificates`: awalnya **0 sertifikat**.
+2. Root cause #1 (fix): page meng-embed `enrollments(student_id,profiles(display_name))`
+   padahal schema `enrollments.student_id references auth.users(id)` — TIDAK ada FK
+   enrollments→profiles → PostgREST `PGRST200` (hubungan tak ditemukan), query error
+   di-swallow → data null → tampil "0 sertifikat". Fix: query `profiles` terpisah
+   (`.in("id", studentIds)`), RLS guru tetap cohort-scoped.
+3. Klik "Anchor batch" → **"Tidak ada sertifikat baru"** (no_candidates).
+4. Root cause #2 (fix): `anchorCertificateBatch` memfilter
+   `enrollments.courses.organization_id` TANPA embed jalur itu di select →
+   `PGRST108` (bukan embedded resource) → error di-swallow → tampak no_candidates.
+   Fix: tambah `enrollments(courses(organization_id))` ke select.
+5. Setelah fix: batch sukses → **1 sertifikat di-anchor, Merkle root
+   0000…, status pending, tx mock-anchor-000000000000** → chip "anchor pending".
+6. Majukan ke final (PATCH service key `chain_anchors.status='final'` — simulasi
+   status-refresh poll yang belum ada sebagai job) → chip "✓ anchor final".
+7. Verifier publik `/verify/demo-valid-certificate` masih "Verifikasi tidak tersedia".
+8. Root cause #3 (fix): `certificates_public` adalah security_invoker dan TIDAK ada
+   policy anon pada tabel sumber → anon membaca `[]` (t05 sengaja mengunci) →
+   halaman publik tak pernah menampilkan data DB hidup (hanya fallback demo).
+   **Fix migration `20260906000019_public_verifier_rpc.sql`**: RPC kurasi
+   `public.get_public_certificate(text)` security definer + search_path + validasi
+   format public_id + jsonb whitelist minimal (tanpa email/jawaban/nilai/path) +
+   revoke PUBLIC + grant anon/authenticated. View mentah TETAP terkunci anon
+   (t05 91/91 tetap hijau — defense in depth; anon `certificates_public` = 0 baris).
+   Route `/api/public/certificates/{publicId}` kini memanggil RPC (bukan query view);
+   rate limit & validasi tetap.
+9. Verifier publik kini menampilkan data nyata: **Sertifikat valid ✓ · Murid 01 ·
+   Matematika Dasar · Level 1 — Fondasi · DEMO-0001 · Payload hash cocok (000000000000)
+   · Record valid · Blockchain: terverifikasi di blockchain (anchor final)**.
+
+Gates: format 0 · lint 0 · typecheck 0 · test **347/347 +1 skip** (+4: contracts 000019)
+· db:typecheck 0 (38 tables, 2 views; 000019 hanya fungsi) · live-denial **91/91**
+(000019 apply bersih; t05 verifier view anon tetap 0) · build 0. Migration 000019
+sudah di-push ke hosted. State demo (chain_anchors final + link DEMO-0001) dibiarkan
+di hosted sebagai bukti; flags mock tetap ON di .env lokal untuk re-drive.
+
+## Catatan sesi — Shell HttpChainAdapter Algorand (ADR-018, inert)
+
+Implementasi shell jalur integrasi opsi rekomendasi ADR-018 (Algorand default),
+TETAP INERT sampai provider nyata dipilih manusia:
+
+- **`lib/chain-http.ts` (baru)**:
+  - `AlgorandHttpClient` — interface client SWAPPABLE (submitAnchor/fetchAnchor);
+    satu-satunya titik integrasi jaringan; provider bisa diganti tanpa menyentuh
+    logika anchor.
+  - `InertAlgorandClient` — klien inert (lempar `ERR_PROVIDER_NOT_CHOSEN`), dipakai
+    bila env `BLOCKCHAIN_ALGORAND_*` kosong → TIDAK ada transaksi yang dibuat.
+  - `HttpAlgorandClient` — shell HTTP PROVISIONAL (POST /submit-anchor, /anchor/{ref},
+    Bearer key, timeout 10s, status divalidasi) — bentuk endpoint belum final,
+    hanya dipakai bila env RPC+key terisi.
+  - `HttpChainAdapter` — adapter domain: anchor→pending+reference, getStatus memetakan
+    status client, verify=true HANYA final+root cocok; client inert → not_configured.
+  - `getAlgorandClient()` — seleksi dari env.
+- **`lib/chain.ts`**: `getChainAdapter()` untuk `BLOCKCHAIN_PROVIDER=algorand` →
+  klien inert = `NoopChainAdapter` (action tetap `BLOCKCHAIN_PROVIDER_PENDING`);
+  hanya RPC+key terisi → `HttpChainAdapter(client, network)`.
+- **env**: `BLOCKCHAIN_ALGORAND_RPC_URL` + `BLOCKCHAIN_ALGORAND_API_KEY` (opsional,
+  KOSONG default) di `lib/env.ts` + `.env.example`.
+- **Tests +11** (`tests/unit/chain-http.test.ts`): anchor/getStatus/verify via fake
+  client (tanpa jaringan), inert→not_configured, gating getChainAdapter
+  (no-env→Noop, RPC+key→HttpChainAdapter, flag off/bogus→Noop), swappable client
+  (reference berbeda), HTTP client dengan fetch mock (Bearer, status valid/invalid).
+
+Gates: format 0 · lint 0 · typecheck 0 · test **358/358 +1 skip** (+11) · build 0.
+Tanpa perubahan migration → db:typecheck/live-denial tidak berubah (91/91). Perilaku
+produksi TIDAK berubah: flag OFF default; provider nyata tetap ditolak runtime sampai
+keputusan manusia + kredensial aman (ADR-018 status accepted).
+
+## Catatan sesi — Mode mock-algorand (finality deterministik) + refresh status UI
+
+Menutup gap "pending tidak pernah maju ke final di UI" dengan mode adapter mock
+ber-semantik finality Algorand + aksi refresh status:
+
+- **`MockAlgorandClient`** (`lib/chain-http.ts`, implementasi `AlgorandHttpClient` —
+  jalur swappable yang sama dengan shell nyata): submit → pending (reference
+  deterministik `algo-mock-{root:12}`, idempoten utk root sama) → poll
+  `fetchAnchor` × confirmations (default 1) → **final IRREVERSIBEL** (meniru
+  Algorand; final tidak pernah kembali ke pending). Store dibagikan antar-instance
+  dalam satu proses (dev/preview) sehingga getStatus lintas request berfungsi;
+  `__resetMockAlgorandStore()` utk isolasi test.
+- **`getChainAdapter()`**: `BLOCKCHAIN_PROVIDER=algorand-mock` →
+  `HttpChainAdapter(new MockAlgorandClient(), network)` — jalur HttpChainAdapter
+  yang sama dengan provider nyata, hanya client-nya diganti (buktikan client
+  swappable). Tanpa jaringan.
+- **`refreshAnchorStatus()`** (server action, `features/actions.ts`): gate
+  claims → membership teacher aktif → flag → Noop; untuk baris chain_anchors
+  org yang pending, tanya `adapter.getStatus(transaction_ref)`; HANYA status
+  `final` yang diterapkan (pending/failed dibiarkan utk retry — tidak menurunkan
+  row). Ini langkah status-refresh yang sebelumnya dijalankan manual via PATCH
+  service key — kini aksi nyata yang bisa dipicu UI.
+- **UI**: tombol "Refresh status anchor" (`anchor-refresh-button.tsx`) di samping
+  "Anchor batch" pada `/teacher/certificates`; hasil `N anchor pending kini final`
+  atau pesan kosong. `.env.example` mencatat nilai `algorand-mock`.
+- **Tests +8** (6 unit `chain-http.test.ts`: pending→final 1 poll, idempoten root,
+  confirmations=2 + irreversibel, ref tak dikenal→failed, store ter-inject,
+  getChainAdapter algorand-mock→HttpChainAdapter + alur verify; 2 statis
+  `teacher-certificates.test.ts`: tombol refresh + gating aksi).
+- **Bukti E2E di preview (hosted, tanpa jaringan)**: reset state demo →
+  Anchor batch → "1 sertifikat di-anchor … status pending · tx algo-mock-…" →
+  chip "anchor pending" → klik **Refresh status anchor** → "1 anchor pending kini
+  final." → chip "✓ anchor final"; DB: provider `algorand-mock`, status `final`;
+  verifier `/verify/demo-valid-certificate` → chainAnchor.status `final`.
+
+Gates: format 0 · lint 0 · typecheck 0 · test **366/366 +1 skip** (+8) · build 0.
+Tanpa perubahan migration → db:typecheck/live-denial tidak berubah (91/91).
+
+## Catatan sesi — Lanjutan: admin mapping org + RLS perf 000020–000022 + chain shell + e2e fix
+
+Melanjutkan working tree uncommitted (migrasi 000019–000022, `lib/org-admin.ts`,
+`lib/chain-http.ts`, halaman admin, aksi bulk guru/penugasan) + menutup gap uji:
+
+1. **Admin mapping org (`/teacher/admin/map`, facet Owner ADR-008)** — `lib/org-admin.ts`
+   `getOrgAdminContext()` (claims → membership teacher aktif → memiliki ≥1 course di
+   org; strict client, tanpa service key di helper). Halaman guard org-admin + data
+   org-wide via service client (pengecualian admin yang disengaja; guru biasa tetap
+   cohort-scoped). Aksi privileged `bulkImportTeachers` (XLSX + guard + cap 200 +
+   provisioning profil/membership + kolom Kelas opsional), `bulkImportStudentAssignments`
+   (kelas/subjek via upsert idempoten), `saveStudentMapping`/`assignTeacherToClass`
+   (skema max 20 id). Parser `parseTeacherRows`/`parseStudentAssignmentRows` di
+   `lib/bulk-import.ts` + skema di `lib/validation.ts`. Tautan admin hanya bila
+   `adminCtx` di dashboard guru. Tests: `tests/integration/admin-mapping.test.ts`.
+2. **RLS perf content-tree (000020–000022)** — defect smoke live: query authenticated
+   `lessons`/`activities` timeout (join-chain 4 tabel tanpa index FK + evaluasi RLS
+   berlapis). 000020: index FK idempoten (non-semantik). 000021: helper security
+   definer (gagal INSERT — WITH CHECK sebelum baris ada). 000022 (koreksi): helper
+   FK-keyed (`course_id`/`course_version_id`/`level_id`/`module_id`/`lesson_id`/
+   `activity_id`/`assessment_id`) + rebuild policy USING+WITH CHECK; revoke PUBLIC +
+   grant authenticated. Kontrak statis baru di `contracts.test.ts` (+5: index list +
+   non-semantik, FK-keyed signature, policy FK, definer/search_path/revoke/grant).
+3. **Chain shell Algorand inert + mock-algorand + refresh** — `lib/chain-http.ts`
+   (`AlgorandHttpClient` swappable, `InertAlgorandClient`, `HttpAlgorandClient`
+   provisional, `MockAlgorandClient` finality deterministik irreversibel),
+   `getChainAdapter()` (`algorand-mock` → HttpAdapter+mock; `algorand` tanpa env →
+   Noop → `BLOCKCHAIN_PROVIDER_PENDING`), aksi `refreshAnchorStatus()` (hanya `final`
+   diterapkan), tombol refresh di `/teacher/certificates`, env
+   `BLOCKCHAIN_ALGORAND_RPC_URL/API_KEY` opsional. ADR-018 accepted (no-chain
+   produksi; Algorand default bila syarat manusia terpenuhi).
+4. **E2E fix** — heading landing berubah ("Belajar coding secara mandiri…",
+   sesi redaksional dark/light) → regex `critical.spec.ts` `/Belajar mandiri/`
+   tak cocok; diperbarui ke `/Belajar coding secara mandiri/`.
+
+Gates sesi ini: format 0 · lint 0 · typecheck 0 · test **384/384 +1 skip**
+(43 files; +18 vs 366: +13 working-tree — `admin-mapping` 7, sisanya tambahan
+bulk-import/chain-http/teacher-certificates — +5 kontrak 000020–022 sesi ini) · db:typecheck 0 (38 tables, 2 views) · live-denial
+**91/91** (000019–000022 verbatim) · e2e **18 passed / 1 skipped** (login skip:
+tanpa backend) · build 0 (route `/teacher/admin/map` ikut ter-build dynamic).
+
+Belum: push 000020–000022 ke hosted (000019 sudah); verifikasi visual
+`/teacher/admin/map` + refresh anchor menunggu backend hidup.

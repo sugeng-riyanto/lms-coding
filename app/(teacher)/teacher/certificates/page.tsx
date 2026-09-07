@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isChainEnabled } from "@/lib/chain";
 import { AnchorStatusChip } from "@/components/anchor-status";
 import { AnchorBatchButton } from "./anchor-batch-button";
+import { AnchorRefreshButton } from "./anchor-refresh-button";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,7 @@ interface CertRow {
   status: string;
   issued_at: string;
   enrollment_id: string;
-  enrollments: { student_id: string; profiles: { display_name: string } | null } | null;
+  student_name: string;
   chain_anchors: { status: string | null; transaction_ref: string | null; network: string | null } | null;
 }
 
@@ -20,17 +21,49 @@ async function loadCerts(userId: string): Promise<{ certs: CertRow[]; empty: boo
   const { data: cohortRows } = await supabase.from("cohorts").select("id").eq("teacher_id", userId);
   const cohortIds = ((cohortRows as { id: string }[] | null) ?? []).map((c) => c.id);
   if (cohortIds.length === 0) return { certs: [], empty: true };
+  // Catatan (defect terperbaiki): schema mendefinisikan
+  // `enrollments.student_id references auth.users(id)` — TIDAK ada FK
+  // enrollments→profiles, sehingga embed `enrollments(profiles(...))` tak pernah
+  // resolve (PGRST200) dan halaman diam-diam tampil 0. Selesaikan nama murid via
+  // query `profiles` terpisah (RLS guru tetap cohort-scoped).
   const { data: rows } = await supabase
     .from("certificates")
     .select(
-      "id,serial_no,status,issued_at,enrollment_id,enrollments(student_id,profiles(display_name)),chain_anchors(status,transaction_ref,network)",
+      "id,serial_no,status,issued_at,enrollment_id,enrollments(student_id),chain_anchors(status,transaction_ref,network)",
     )
     .in("enrollments.cohort_id", cohortIds)
     .order("issued_at", { ascending: false })
     .limit(200);
-  const certs = ((rows as CertRow[] | null) ?? []).filter(
-    (c) => c.enrollments && c.enrollments.profiles,
-  ) as CertRow[];
+  const raw =
+    (rows as
+      | {
+          id: string;
+          serial_no: string;
+          status: string;
+          issued_at: string;
+          enrollment_id: string;
+          enrollments: { student_id: string } | null;
+          chain_anchors: {
+            status: string | null;
+            transaction_ref: string | null;
+            network: string | null;
+          } | null;
+        }[]
+      | null) ?? [];
+  const studentIds = [...new Set(raw.map((r) => r.enrollments?.student_id).filter(Boolean))] as string[];
+  const names: Record<string, string> = {};
+  if (studentIds.length > 0) {
+    const { data: profs } = await supabase.from("profiles").select("id,display_name").in("id", studentIds);
+    for (const p of (profs as { id: string; display_name: string }[] | null) ?? []) {
+      names[p.id] = p.display_name;
+    }
+  }
+  const certs: CertRow[] = [];
+  for (const c of raw) {
+    const sid = c.enrollments?.student_id;
+    if (!sid || !names[sid]) continue;
+    certs.push({ ...c, student_name: names[sid]! });
+  }
   return { certs, empty: certs.length === 0 };
 }
 
@@ -62,11 +95,15 @@ export default async function CertificatesPage() {
           hash/root + transaksi yang disimpan — tanpa data pribadi.
         </p>
         {chainEnabled ? (
-          <AnchorBatchButton enabled />
+          <div className="flex flex-wrap items-center gap-2">
+            <AnchorBatchButton enabled />
+            <AnchorRefreshButton enabled />
+          </div>
         ) : (
           <p className="mt-2 text-sm text-slate-500" role="status">
             Anchoring nonaktif (BLOCKCHAIN_ANCHOR_ENABLED=false). Aktifkan + set BLOCKCHAIN_PROVIDER=mock
-            untuk uji, atau pilih provider nyata setelah ADR-018 diputuskan.
+            (atau algorand-mock untuk jalur finality deterministik tanpa jaringan), atau pilih provider nyata
+            setelah ADR-018 diputuskan.
           </p>
         )}
       </section>
@@ -91,7 +128,7 @@ export default async function CertificatesPage() {
               {certs.map((c) => (
                 <tr key={c.id} className="border-b last:border-0 odd:bg-white dark:odd:bg-slate-900">
                   <td className="px-3 py-2 font-mono text-xs">{c.serial_no}</td>
-                  <td className="px-3 py-2">{c.enrollments?.profiles?.display_name ?? "—"}</td>
+                  <td className="px-3 py-2">{c.student_name ?? "—"}</td>
                   <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{c.status}</td>
                   <td className="px-3 py-2">{c.issued_at}</td>
                   <td className="px-3 py-2">

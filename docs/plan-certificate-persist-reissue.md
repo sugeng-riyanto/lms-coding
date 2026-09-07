@@ -50,6 +50,33 @@ persist + signed URL), checklist `docs/plan-checklist-kurang-item.md`.
 
 ---
 
+## 0. Hosted push coverage (migration 000016 & 000017 ikut stack sertifikat)
+
+Satu `supabase db push --linked` ke hosted (prosedur `.freebuff/push-and-verify.sh`)
+menerapkan seluruh migration yang belum ter-push sekaligus, sehingga stack sertifikat
+di-push **bersama** dua migration tetangganya — jangan pisahkan sebagian:
+
+| Migration | Peran | Stack |
+|---|---|---|
+| `20260906000010_certificate_reissue.sql` | reissue atomik + index active partial | sertifikat |
+| `20260906000016_study_sessions_write_path.sql` | write path `study_sessions` (ADR-010) | study_sessions (Phase 3) |
+| `20260906000017_chain_anchor_status.sql` | status anchor pending/final/failed + `certificates_public.chain_anchor_status` | sertifikat/verifikasi |
+| `20260906000018_anchor_batch_org.sql` | `chain_anchors.organization_id` utk batch per-org | sertifikat/verifikasi |
+
+Semua migration (000000–000018) adalah **linear dan kompatibel** — tidak ada
+ketergantungan urutan implisit selain urutan numerik; `db push` menjalankan
+sesuai urutan file. Karena itu mem-push stack sertifikat tanpa 000016/000017
+hanya membuat basisdata tertinggal, bukan rusak — tetapi untuk satu putaran
+push yang konsisten, **selalu masukkan 000016 (study_sessions) dan 000017
+(anchor status) bersama stack sertifikat** (000010/000017/000018). Verifikasi
+live pasca-push: `attempts.question_order_json`, `rubrics`+`rubric_criteria`+
+`update_rubric_version`, tipe aktivitas `code_board`/`embed_*`, dan
+`certificates_public.chain_anchor_status`.
+
+> Status saat ini (catatan sesi terakhir): 000012–000018 **sudah ter-push** ke
+> hosted (project `jspmxdzgxevtfwvldwxy`) dan keempat verifikasi live lulus;
+> bagian ini menjaga dokumen tetap sinkron bila push diulang dari environment lain.
+
 ## 1. Migration baru `20260906000010_certificate_reissue_persist.sql`
 
 1. `alter table public.certificates drop constraint

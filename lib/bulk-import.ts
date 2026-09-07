@@ -13,6 +13,8 @@ export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5 MB
 
 export const MAX_STUDENT_ROWS = 500;
 export const MAX_CONTENT_ROWS = 1000;
+export const MAX_TEACHER_ROWS = 200;
+export const MAX_ASSIGNMENT_ROWS = 1000;
 
 const ALLOWED_XLSX_MIME = new Set([
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -58,6 +60,31 @@ export interface StudentRow {
 
 export interface StudentParseResult {
   rows: StudentRow[];
+  errors: string[];
+}
+
+export interface TeacherRow {
+  email: string;
+  displayName: string;
+  /** Nama kelas (cohort) yang diampu — kolom opsional, bisa ; / , terpisah. */
+  classNames: string[];
+}
+
+export interface TeacherParseResult {
+  rows: TeacherRow[];
+  errors: string[];
+}
+
+export interface StudentAssignmentRow {
+  email: string;
+  /** Nama kelas (cohort) — opsional per baris. */
+  className: string;
+  /** Nama subjek (course) — opsional per baris. */
+  subjectName: string;
+}
+
+export interface StudentAssignmentParseResult {
+  rows: StudentAssignmentRow[];
   errors: string[];
 }
 
@@ -180,6 +207,96 @@ export function parseContentRows(sheetRows: unknown[]): ContentParseResult {
       activityTitle,
       contentJson,
     });
+  }
+  return { rows, errors };
+}
+
+/** Pecah daftar kelas (alias ; / , ) → unik, trim, tanpa kosong. */
+function splitClasses(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(/[;,]/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+/** Baris guru: Email (wajib) + Nama + Kelas (opsional, ; / , terpisah). */
+export function parseTeacherRows(sheetRows: unknown[]): TeacherParseResult {
+  const rows: TeacherRow[] = [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  let line = 1;
+  for (const raw of sheetRows) {
+    line++;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      errors.push(`Baris ${line}: format tidak dikenali.`);
+      continue;
+    }
+    const rec = raw as Record<string, unknown>;
+    const email = normalizeEmail(pick(rec, ["email", "e-mail", "email guru", "emailguru"]));
+    const displayName = pick(rec, ["nama", "name", "display_name", "nama guru", "namaguru"]);
+    const classesRaw = pick(rec, ["kelas", "class", "classes", "kelas yang diampu", "kelasdiampu"]);
+    if (!email) {
+      errors.push(`Baris ${line}: email kosong.`);
+      continue;
+    }
+    if (!EMAIL_RE.test(email)) {
+      errors.push(`Baris ${line}: email tidak valid ("${email}").`);
+      continue;
+    }
+    if (seen.has(email)) {
+      errors.push(`Baris ${line}: email duplikat dalam file ("${email}").`);
+      continue;
+    }
+    seen.add(email);
+    rows.push({
+      email,
+      displayName: (displayName || email.split("@")[0]) ?? email,
+      classNames: splitClasses(classesRaw),
+    });
+  }
+  return { rows, errors };
+}
+
+/** Baris penugasan murid: Email (wajib) + Kelas (opsional) + Subjek (opsional).
+ * Minimal salah satu dari kelas/subjek wajib diisi per baris. */
+export function parseStudentAssignmentRows(sheetRows: unknown[]): StudentAssignmentParseResult {
+  const rows: StudentAssignmentRow[] = [];
+  const errors: string[] = [];
+  const seen = new Set<string>();
+  let line = 1;
+  for (const raw of sheetRows) {
+    line++;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      errors.push(`Baris ${line}: format tidak dikenali.`);
+      continue;
+    }
+    const rec = raw as Record<string, unknown>;
+    const email = normalizeEmail(pick(rec, ["email", "e-mail", "email siswa", "emailmurid"]));
+    const className = pick(rec, ["kelas", "class", "nama kelas", "namakelas"]);
+    const subjectName = pick(rec, ["mapel", "subject", "mata pelajaran", "course", "namamapel"]);
+    if (!email) {
+      errors.push(`Baris ${line}: email kosong.`);
+      continue;
+    }
+    if (!EMAIL_RE.test(email)) {
+      errors.push(`Baris ${line}: email tidak valid ("${email}").`);
+      continue;
+    }
+    if (!className && !subjectName) {
+      errors.push(`Baris ${line}: kelas atau subjek wajib diisi ("${email}").`);
+      continue;
+    }
+    const key = `${email}|${className}|${subjectName}`;
+    if (seen.has(key)) {
+      errors.push(`Baris ${line}: kombinasi email/kelas/subjek duplikat.`);
+      continue;
+    }
+    seen.add(key);
+    rows.push({ email, className, subjectName });
   }
   return { rows, errors };
 }

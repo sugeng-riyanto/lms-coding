@@ -51,7 +51,7 @@ async function isBackendReady(page: Page): Promise<boolean> {
 
 test("landing → login shell (public, tanpa backend)", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: /Belajar mandiri/i })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Belajar coding secara mandiri/i })).toBeVisible();
   await page.getByRole("link", { name: "Masuk" }).click();
   await expect(page.getByRole("heading", { name: "Masuk" })).toBeVisible();
 });

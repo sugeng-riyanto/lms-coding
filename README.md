@@ -2,6 +2,21 @@
 
 Blueprint siap-eksekusi untuk OpenCode atau agent coding lain. Produk ini adalah LMS personal bagi setiap murid, dengan dashboard guru, mastery learning, kuis dan asesmen, skor otomatis, progress real-time, serta sertifikat PDF A4 dengan QR verifikasi.
 
+## Akun demo & peran (RBAC)
+
+Akun seed anonim untuk local/preview (lihat `docs/e2e-setup.md` dan `RBAC.md`). Password sama untuk semua: `DemoPass-2026!`
+
+| Peran (RBAC.md) | Email | Password | Akses utama |
+|---|---|---|---|
+| Guru (Owner/Guru) | `guru@demo.local` | `DemoPass-2026!` | `/teacher` — kelas, matriks cohort, grading, bank soal, analitik, sertifikat; `/teacher/admin/map` khusus guru pemilik course (facet Owner, ADR-008) |
+| Murid | `murid01@demo.local` | `DemoPass-2026!` | `/learn` — target, peta level, kuis; `/catalog`, `/review`, sertifikat sendiri |
+| Murid | `murid02@demo.local` | `DemoPass-2026!` | Sama seperti Murid 01 (data terisolasi per murid) |
+| Murid | `murid03@demo.local` | `DemoPass-2026!` | Sama seperti Murid 01 (data terisolasi per murid) |
+| Wali (Guardian) | `wali@demo.local` | `DemoPass-2026!` | `/guardian` — ringkasan Murid 01 yang tertaut aktif (tanpa jawaban/nilai rinci) |
+| Publik | — (tanpa login) | — | `/verify/{public_id}` — verifikasi sertifikat minimal-PII |
+
+> ⚠️ Akun demo HANYA untuk local/preview. Jangan pernah memakai password ini di production — rotasi/ganti sebelum data murid nyata masuk. Wali hanya melihat anak via guardian link aktif; publik tidak melihat data internal apa pun.
+
 ## Sasaran
 
 - Murid memiliki jalur belajar personal dan dapat belajar mandiri.

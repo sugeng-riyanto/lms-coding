@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 const page = readFileSync("app/(teacher)/teacher/certificates/page.tsx", "utf8");
 const button = readFileSync("app/(teacher)/teacher/certificates/anchor-batch-button.tsx", "utf8");
+const refreshButton = readFileSync("app/(teacher)/teacher/certificates/anchor-refresh-button.tsx", "utf8");
+const actions = readFileSync("features/actions.ts", "utf8");
 const chip = readFileSync("components/anchor-status.tsx", "utf8");
 const studentPage = readFileSync("app/(teacher)/teacher/students/[studentId]/page.tsx", "utf8");
 const dashboard = readFileSync("app/(teacher)/teacher/page.tsx", "utf8");
@@ -15,7 +17,12 @@ describe("halaman /teacher/certificates — anchoring UI guru", () => {
     expect(page).toMatch(/AnchorStatusChip/);
     // Scope cohort (defense-in-depth di atas RLS certs_teacher_all).
     expect(page).toMatch(/\.in\("enrollments\.cohort_id", cohortIds\)/);
-    expect(page).toMatch(/enrollments\(student_id,profiles\(display_name\)\)/);
+    // Defect terperbaiki: schema tak punya FK enrollments→profiles, jadi embed
+    // `enrollments(profiles(display_name))` tak pernah resolve (PGRST200 → 0 baris).
+    // Nama murid kini diselesaikan via query `profiles` terpisah yang cohort-scoped.
+    expect(page).toMatch(/from\("profiles"\)\.select\("id,display_name"\)/);
+    expect(page).toMatch(/\.in\("id", studentIds\)/);
+    expect(page).not.toMatch(/profiles\(display_name\)\)/);
   });
 
   it("gerbang feature flag: AnchorBatchButton hanya saat isChainEnabled; catatan nonaktif jelas", () => {
@@ -50,5 +57,26 @@ describe("halaman /teacher/certificates — anchoring UI guru", () => {
   it("dashboard guru menautkan ke /teacher/certificates", () => {
     expect(dashboard).toMatch(/href="\/teacher\/certificates"/);
     expect(dashboard).toMatch(/Sertifikat &amp; anchoring/);
+  });
+
+  it("halaman menampilkan tombol refresh status anchor di samping batch", () => {
+    expect(page).toMatch(/AnchorRefreshButton/);
+    expect(refreshButton).toMatch(/"use client"/);
+    expect(refreshButton).toMatch(/refreshAnchorStatus\(\)/);
+    expect(refreshButton).toMatch(/Refresh status anchor/);
+  });
+
+  it("refreshAnchorStatus: gating membership→flag→Noop, hanya 'final' yang diterapkan", () => {
+    expect(actions).toMatch(/export async function refreshAnchorStatus\(\)/);
+    // urutan gate sama dengan batch: claims → membership teacher aktif → flag → Noop.
+    const start = actions.indexOf("export async function refreshAnchorStatus()");
+    const body = actions.slice(start);
+    expect(body).toMatch(/memberships/);
+    expect(body).toMatch(/eq\("role", "teacher"\)/);
+    expect(body).toMatch(/isChainEnabled\(\)/);
+    expect(body).toMatch(/instanceof NoopChainAdapter/);
+    // hanya naik ke final; status lain (pending/failed) tidak menurunkan row.
+    expect(body).toMatch(/st\.status === "final"/);
+    expect(body).toMatch(/update\(\{\s*status: "final"/);
   });
 });

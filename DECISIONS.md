@@ -216,9 +216,9 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   `AI_PROVIDER_BASE_URL`/`AI_PROVIDER_API_KEY` (semua server-only, masuk
   `.env.example` → daftar sah check-env otomatis).
 
-## ADR-018 — Blockchain anchor: keputusan provider/network DITUNDA, implementasi mock-only
+## ADR-018 — Blockchain anchor: baseline no-chain untuk produksi; provider publik ditangguhkan bersyarat (mock-only)
 
-- Status: proposed
+- Status: accepted
 - Context: baseline sertifikat (ADR-001: DB + SHA-256 + QR verifier) sudah lulus seluruh
   test. Prompt 09 meminta anchoring opsional dengan evaluasi sebelum memilih provider;
   provider/network BELUM ditetapkan dan keputusan ada di manusia (owner/ops sekolah).
@@ -264,8 +264,22 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   anak) — risiko kontinuitas ekosistem dimitigasi adapter abstrak + explorer +
   fallback no-chain; (3) alternatif: Solana (ekosistem, finality probabilistik)
   / Base (tooling, caveat finality L2 ~7 hari); permissioned ledger TIDAK
-  direkomendasikan (over-engineering). Keputusan final tetap manusia via checklist
-  §6 dokumen; implementasi tetap mock-only sampai itu.
+  direkomendasikan (over-engineering).
+- Recorded decision (checklist §6 docs/evaluation-anchor-provider.md dijawab):
+  1. Verifikasi pihak ketiga kebutuhan nyata? **TIDAK saat ini** — baseline ADR-001
+     sudah memenuhi verifikasi sekolah; tidak ada requirement non-repudiation pihak
+     ketiga. 2. Payload publik permanen hash-only disetujui? **YA** (desain sejak
+     awal: `chain_anchors` hanya merkle_root + transaction_ref; verifier hanya
+     fingerprint). 3. Funding wallet + komitmen monitoring/retry? **TIDAK saat ini**
+     — tidak ada wallet yang diarang; hanya manusia pemegang dana yang bisa
+     mengubah ini. 4. **Keputusan: tetap no-chain untuk production** —
+     `BLOCKCHAIN_ANCHOR_ENABLED=false` (default), `MockChainAdapter` hanya utk
+     dev/test. Provider publik TIDAK dipilih sekarang; bila #1+#3 berubah jadi YA,
+     default matriks adalah **Algorand** (finality deterministik = janji "final"
+     tegas utk UI; ≈ $0,00015/batch; root 32 byte muat di memo; hash-only bersih
+     utk data anak), Solana/Base alternatif, permissioned TIDAK direkomendasikan.
+     Eksekusi (HttpChainAdapter + env `BLOCKCHAIN_*` + e2e chain tests) baru saat
+     syarat itu terpenuhi. Implementasi TETAP mock-only sampai saat itu.
 
 ## Template
 

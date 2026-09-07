@@ -10,6 +10,8 @@
 //   - enabled + provider NYATA → NoopChainAdapter (DITOLAK runtime; tidak mengarang
 //     kredensial/transaksi sampai keputusan manusia + kredensial aman tersedia).
 
+import { getAlgorandClient, HttpChainAdapter, InertAlgorandClient, MockAlgorandClient } from "./chain-http";
+
 export type ChainAnchorStatus = "not_configured" | "pending" | "final" | "failed";
 
 export interface ChainAnchorResult {
@@ -178,5 +180,22 @@ export function getChainAdapter(): ChainAdapter {
   if (!isChainEnabled()) return new NoopChainAdapter();
   const provider = (process.env.BLOCKCHAIN_PROVIDER ?? "").trim().toLowerCase();
   if (provider === "mock") return new MockChainAdapter();
+  if (provider === "algorand-mock") {
+    // Mock-Algorand: jalur HttpChainAdapter yang sama (client swappable) tapi
+    // dengan MockAlgorandClient — finality deterministik, TANPA jaringan. Untuk
+    // uji UI end-to-end pending→final + verify tanpa network nyata.
+    const network = (process.env.BLOCKCHAIN_NETWORK ?? "").trim() || "testnet";
+    return new HttpChainAdapter(new MockAlgorandClient(), network);
+  }
+  if (provider === "algorand") {
+    // Shell HttpChainAdapter (ADR-018, rekomendasi default). INERT sampai env
+    // BLOCKCHAIN_ALGORAND_RPC_URL/API_KEY terisi (keputusan manusia + kredensial
+    // aman). Klien inert → Noop → action memetakan ke BLOCKCHAIN_PROVIDER_PENDING,
+    // tidak ada transaksi yang dibuat.
+    const client = getAlgorandClient();
+    if (client instanceof InertAlgorandClient) return new NoopChainAdapter();
+    const network = (process.env.BLOCKCHAIN_NETWORK ?? "").trim() || "mainnet";
+    return new HttpChainAdapter(client, network);
+  }
   return new NoopChainAdapter();
 }
