@@ -473,7 +473,7 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
 
   // Small QR in the top-right corner — identical to page 1's buffer, kept clear of the
   // centred title so no overlap occurs.
-  const qrSize = 33.75; // 50% dari ukuran sebelumnya (67.5)
+  const qrSize = 42.1875; // naik 25% dari 33.75 (50% dari 67.5 sebelumnya)
   doc.image(qrSmall, W - 24 - qrSize - 16, 40, { width: qrSize });
 
   doc
