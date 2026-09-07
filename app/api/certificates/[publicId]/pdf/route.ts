@@ -110,10 +110,19 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
     .fillColor("#64748b")
     .text("Pernyataan kompetensi — bukan nilai detail.", { align: "center" });
   doc.image(qr, doc.page.width - 200, doc.page.height - 200, { width: 120 });
+  // Area tanda tangan digital penerbit — nama penandatangan resmi di bawah garis.
+  const sigY = doc.page.height - 96;
+  doc.moveTo(56, sigY).lineTo(236, sigY).lineWidth(1).strokeColor("#94a3b8").stroke();
   doc
-    .fontSize(9)
+    .font("Helvetica-Bold")
+    .fontSize(11)
+    .fillColor("#0f172a")
+    .text("Sugeng Riyanto, M.Sc.", 56, sigY + 8);
+  doc
+    .font("Helvetica")
+    .fontSize(8)
     .fillColor("#64748b")
-    .text("Guru: ___________________", 48, doc.page.height - 90);
+    .text("Penerbit sertifikat", 56, sigY + 26);
   doc.end();
 
   const pdf = await done;

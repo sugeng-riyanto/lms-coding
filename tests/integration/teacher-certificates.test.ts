@@ -55,8 +55,8 @@ describe("halaman /teacher/certificates — anchoring UI guru", () => {
   });
 
   it("dashboard guru menautkan ke /teacher/certificates", () => {
-    expect(dashboard).toMatch(/href="\/teacher\/certificates"/);
-    expect(dashboard).toMatch(/Sertifikat &amp; anchoring/);
+    expect(dashboard).toMatch(/["']\/teacher\/certificates["']/);
+    expect(dashboard).toMatch(/Sertifikat & anchoring/);
   });
 
   it("halaman menampilkan tombol refresh status anchor di samping batch", () => {

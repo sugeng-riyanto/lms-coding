@@ -73,6 +73,16 @@ describe("P11: rate limit di endpoint sensitif", () => {
   });
 });
 
+describe("P11: sertifikat PDF — tanda tangan digital penerbit", () => {
+  it("PDF memuat nama penandatangan resmi + label penerbit + fingerprint", () => {
+    const src = readFileSync("app/api/certificates/[publicId]/pdf/route.ts", "utf8");
+    expect(src).toMatch(/Sugeng Riyanto, M\.Sc\./);
+    expect(src).toMatch(/Penerbit sertifikat/);
+    expect(src).toMatch(/layout: "landscape"/);
+    expect(src).toMatch(/payload_hash\.slice\(0, 12\)/);
+  });
+});
+
 describe("P11: upload protection", () => {
   it("allowlist MIME + batas size di UploadBox", () => {
     const src = readFileSync("components/upload-box.tsx", "utf8");

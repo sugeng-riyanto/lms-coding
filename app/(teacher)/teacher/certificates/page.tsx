@@ -109,39 +109,67 @@ export default async function CertificatesPage() {
       </section>
 
       {empty ? (
-        <p className="mt-6 rounded-xl border p-5" role="status">
+        <p className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900" role="status">
           Belum ada sertifikat di kelas yang Anda ampu.
         </p>
       ) : (
-        <div className="mt-4 overflow-x-auto rounded-xl border">
-          <table className="w-full text-left text-sm">
-            <thead className="border-b bg-slate-50 dark:bg-slate-800">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Sertifikat</th>
-                <th className="px-3 py-2 font-semibold">Murid</th>
-                <th className="px-3 py-2 font-semibold">Status</th>
-                <th className="px-3 py-2 font-semibold">Terbit</th>
-                <th className="px-3 py-2 font-semibold">Blockchain</th>
-              </tr>
-            </thead>
-            <tbody>
-              {certs.map((c) => (
-                <tr key={c.id} className="border-b last:border-0 odd:bg-white dark:odd:bg-slate-900">
-                  <td className="px-3 py-2 font-mono text-xs">{c.serial_no}</td>
-                  <td className="px-3 py-2">{c.student_name ?? "—"}</td>
-                  <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{c.status}</td>
-                  <td className="px-3 py-2">{c.issued_at}</td>
-                  <td className="px-3 py-2">
-                    <AnchorStatusChip
-                      status={c.chain_anchors?.status ?? null}
-                      reference={c.chain_anchors?.transaction_ref}
-                    />
-                  </td>
+        <>
+          {/* Kartu tumpuk di HP: tabel 5 kolom (tanggal ISO + chip anchor)
+              tidak muat @360px (gate responsif). Data sama. */}
+          <ul className="mt-4 space-y-3 md:hidden">
+            {certs.map((c) => (
+              <li
+                key={c.id}
+                className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900"
+              >
+                <div className="flex items-center justify-between gap-2 border-b p-4">
+                  <p className="font-mono text-sm font-bold">{c.serial_no}</p>
+                  <AnchorStatusChip
+                    status={c.chain_anchors?.status ?? null}
+                    reference={c.chain_anchors?.transaction_ref}
+                  />
+                </div>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 p-4 text-sm">
+                  <dt className="text-slate-500">Murid</dt>
+                  <dd className="font-semibold">{c.student_name ?? "—"}</dd>
+                  <dt className="text-slate-500">Status</dt>
+                  <dd className="font-semibold">{c.status}</dd>
+                  <dt className="text-slate-500">Terbit</dt>
+                  <dd>{c.issued_at.slice(0, 10)}</dd>
+                </dl>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-4 hidden overflow-x-auto rounded-2xl border bg-white shadow-sm md:block dark:bg-slate-900">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b bg-slate-50 dark:bg-slate-800">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Sertifikat</th>
+                  <th className="px-3 py-2 font-semibold">Murid</th>
+                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-3 py-2 font-semibold">Terbit</th>
+                  <th className="px-3 py-2 font-semibold">Blockchain</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {certs.map((c) => (
+                  <tr key={c.id} className="border-b last:border-0 odd:bg-white dark:odd:bg-slate-900">
+                    <td className="px-3 py-2 font-mono text-xs">{c.serial_no}</td>
+                    <td className="px-3 py-2">{c.student_name ?? "—"}</td>
+                    <td className="px-3 py-2 font-semibold text-slate-700 dark:text-slate-200">{c.status}</td>
+                    <td className="px-3 py-2">{c.issued_at.slice(0, 10)}</td>
+                    <td className="px-3 py-2">
+                      <AnchorStatusChip
+                        status={c.chain_anchors?.status ?? null}
+                        reference={c.chain_anchors?.transaction_ref}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
       <p className="mt-4 text-xs text-slate-500">
         Verifikasi publik: /verify/{"{public_id}"}. Anchor pending belum final dan tidak diklaim
