@@ -78,7 +78,9 @@ export function detectRisk(input: {
   if (input.inactiveDays > 7)
     signals.push({
       code: "INACTIVE",
-      message: `Tidak aktif ${input.inactiveDays} hari — sapa dan tawarkan jadwal ulang.`,
+      // Tampilan dibatasi "30+" agar angka fallback teknis (mis. 999 = tanpa
+      // aktivitas tercatat) tidak tampil mentah ke guru; logika ambang tak berubah.
+      message: `Tidak aktif ${input.inactiveDays > 30 ? "30+" : input.inactiveDays} hari — sapa dan tawarkan jadwal ulang.`,
     });
   if (input.attemptsLast7d >= 3 && input.scoreDelta <= 0)
     signals.push({

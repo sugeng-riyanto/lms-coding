@@ -12,6 +12,7 @@ import {
   isSameIsoWeek,
   nextReviewAfter,
   orderedReviewQueue,
+  weekActiveMinutesByDay,
   weeklyActiveMinutes,
   weeklyRollup,
   weeklyRollupForUnit,
@@ -266,5 +267,34 @@ describe("formatActiveMinutes", () => {
     expect(formatActiveMinutes(125)).toBe("2 j 5 m");
     expect(formatActiveMinutes(0)).toBe("0 m");
     expect(formatActiveMinutes(-3)).toBe("0 m");
+  });
+});
+
+describe("weekActiveMinutesByDay — menit aktif per hari (Sen–Min)", () => {
+  const weekStart = "2026-09-07"; // Senin di Asia/Jakarta
+
+  it("mengelompokkan ke hari lokal +7 dan mengabaikan sesi minggu sebelumnya", () => {
+    // Asia/Jakarta = UTC+7: 2026-09-06T17:00Z = Sen 2026-09-07 00:00 lokal.
+    const bars = weekActiveMinutesByDay(
+      [
+        { started_at: "2026-09-06T17:00:00Z", active_seconds: 3000 }, // Sen (00:00 lokal)
+        { started_at: "2026-09-07T01:00:00Z", active_seconds: 3600 }, // Sen (08:00 lokal)
+        { started_at: "2026-09-07T18:00:00Z", active_seconds: 720 }, // Sel (01:00 lokal 08 Sep)
+        { started_at: "2026-09-06T10:00:00Z", active_seconds: 9999 }, // Minggu lalu (lokal) → dibuang
+      ],
+      weekStart,
+      "Asia/Jakarta",
+    );
+    expect(bars).toHaveLength(7);
+    expect(bars.map((b) => b.label)).toEqual(["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"]);
+    expect(bars[0]).toEqual({ label: "Sen", date: "2026-09-07", minutes: 110 });
+    expect(bars[1]).toEqual({ label: "Sel", date: "2026-09-08", minutes: 12 });
+    expect(bars[2]).toMatchObject({ minutes: 0 });
+    expect(bars[6]).toEqual({ label: "Min", date: "2026-09-13", minutes: 0 });
+  });
+
+  it("sesi kosong → 7 hari bernilai 0", () => {
+    const bars = weekActiveMinutesByDay([], weekStart, "Asia/Jakarta");
+    expect(bars.every((b) => b.minutes === 0)).toBe(true);
   });
 });

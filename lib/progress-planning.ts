@@ -171,6 +171,45 @@ export function weeklyActiveMinutes(
   return Math.floor(totalSec / 60);
 }
 
+/** Label hari Sen–Minggu (urutan minggu ISO) untuk sumbu grafik. */
+export const WEEKDAY_SHORT_LABELS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"] as const;
+
+export interface ActiveDayBar {
+  /** Label pendek hari (Sen..Min). */
+  label: string;
+  /** Tanggal kalender "YYYY-MM-DD" dalam timezone org. */
+  date: string;
+  /** Menit aktif (floor dari detik aktif yang di-clamp) pada hari itu. */
+  minutes: number;
+}
+
+/**
+ * Menit aktif PER HARI (Sen–Min) dalam satu minggu ISO dari baris
+ * study_sessions — sumber sama dengan `weeklyActiveMinutes`, jadi grafik
+ * murid selalu bisa direkonsiliasi dengan ring target mingguan (selisih ≤ 1 m
+ * karena pembulatan per hari).
+ */
+export function weekActiveMinutesByDay(
+  sessions: StudySessionRow[],
+  weekStart: string,
+  tz: string = DISPLAY_TIMEZONE,
+): ActiveDayBar[] {
+  const secByDay = [0, 0, 0, 0, 0, 0, 0];
+  for (const s of sessions) {
+    if (!isSameIsoWeek(new Date(s.started_at), weekStart, tz)) continue;
+    const { year, month, day } = zonedYmd(new Date(s.started_at), tz);
+    const dow = new Date(Date.UTC(year, month - 1, day)).getUTCDay(); // 0 = Minggu
+    const idx = (dow + 6) % 7; // 0 = Senin
+    secByDay[idx] = (secByDay[idx] ?? 0) + clampSessionActiveSeconds(s.active_seconds);
+  }
+  const base = Date.parse(`${weekStart}T00:00:00Z`);
+  return secByDay.map((sec, idx) => {
+    const label = WEEKDAY_SHORT_LABELS[idx] ?? "";
+    const date = toDateStr(base + idx * DAY_MS);
+    return { label, date, minutes: Math.floor((sec ?? 0) / 60) };
+  });
+}
+
 /** Format menit ramah-murid: "5 m", "125 m" → "2 j 5 m". */
 export function formatActiveMinutes(mins: number): string {
   const m = Math.max(0, Math.floor(mins));

@@ -7,11 +7,14 @@ import {
   type ItemResponseRow,
 } from "@/lib/analytics-item";
 import {
+  CLASS_DISTRIBUTION_DEFINITIONS_VERSION,
   TEACHER_ANALYTICS_DEFINITIONS_VERSION,
   bottleneckAnalysis,
   buildTeacherDigest,
+  percentDistribution,
   type DigestAlert,
 } from "@/lib/analytics-teacher";
+import { ChartPanel, ColumnChart } from "@/components/charts";
 import { AnalyticsFilters } from "./analytics-filters";
 
 export const dynamic = "force-dynamic";
@@ -200,13 +203,19 @@ export default async function AnalyticsPage({
   const versionIdsForCourse = [...latestVersionByCourse.values()];
   const { data: levelRows } = await supabase
     .from("levels")
-    .select("id")
+    .select("id,course_version_id")
     .in("course_version_id", versionIdsForCourse);
-  const levelIds = ((levelRows as { id: string }[] | null) ?? []).map((l) => l.id);
-  const { data: moduleRows } = await supabase.from("modules").select("id").in("level_id", levelIds);
-  const moduleIds = ((moduleRows as { id: string }[] | null) ?? []).map((m) => m.id);
-  const { data: lessonRows } = await supabase.from("lessons").select("id,title").in("module_id", moduleIds);
-  const lessons = (lessonRows as { id: string; title: string }[] | null) ?? [];
+  const levelRowsTyped = (levelRows as { id: string; course_version_id: string }[] | null) ?? [];
+  const levelIds = levelRowsTyped.map((l) => l.id);
+  const { data: moduleRows } = await supabase.from("modules").select("id,level_id").in("level_id", levelIds);
+  const moduleRowsTyped = (moduleRows as { id: string; level_id: string }[] | null) ?? [];
+  const moduleIds = moduleRowsTyped.map((m) => m.id);
+  const { data: lessonRows } = await supabase
+    .from("lessons")
+    .select("id,title,module_id")
+    .in("module_id", moduleIds);
+  const lessonRowsTyped = (lessonRows as { id: string; title: string; module_id: string }[] | null) ?? [];
+  const lessons = lessonRowsTyped.map((l) => ({ id: l.id, title: l.title }));
   const lessonIds = lessons.map((l) => l.id);
 
   const { data: openedRows } = await supabase
@@ -293,7 +302,47 @@ export default async function AnalyticsPage({
 
   const digest = buildTeacherDigest({ pendingGrading, openAlerts, inactiveStudents, now: new Date(now) });
 
+  // ---- Grafik DISTRIBUSI kelas: kemajuan per murid + skor asesmen ----
+  // Lesson → module → level → course_version → course (semua dari hasil query
+  // batch di atas, tanpa query tambahan & tanpa N+1).
+  const levelCv = new Map(levelRowsTyped.map((l) => [l.id, l.course_version_id]));
+  const cvCourse = new Map(published.map((cv) => [cv.id, cv.course_id]));
+  const moduleLevel = new Map(moduleRowsTyped.map((m) => [m.id, m.level_id]));
+  const lessonCourse = new Map<string, string>();
+  for (const l of lessonRowsTyped) {
+    const levelId = moduleLevel.get(l.module_id);
+    const cvId = levelId ? levelCv.get(levelId) : undefined;
+    const courseId = cvId ? cvCourse.get(cvId) : undefined;
+    if (courseId) lessonCourse.set(l.id, courseId);
+  }
+  const lessonTotalByCourse = new Map<string, number>();
+  for (const courseId of lessonCourse.values()) {
+    lessonTotalByCourse.set(courseId, (lessonTotalByCourse.get(courseId) ?? 0) + 1);
+  }
+  const progressPcts: number[] = [];
+  for (const e of enrollments) {
+    const total = lessonTotalByCourse.get(e.course_id) ?? 0;
+    if (total <= 0) continue;
+    let doneForCourse = 0;
+    for (const c of completed) {
+      if (c.enrollment_id === e.id && lessonCourse.get(c.entity_id) === e.course_id) doneForCourse += 1;
+    }
+    progressPcts.push(Math.min(100, Math.round((doneForCourse / total) * 100)));
+  }
+  const progressDist = percentDistribution(progressPcts);
+
+  // Skor asesmen (filter-aware): dari attempt final_score (0–100, server).
+  const scoreValues = scopeAttempts
+    .filter((a) => typeof a.final_score === "number")
+    .map((a) => Number(a.final_score));
+  const scoreDist = percentDistribution(scoreValues);
+
   const pct = (x: number) => `${Math.round(x * 100)}%`;
+  const lastUpdatedDisplay = new Date(lastUpdated).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+  const selectedAsmtLabel =
+    selectedAssessment === "all"
+      ? "semua asesmen"
+      : (assessments.find((a) => a.id === selectedAssessment)?.activities?.title ?? "asesmen terpilih");
 
   return (
     <main id="main" className="mx-auto max-w-5xl px-4 py-10">
@@ -333,6 +382,52 @@ export default async function AnalyticsPage({
         selectedCohort={selectedCohort}
         selectedAssessment={selectedAssessment}
       />
+
+      {/* Distribusi kelas — grafik nyata (data dari attempts & progress_snapshots) */}
+      <section aria-label="Distribusi kelas" className="mt-6">
+        <h2 className="text-xl font-bold">Distribusi kelas</h2>
+        <div className="mt-3 grid gap-4 lg:grid-cols-2">
+          <ChartPanel
+            title="Kemajuan murid"
+            desc="Sebaran persentase lesson selesai per murid terhadap total lesson di versi terbit kursusnya — bukan perkiraan, melainkan hasil hitung dari progress_snapshots."
+            updatedAt={lastUpdatedDisplay}
+            footnote={`Definisi ${CLASS_DISTRIBUTION_DEFINITIONS_VERSION}. n = ${progressDist.n} murid berenrollment aktif; rata-rata ${Math.round(progressDist.meanPct)}%.`}
+            empty={
+              progressDist.n === 0
+                ? "Belum ada murid dengan lesson terhitung. Distribusi muncul setelah murid mulai menyelesaikan lesson."
+                : undefined
+            }
+          >
+            {progressDist.n > 0 && (
+              <ColumnChart
+                bars={progressDist.buckets.map((b) => ({ label: b.label, value: b.count }))}
+                ariaLabel="Distribusi jumlah murid per rentang persentase kemajuan lesson"
+                tone="blue"
+              />
+            )}
+          </ChartPanel>
+
+          <ChartPanel
+            title="Skor asesmen (final)"
+            desc={`Sebaran skor final 0–100 per attempt yang sudah dinilai, untuk ${selectedAsmtLabel}. Batang = jumlah attempt pada rentang skor.`}
+            updatedAt={lastUpdatedDisplay}
+            footnote={`Definisi ${CLASS_DISTRIBUTION_DEFINITIONS_VERSION}. n = ${scoreDist.n} attempt dinilai; rata-rata ${Math.round(scoreDist.meanPct)}%. Skor dihitung server, bukan browser.`}
+            empty={
+              scoreDist.n === 0
+                ? "Belum ada attempt ber-skor untuk cakupan ini. Filter asesmen di atas untuk mempersempit."
+                : undefined
+            }
+          >
+            {scoreDist.n > 0 && (
+              <ColumnChart
+                bars={scoreDist.buckets.map((b) => ({ label: b.label, value: b.count }))}
+                ariaLabel="Distribusi jumlah attempt per rentang skor asesmen final"
+                tone="amber"
+              />
+            )}
+          </ChartPanel>
+        </div>
+      </section>
 
       {/* Item analysis */}
       <section aria-label="Item analysis" className="mt-6">

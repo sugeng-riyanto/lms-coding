@@ -6,10 +6,14 @@ import {
   formatActiveMinutes,
   isSameIsoWeek,
   isoWeekStart,
+  weekActiveMinutesByDay,
   weeklyActiveMinutes,
   weeklyRollupForUnit,
+  type ActiveDayBar,
   type WeeklyGoalUnit,
 } from "@/lib/progress-planning";
+import { MeterBar, ProgressRing, SectionHeader, StatCard, StateBadge } from "@/components/dashboard";
+import { ChartPanel, ColumnChart } from "@/components/charts";
 import { WeeklyGoalForm } from "./weekly-goal-form";
 
 export const dynamic = "force-dynamic";
@@ -34,12 +38,20 @@ interface WeeklyInfo {
   status: "active" | "completed";
 }
 
+interface QuizBar {
+  label: string;
+  value: number;
+  hint?: string;
+}
+
 /** Dashboard murid live: enrollment aktif pertama + snapshot + prereq → rekomendasi. */
 async function getDashboard(userId: string): Promise<{
   levels: LiveLevel[];
   courseTitle: string;
   enrollmentId: string;
   weekly: WeeklyInfo;
+  weekBars: ActiveDayBar[];
+  quizBars: QuizBar[];
 } | null> {
   const supabase = await createClient();
   const { data: enrollments } = await supabase
@@ -66,6 +78,8 @@ async function getDashboard(userId: string): Promise<{
       courseTitle: enr.courses.title,
       enrollmentId: enr.id,
       weekly: { unit: "minutes", ...weeklyRollupForUnit("minutes", 0, DEFAULT_WEEKLY_GOAL_MINUTES) },
+      weekBars: [],
+      quizBars: [],
     };
   }
 
@@ -103,15 +117,14 @@ async function getDashboard(userId: string): Promise<{
   const unit: WeeklyGoalUnit = plan?.goal_unit ?? "minutes";
   const goalValue = plan?.goal_value ?? DEFAULT_WEEKLY_GOAL_MINUTES;
   let measured = 0;
+  let sessionRows: { started_at: string; active_seconds: number }[] | null = null;
   if (unit === "minutes") {
-    const { data: sessionRows } = await supabase
+    const { data: sessionRowsData } = await supabase
       .from("study_sessions")
       .select("started_at,active_seconds")
       .eq("enrollment_id", enr.id);
-    measured = weeklyActiveMinutes(
-      (sessionRows as { started_at: string; active_seconds: number }[] | null) ?? [],
-      weekStart,
-    );
+    sessionRows = (sessionRowsData as { started_at: string; active_seconds: number }[] | null) ?? [];
+    measured = weeklyActiveMinutes(sessionRows, weekStart);
   } else {
     const { data: weekEvents } = await supabase
       .from("learning_events")
@@ -123,6 +136,38 @@ async function getDashboard(userId: string): Promise<{
     ).length;
   }
   const weekly: WeeklyInfo = { unit, ...weeklyRollupForUnit(unit, measured, goalValue) };
+
+  // Grafik menit aktif per hari (Sen–Min) — sumber sama dengan ring target di atas.
+  const weekBars = weekActiveMinutesByDay(sessionRows ?? [], weekStart);
+
+  // Grafik skor kuis: percobaan TERAKHIR yang sudah dinilai (final_score server).
+  const { data: attemptRowsData } = await supabase
+    .from("attempts")
+    .select("assessment_id,attempt_no,final_score,submitted_at")
+    .eq("enrollment_id", enr.id)
+    .not("final_score", "is", null)
+    .order("submitted_at", { ascending: false })
+    .limit(6);
+  const gradedAttempts = (
+    (attemptRowsData as
+      { assessment_id: string; attempt_no: number; final_score: number; submitted_at: string }[] | null) ?? []
+  ).reverse();
+  const quizTitles = new Map<string, string>();
+  if (gradedAttempts.length > 0) {
+    const asmtIds = [...new Set(gradedAttempts.map((a) => a.assessment_id))];
+    const { data: asmtRowsData } = await supabase
+      .from("assessments")
+      .select("id,activities(title)")
+      .in("id", asmtIds);
+    for (const a of (asmtRowsData as { id: string; activities: { title: string } | null }[] | null) ?? []) {
+      quizTitles.set(a.id, a.activities?.title ?? "Kuis");
+    }
+  }
+  const quizBars = gradedAttempts.map((a) => ({
+    label: quizTitles.get(a.assessment_id) ?? "Kuis",
+    value: Number(a.final_score ?? 0),
+    hint: `Percobaan ${a.attempt_no}`,
+  }));
 
   const { data: prereqs } = await supabase.from("prerequisites").select("target_id,required_id");
   const edges = new Map<string, string[]>();
@@ -157,7 +202,7 @@ async function getDashboard(userId: string): Promise<{
       lastActivityDaysAgo: last,
     };
   });
-  return { levels, courseTitle: enr.courses.title, enrollmentId: enr.id, weekly };
+  return { levels, courseTitle: enr.courses.title, enrollmentId: enr.id, weekly, weekBars, quizBars };
 }
 
 function weeklyLabel(weekly: WeeklyInfo, unit: WeeklyGoalUnit): string {
@@ -191,53 +236,66 @@ export default async function LearnPage() {
   const rec = nextBestAction(levels.map((l) => ({ ...l, locked: l.state === "locked" })));
 
   return (
-    <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-      <p className="text-sm font-semibold text-blue-700">Halo, Pelajar 👋</p>
-      <h1 className="mt-1 text-3xl font-bold">Target hari ini{live ? ` — ${live.courseTitle}` : ""}</h1>
+    <main id="main" className="mx-auto max-w-4xl px-4 py-10">
+      <p className="text-sm font-semibold tracking-wide text-blue-700 uppercase dark:text-blue-300">
+        Ruang Belajar
+      </p>
+      <h1 className="mt-1 text-3xl font-extrabold tracking-tight">
+        {live ? live.courseTitle : "Target hari ini"}
+      </h1>
       {!live ? (
-        <p className="mt-4 rounded-xl border p-5" role="status">
+        <p
+          className="card-lift mt-4 rounded-2xl border bg-white p-5 shadow-[var(--shadow-soft)] dark:bg-slate-900"
+          role="status"
+        >
           Belum ada enrollment aktif. Hubungi guru Anda untuk didaftarkan ke kelas.
         </p>
-      ) : rec ? (
-        <section aria-label="Rekomendasi" className="mt-4 rounded-xl border border-blue-200 bg-blue-50 p-5">
-          <h2 className="font-semibold">Lanjutkan belajar</h2>
-          <p className="mt-1">{rec.reason}</p>
-          <Link
-            href={`/learn/${rec.id}?enrollment=${live.enrollmentId}`}
-            className="mt-3 inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
-          >
-            Lanjutkan belajar
-          </Link>
-        </section>
       ) : (
-        <p className="mt-4 rounded-xl border p-5">Belum ada rekomendasi — semua terkunci atau selesai. 🎉</p>
-      )}
-
-      {live && (
         <>
-          <section
-            aria-label="Target mingguan"
-            className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-5"
-          >
-            <div className="flex items-baseline justify-between gap-2">
-              <h2 className="font-semibold">Target mingguan</h2>
-              <p className="text-sm text-slate-600">{weeklyLabel(live.weekly, live.weekly.unit)}</p>
-            </div>
-            <div
-              role="progressbar"
-              aria-valuenow={live.weekly.pct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Progress target mingguan"
-              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-emerald-100"
+          <div className="mt-6 grid gap-4 md:grid-cols-5">
+            <section
+              aria-label="Rekomendasi belajar"
+              className="rounded-2xl bg-gradient-to-br from-blue-700 to-blue-900 p-6 text-white shadow-md md:col-span-3 dark:from-blue-900 dark:to-slate-900"
             >
-              <div className="h-full rounded-full bg-emerald-600" style={{ width: `${live.weekly.pct}%` }} />
-            </div>
-            <p className="mt-2 text-sm text-slate-600">
-              {live.weekly.achieved
-                ? "Target minggu ini tercapai 🎉"
-                : weeklyRemaining(live.weekly, live.weekly.unit)}
-            </p>
+              <p className="text-sm font-medium text-blue-100">Langkah berikutnya</p>
+              {rec ? (
+                <>
+                  <p className="mt-2 text-lg leading-relaxed font-semibold">{rec.reason}</p>
+                  <Link
+                    href={`/learn/${rec.id}?enrollment=${live.enrollmentId}`}
+                    className="mt-4 inline-block rounded-xl bg-white px-5 py-2.5 font-bold text-blue-800 shadow hover:bg-blue-50"
+                  >
+                    Lanjutkan belajar
+                  </Link>
+                </>
+              ) : (
+                <p className="mt-2 text-lg font-semibold">
+                  Semua level selesai atau masih terkunci — pertahankan konsistensimu.
+                </p>
+              )}
+            </section>
+
+            <section
+              aria-label="Target mingguan"
+              className="card-lift rounded-2xl border bg-white p-6 text-center shadow-[var(--shadow-soft)] md:col-span-2 dark:bg-slate-900"
+            >
+              <ProgressRing pct={live.weekly.pct} label="Progress target mingguan" />
+              <p className="mt-3 font-semibold">Target mingguan</p>
+              <p className="text-sm text-slate-600 dark:text-slate-300">
+                {weeklyLabel(live.weekly, live.weekly.unit)}
+              </p>
+              <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                {live.weekly.achieved
+                  ? "Target minggu ini tercapai. Pertahankan!"
+                  : weeklyRemaining(live.weekly, live.weekly.unit)}
+              </p>
+            </section>
+          </div>
+
+          <section
+            aria-label="Pengaturan target"
+            className="card-lift mt-4 rounded-2xl border bg-white p-5 shadow-[var(--shadow-soft)] dark:bg-slate-900"
+          >
             <WeeklyGoalForm
               enrollmentId={live.enrollmentId}
               unit={live.weekly.unit}
@@ -245,9 +303,55 @@ export default async function LearnPage() {
             />
           </section>
 
-          <h2 className="mt-8 text-xl font-semibold">Peta level</h2>
-          <ol className="mt-3 space-y-3">
-            {levels.map((l) => {
+          <div className="mt-8 grid gap-4 lg:grid-cols-2">
+            <ChartPanel
+              title="Menit aktif minggu ini"
+              desc="Belajar nyata diukur dari detik aktif (heartbeat terbatas, di-clamp server) — bukan dari halaman yang sekadar terbuka."
+              updatedAt={new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
+              footnote="Batang = menit aktif per hari (Sen–Min); jumlahnya sejalan dengan ring target di atas. Data: study_sessions."
+              empty={
+                live.weekBars.length === 0 || live.weekBars.every((b) => b.minutes === 0)
+                  ? "Belum ada menit aktif tercatat minggu ini. Buka lesson dari rekomendasi di atas dan mulai belajar — grafik terisi otomatis."
+                  : undefined
+              }
+            >
+              {live.weekBars.length > 0 && (
+                <ColumnChart
+                  bars={live.weekBars.map((b) => ({ label: b.label, value: b.minutes }))}
+                  ariaLabel="Diagram batang menit aktif belajar per hari dalam minggu ini"
+                  suffix=" m"
+                  tone="blue"
+                />
+              )}
+            </ChartPanel>
+
+            <ChartPanel
+              title="Skor kuis terakhir"
+              desc="Skor final (0–100) yang dihitung server untuk tiap percobaan kuis yang sudah dinilai — hingga 6 percobaan terakhir."
+              updatedAt={new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
+              footnote="Kunci jawaban dan penilaian tidak pernah dihitung di browser; grafik membaca attempts.final_score."
+              empty={
+                live.quizBars.length === 0
+                  ? "Belum ada kuis yang dinilai. Kerjakan kuis di jalur level untuk melihat tren skormu di sini."
+                  : undefined
+              }
+            >
+              {live.quizBars.length > 0 && (
+                <ColumnChart
+                  bars={live.quizBars}
+                  ariaLabel="Diagram batang skor kuis final per percobaan terakhir"
+                  formatValue={(v) => String(Math.round(v))}
+                  suffix="%"
+                  tone="emerald"
+                  scaleMax={100}
+                />
+              )}
+            </ChartPanel>
+          </div>
+
+          <SectionHeader title="Jalur level" hint={`${levels.length} level dalam kursus ini`} />
+          <ol className="mt-4 space-y-0">
+            {levels.map((l, i) => {
               const label =
                 l.state === "locked"
                   ? "Terkunci — selesaikan prerequisite"
@@ -255,39 +359,68 @@ export default async function LearnPage() {
                     ? `Mastery ${Math.round(l.mastery * 100)}% — selesai`
                     : l.state === "in_progress"
                       ? `Mastery ${Math.round(l.mastery * 100)}% — sedang dikerjakan`
-                      : "Tersedia";
-              const pill =
-                l.state === "locked"
-                  ? "Locked"
-                  : l.state === "completed"
-                    ? "Completed"
-                    : l.state === "in_progress"
-                      ? "In progress"
-                      : "Available";
-              const pillClass =
-                l.state === "locked"
-                  ? "bg-slate-100 text-slate-600"
-                  : l.state === "completed"
-                    ? "bg-emerald-100 text-emerald-700"
-                    : l.state === "in_progress"
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-blue-100 text-blue-700";
+                      : "Tersedia — mulai dari sini";
+              const last = i === levels.length - 1;
               return (
-                <li key={l.id} className="flex items-center justify-between rounded-xl border p-4">
-                  <div>
-                    <p className="font-semibold">{l.title}</p>
-                    <p className="text-sm text-slate-600">{label}</p>
-                  </div>
+                <li key={l.id} className="relative flex gap-4 pb-6 last:pb-0">
+                  {!last && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-10 left-[19px] h-[calc(100%-2rem)] w-0.5 bg-slate-200 dark:bg-slate-700"
+                    />
+                  )}
                   <span
-                    aria-label={`Status ${l.title}`}
-                    className={`rounded-full px-3 py-1 text-sm font-semibold ${pillClass}`}
+                    aria-hidden="true"
+                    className={`z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 font-bold ${
+                      l.state === "completed"
+                        ? "border-emerald-600 bg-emerald-600 text-white"
+                        : l.state === "locked"
+                          ? "border-slate-300 bg-slate-100 text-slate-400 dark:border-slate-600 dark:bg-slate-800"
+                          : "border-blue-600 bg-white text-blue-700 dark:bg-slate-900"
+                    }`}
                   >
-                    {pill}
+                    {l.state === "completed" ? "✓" : l.state === "locked" ? "🔒" : i + 1}
                   </span>
+                  <div className="card-lift flex-1 rounded-2xl border bg-white p-4 shadow-[var(--shadow-soft)] dark:bg-slate-900">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-bold">{l.title}</p>
+                      <StateBadge state={l.state} label={`Status ${l.title}`} />
+                    </div>
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{label}</p>
+                    <div className="mt-3">
+                      <MeterBar pct={l.mastery * 100} label={`Mastery ${l.title}`} />
+                    </div>
+                    {l.state !== "locked" && (
+                      <Link
+                        href={`/learn/${l.id}?enrollment=${live.enrollmentId}`}
+                        className="mt-3 inline-block rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-1.5 text-sm font-semibold text-white shadow-[var(--glow-btn)] transition hover:from-blue-700 hover:to-indigo-700"
+                      >
+                        Buka level
+                      </Link>
+                    )}
+                  </div>
                 </li>
               );
             })}
           </ol>
+
+          <div className="mt-8 grid grid-cols-3 gap-3">
+            <StatCard
+              label="Level selesai"
+              value={String(levels.filter((l) => l.state === "completed").length)}
+              tone="emerald"
+            />
+            <StatCard
+              label="Dikerjakan"
+              value={String(levels.filter((l) => l.state === "in_progress").length)}
+              tone="amber"
+            />
+            <StatCard
+              label="Terkunci"
+              value={String(levels.filter((l) => l.state === "locked").length)}
+              tone="slate"
+            />
+          </div>
         </>
       )}
       <p className="mt-6 text-sm text-slate-500">

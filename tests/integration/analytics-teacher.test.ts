@@ -71,8 +71,20 @@ describe("halaman /teacher/analytics — Phase 5 insight guru", () => {
   });
 
   it("link Analitik kelas dari dashboard guru", () => {
-    expect(dashboard).toMatch(/href="\/teacher\/analytics"/);
+    expect(dashboard).toMatch(/["']\/teacher\/analytics["']/);
     expect(dashboard).toMatch(/Analitik kelas/);
+  });
+
+  it("grafik nyata: distribusi kelas memakai ColumnChart + percentDistribution (data server)", () => {
+    expect(page).toMatch(/from "@\/components\/charts"/);
+    expect(page).toMatch(/percentDistribution\(/);
+    expect(page).toMatch(/CLASS_DISTRIBUTION_DEFINITIONS_VERSION/);
+    expect(page).toMatch(/<ColumnChart/);
+    expect(page).toMatch(/progress_snapshots/);
+    // Setiap grafik membawa definisi + sample size (n) — bukan pajangan.
+    expect(page).toMatch(/Distribusi kelas/);
+    expect(page).toMatch(/n = \$\{progressDist\.n\}/);
+    expect(page).toMatch(/n = \$\{scoreDist\.n\}/);
   });
 });
 

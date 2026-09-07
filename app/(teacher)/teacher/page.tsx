@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getOrgAdminContext } from "@/lib/org-admin";
 import { summarizeCohort, type StudentRow } from "@/lib/analytics";
 import { detectRisk } from "@/lib/progress";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { MeterBar, SectionHeader, StatCard } from "@/components/dashboard";
 import { AlertControls } from "./alert-controls";
 
 export const dynamic = "force-dynamic";
@@ -169,81 +169,123 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
   const summary = summarizeCohort(data.rows);
 
   return (
-    <main id="main" className="mx-auto max-w-5xl px-4 py-10">
+    <main id="main" className="mx-auto max-w-6xl px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-3xl font-bold">Dasbor Kelas</h1>
-        <ThemeToggle />
+        <div>
+          <p className="text-sm font-semibold tracking-wide text-blue-700 uppercase dark:text-blue-300">
+            {data.active.name}
+          </p>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight">Dasbor Kelas</h1>
+        </div>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
         {data.cohorts.map((c) => (
           <Link
             key={c.id}
             href={`/teacher?cohort=${c.id}`}
-            className={`rounded-full border px-3 py-1 ${c.id === data.active?.id ? "bg-blue-700 text-white" : ""}`}
+            aria-current={c.id === data.active?.id ? "page" : undefined}
+            className={`rounded-full border px-4 py-1.5 font-medium ${
+              c.id === data.active?.id
+                ? "border-blue-700 bg-blue-700 text-white"
+                : "bg-white hover:bg-slate-50 dark:bg-slate-900"
+            }`}
           >
             {c.name}
           </Link>
         ))}
         <a
           href={`/api/teacher/export?cohortId=${data.active.id}`}
-          className="rounded-full border px-3 py-1 underline"
+          className="rounded-full border border-dashed px-4 py-1.5 font-medium underline"
         >
           Export CSV
         </a>
       </div>
 
-      <section aria-label="Ringkasan" className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
-        {[
-          ["Terdaftar", String(summary.enrolled)],
-          ["Aktif 7 hari", String(summary.active7d)],
-          ["Rata-rata progress", `${Math.round(summary.avgProgress)}%`],
-          ["Rata-rata mastery", `${Math.round(summary.avgMastery * 100)}%`],
-          ["Perlu perhatian", String(summary.needsAttention)],
-        ].map(([label, value]) => (
-          <div key={label} className="rounded-xl border p-4">
-            <p className="text-2xl font-bold">{value}</p>
-            <p className="text-sm text-slate-600">{label}</p>
-          </div>
-        ))}
+      <section aria-label="Ringkasan" className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5">
+        <StatCard label="Terdaftar" value={String(summary.enrolled)} tone="blue" hint="Murid di cohort" />
+        <StatCard label="Aktif 7 hari" value={String(summary.active7d)} tone="emerald" hint="Ada aktivitas" />
+        <StatCard
+          label="Rata-rata progress"
+          value={`${Math.round(summary.avgProgress)}%`}
+          tone="blue"
+          hint="Penyelesaian lesson"
+        />
+        <StatCard
+          label="Rata-rata mastery"
+          value={`${Math.round(summary.avgMastery * 100)}%`}
+          tone="emerald"
+          hint="Penguasaan kompetensi"
+        />
+        <StatCard
+          label="Perlu perhatian"
+          value={String(summary.needsAttention)}
+          tone={summary.needsAttention > 0 ? "amber" : "slate"}
+          hint="Di bawah 50% progress"
+        />
       </section>
       <p className="mt-2 text-xs text-slate-500">
         Definisi metrik v2026-09-06/v1 · n={summary.enrolled} · diperbarui saat halaman dimuat
       </p>
 
-      <h2 className="mt-8 text-xl font-semibold">Matriks cohort</h2>
+      <SectionHeader title="Matriks cohort" hint="Baris murid · status selalu berupa teks" />
       {data.rows.length === 0 ? (
-        <p className="mt-3 rounded-xl border p-4" role="status">
+        <p className="mt-3 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900" role="status">
           Belum ada murid di cohort ini.
         </p>
       ) : (
         <>
           {/* Kartu tumpuk untuk layar kecil: tabel 6 kolom tidak muat @360px
               tanpa scroll horizontal (gate responsif). Data & status sama. */}
-          <ul className="mt-3 space-y-3 md:hidden">
+          <ul className="mt-4 space-y-3 md:hidden">
             {data.rows.map((r) => (
-              <li key={r.studentId} className="rounded-xl border p-4">
-                <p className="font-semibold">
-                  <Link
-                    href={`/teacher/students/${r.studentId}?cohort=${data.active?.id}`}
-                    className="text-blue-700 underline"
+              <li
+                key={r.studentId}
+                className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900"
+              >
+                <div className="flex items-center justify-between gap-2 border-b p-4">
+                  <p className="font-bold">
+                    <Link
+                      href={`/teacher/students/${r.studentId}?cohort=${data.active?.id}`}
+                      className="text-blue-700 underline dark:text-blue-300"
+                    >
+                      {r.displayName}
+                    </Link>
+                  </p>
+                  <span
+                    aria-label={`Status ${r.displayName}`}
+                    className={`rounded-full px-3 py-1 text-sm font-semibold ${
+                      r.progressPct < 50
+                        ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                    }`}
                   >
-                    {r.displayName}
-                  </Link>
-                </p>
-                <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                  <dt className="text-slate-500">Progress</dt>
-                  <dd>{r.progressPct}%</dd>
-                  <dt className="text-slate-500">Mastery</dt>
-                  <dd>{Math.round(r.mastery * 100)}%</dd>
-                  <dt className="text-slate-500">Submit</dt>
-                  <dd>{r.submittedCount}</dd>
-                  <dt className="text-slate-500">Status</dt>
-                  <dd>{r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}</dd>
-                </dl>
+                    {r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 p-4 text-center">
+                  <div>
+                    <p className="text-xl font-extrabold">{r.progressPct}%</p>
+                    <p className="text-xs text-slate-500">Progress</p>
+                    <div className="mt-1">
+                      <MeterBar pct={r.progressPct} label={`Progress ${r.displayName}`} />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xl font-extrabold">{Math.round(r.mastery * 100)}%</p>
+                    <p className="text-xs text-slate-500">Mastery</p>
+                    <div className="mt-1">
+                      <MeterBar pct={r.mastery * 100} label={`Mastery ${r.displayName}`} />
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xl font-extrabold">{r.submittedCount}</p>
+                    <p className="text-xs text-slate-500">Submit</p>
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
-          <div className="mt-3 hidden overflow-x-auto md:block">
+          <div className="mt-4 hidden overflow-x-auto rounded-2xl border bg-white shadow-sm md:block dark:bg-slate-900">
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b">
@@ -279,37 +321,59 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         </>
       )}
 
-      <h2 className="mt-8 text-xl font-semibold">Sinyal risiko (explainable)</h2>
-      <AlertControls cohortId={data.active.id} alerts={data.alerts} />
-      <p className="mt-4 text-sm">
-        <Link href="/teacher/grading" className="text-blue-700 underline">
-          Antrian penilaian manual
-        </Link>
-        {" · "}
-        <Link href="/teacher/questions" className="text-blue-700 underline">
-          Bank soal
-        </Link>
-        {" · "}
-        <Link href="/teacher/cohorts" className="text-blue-700 underline">
-          Cohort & enrollment
-        </Link>
-        {" · "}
-        <Link href="/teacher/analytics" className="text-blue-700 underline">
-          Analitik kelas
-        </Link>
-        {" · "}
-        <Link href="/teacher/certificates" className="text-blue-700 underline">
-          Sertifikat &amp; anchoring
-        </Link>
-        {adminCtx && (
-          <>
-            {" · "}
-            <Link href="/teacher/admin/map" className="text-blue-700 underline">
-              Admin: mapping kelas &amp; subjek
-            </Link>
-          </>
-        )}
-      </p>
+      <SectionHeader title="Sinyal risiko" hint="Aturan transparan — bukan ranking" />
+      <div className="mt-4">
+        <AlertControls cohortId={data.active.id} alerts={data.alerts} />
+      </div>
+
+      <SectionHeader title="Kelola kelas" hint="Alat kerja guru" />
+      <nav aria-label="Alat guru" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {[
+          {
+            href: "/teacher/grading",
+            title: "Antrian penilaian",
+            desc: "Nilai jawaban esai & tugas manual",
+          },
+          {
+            href: "/teacher/questions",
+            title: "Bank soal",
+            desc: "Buat soal berversi + kunci jawaban",
+          },
+          {
+            href: "/teacher/cohorts",
+            title: "Cohort & enrollment",
+            desc: "Kelola kelas dan pendaftaran murid",
+          },
+          {
+            href: "/teacher/analytics",
+            title: "Analitik kelas",
+            desc: "Butir soal, miskonsepsi, hambatan",
+          },
+          {
+            href: "/teacher/certificates",
+            title: "Sertifikat & anchoring",
+            desc: "Terbitkan, reissue, dan anchor batch",
+          },
+          // Tautan admin hanya bila adminCtx (guru pemilik course) — bukan semua guru.
+          ...((adminCtx && [
+            {
+              href: "/teacher/admin/map",
+              title: "Admin: mapping",
+              desc: "Petakan murid & guru ke kelas/subjek",
+            },
+          ]) ||
+            []),
+        ].map((a) => (
+          <Link
+            key={a.href}
+            href={a.href}
+            className="group rounded-2xl border bg-white p-5 shadow-sm transition hover:border-blue-300 hover:shadow-md dark:bg-slate-900"
+          >
+            <p className="font-bold text-blue-700 group-hover:underline dark:text-blue-300">{a.title}</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{a.desc}</p>
+          </Link>
+        ))}
+      </nav>
     </main>
   );
 }

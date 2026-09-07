@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { bottleneckAnalysis, buildTeacherDigest } from "@/lib/analytics-teacher";
+import {
+  bottleneckAnalysis,
+  buildTeacherDigest,
+  percentDistribution,
+} from "@/lib/analytics-teacher";
 
 describe("bottleneckAnalysis — hambatan jalur belajar", () => {
   const lessons = [
@@ -108,5 +112,33 @@ describe("buildTeacherDigest — tiga prioritas tindakan", () => {
       now: new Date("2026-09-06T00:00:00Z"),
     };
     expect(buildTeacherDigest(input)).toEqual(buildTeacherDigest(input));
+  });
+});
+
+describe("percentDistribution — histogram nilai persen ke 6 ember", () => {
+  it("batas ember: 0 di ember 0%, 24→1–24%, 25→25–49%, 100→100%", () => {
+    const d = percentDistribution([0, 24, 25, 49, 50, 74, 75, 99, 100]);
+    expect(d.n).toBe(9);
+    expect(d.buckets.map((b) => b.label)).toEqual(["0%", "1–24%", "25–49%", "50–74%", "75–99%", "100%"]);
+    expect(d.buckets.map((b) => b.count)).toEqual([1, 1, 2, 2, 2, 1]);
+    expect(d.meanPct).toBeCloseTo(496 / 9, 5);
+  });
+
+  it("kosong → n 0, semua ember 0", () => {
+    const d = percentDistribution([]);
+    expect(d.n).toBe(0);
+    expect(d.meanPct).toBe(0);
+    expect(d.buckets.every((b) => b.count === 0)).toBe(true);
+  });
+
+  it("nilai tak-valid dilewati (NaN/Infinity)", () => {
+    const d = percentDistribution([100, Number.NaN, Number.POSITIVE_INFINITY]);
+    expect(d.n).toBe(1);
+    expect(d.buckets[5]).toEqual({ label: "100%", count: 1 });
+  });
+
+  it("jumlah ember = n (dapat direkonsiliasi)", () => {
+    const d = percentDistribution([10, 33, 55, 78, 92, 100, 0, 47, 63]);
+    expect(d.buckets.reduce((a, b) => a + b.count, 0)).toBe(d.n);
   });
 });

@@ -85,7 +85,7 @@ describe("halaman /teacher/admin/map", () => {
 describe("dashboard guru — tautan admin hanya untuk org-admin", () => {
   it("link /teacher/admin/map digabung ke adminCtx (bukan semua guru)", () => {
     expect(dashboard).toMatch(/getOrgAdminContext\(\)/);
-    expect(dashboard).toMatch(/adminCtx &&/);
-    expect(dashboard).toMatch(/href="\/teacher\/admin\/map"/);
+    expect(dashboard).toMatch(/adminCtx && \[/);
+    expect(dashboard).toMatch(/["']\/teacher\/admin\/map["']/);
   });
 });

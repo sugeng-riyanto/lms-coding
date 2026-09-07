@@ -9,6 +9,8 @@
 
 export const TEACHER_ANALYTICS_DEFINITIONS_VERSION = "2026-09-06/v1";
 
+export const CLASS_DISTRIBUTION_DEFINITIONS_VERSION = "2026-09-07/v1";
+
 /** Ukuran minimal murid yang "mulai" sebuah lesson agar bottleneck layak diklaim. */
 export const BOTTLENECK_MIN_N = 3;
 
@@ -166,4 +168,45 @@ export function buildTeacherDigest(input: TeacherDigestInput): DigestAction[] {
   }
 
   return actions.sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id)).slice(0, 3);
+}
+
+export interface DistributionBucket {
+  /** Rentang inklusif-eksklusif (kecuali ujung atas inklusif): "0%", "1–24%", … */
+  label: string;
+  count: number;
+}
+
+export interface PercentDistribution {
+  buckets: DistributionBucket[];
+  /** Jumlah nilai yang dianalisis (sample size). */
+  n: number;
+  /** Rata-rata (persen). */
+  meanPct: number;
+}
+
+const DIST_BUCKET_LABELS = ["0%", "1–24%", "25–49%", "50–74%", "75–99%", "100%"] as const;
+
+/**
+ * Histogram nilai persen (0..100) ke 6 ember tetap. Batas: [0,0], (0,25),
+ * [25,50), [50,75), [75,100), [100,100]. Deterministik dan dapat direkonsiliasi
+ * (jumlah ember = n). Bila semua nilai kosong → n = 0, ember semua 0.
+ */
+export function percentDistribution(values: number[]): PercentDistribution {
+  const counts = [0, 0, 0, 0, 0, 0];
+  let sum = 0;
+  for (const raw of values) {
+    const v = Number(raw);
+    if (!Number.isFinite(v)) continue;
+    let idx = 5; // 100
+    if (v <= 0) idx = 0;
+    else if (v < 25) idx = 1;
+    else if (v < 50) idx = 2;
+    else if (v < 75) idx = 3;
+    else if (v < 100) idx = 4;
+    counts[idx] = (counts[idx] ?? 0) + 1;
+    sum += v;
+  }
+  const buckets = DIST_BUCKET_LABELS.map((label, i) => ({ label, count: counts[i] ?? 0 }));
+  const n = counts.reduce((a, b) => a + b, 0);
+  return { buckets, n, meanPct: n > 0 ? sum / n : 0 };
 }

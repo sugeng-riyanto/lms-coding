@@ -45,4 +45,19 @@ describe("risk signals explainable", () => {
     expect(s.map((x) => x.code)).toContain("RUSH_LOW_ACCURACY");
     for (const sig of s) expect(sig.message.length).toBeGreaterThan(10);
   });
+  it("tampilan inaktif dibatasi 30+ hari", () => {
+    const s = detectRisk({
+      inactiveDays: 999,
+      attemptsLast7d: 0,
+      scoreDelta: 0,
+      avgSecondsPerItem: 60,
+      accuracy: 1,
+      prereqMastery: 1,
+      progressPct: 0,
+      expectedPct: 70,
+    });
+    expect(s.map((x) => x.code)).toContain("INACTIVE");
+    expect(s.find((x) => x.code === "INACTIVE")?.message).toMatch(/30\+ hari/);
+    expect(s.find((x) => x.code === "INACTIVE")?.message).not.toMatch(/999/);
+  });
 });
