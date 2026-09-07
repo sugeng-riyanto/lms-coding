@@ -160,3 +160,79 @@ describe("multiple_choice partial-credit policy", () => {
     expect(autoGrade(frac, [])).toBe(0);
   });
 });
+
+describe("notasi ilmiah numerik (fisika/kimia/matematika)", () => {
+  it("parseNumericAnswer menerima e-notation (6.022e23, 1e-9)", () => {
+    expect(parseNumericAnswer("6.022e23")).toBeCloseTo(6.022e23, 5);
+    expect(parseNumericAnswer("6.02E+23")).toBeCloseTo(6.02e23, 5);
+    expect(parseNumericAnswer("1e-9")).toBe(1e-9);
+  });
+
+  it("autoGrade numeric: jawaban e-notation benar dalam toleransi", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 6.022e23,
+      toleranceAbsolute: 1e21,
+    };
+    expect(autoGrade(rule, "6.02e23")).toBe(10); // |Δ|=2e20 < 1e21
+    expect(autoGrade(rule, "6.4e23")).toBe(0); // |Δ|≈3.78e23 > 1e21
+  });
+
+  it("konversi unit tetap jalan bersama e-notation (1e3 g = 1 kg)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 1,
+      toleranceAbsolute: 0.0001,
+      unit: { expectedUnit: "kg", unitFactors: { kg: 1, g: 0.001 } },
+    };
+    expect(autoGrade(rule, "1e3 g")).toBe(10);
+    expect(autoGrade(rule, "1000 g")).toBe(10);
+    expect(autoGrade(rule, "1 kg")).toBe(10);
+  });
+});
+
+describe("normalizeShortText unicode (English apostrof & Mandarin/IME full-width)", () => {
+  it("NFKC melipat karakter full-width IME (Ｈ２Ｏ → H2O)", () => {
+    const rule = {
+      type: "short_text" as const,
+      points: 5,
+      acceptedAnswers: ["H2O"],
+      normalize: { unicode: true },
+    };
+    expect(autoGrade(rule, "Ｈ２Ｏ")).toBe(5);
+    expect(autoGrade(rule, "h2o")).toBe(5); // lowercase default tetap
+  });
+
+  it("tanpa unicode: full-width TIDAK dianggap sama (back-compat)", () => {
+    const rule = {
+      type: "short_text" as const,
+      points: 5,
+      acceptedAnswers: ["H2O"],
+      normalize: { unicode: false },
+    };
+    expect(autoGrade(rule, "Ｈ２Ｏ")).toBe(0);
+  });
+
+  it("apostrof melengkung English dilipat ke lurus saat unicode:true", () => {
+    const rule = {
+      type: "short_text" as const,
+      points: 5,
+      acceptedAnswers: ["it's"],
+      normalize: { unicode: true },
+    };
+    expect(autoGrade(rule, "it’s")).toBe(5);
+    expect(normalizeShortText("it’s", { unicode: true })).toBe("it's");
+  });
+
+  it("teks Mandarin biasa (tanpa karakter khusus) lolos normalisasi default", () => {
+    const rule = {
+      type: "short_text" as const,
+      points: 5,
+      acceptedAnswers: ["你好，世界"],
+      normalize: { trim: true },
+    };
+    expect(autoGrade(rule, "你好，世界")).toBe(5);
+  });
+});

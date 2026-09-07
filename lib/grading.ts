@@ -31,7 +31,13 @@ export interface GradingRule {
   unit?: NumericUnitRule;
   // short_text
   acceptedAnswers?: string[];
-  normalize?: { trim?: boolean; lowercase?: boolean; collapseSpaces?: boolean };
+  normalize?: {
+    trim?: boolean;
+    lowercase?: boolean;
+    collapseSpaces?: boolean;
+    /** NFKC + lipat apostrof/kutip (penting utk teks IME: Mandarin, bahasa lain). */
+    unicode?: boolean;
+  };
 }
 
 /**
@@ -44,7 +50,8 @@ export interface GradingRule {
 export function parseNumericAnswer(answer: unknown, unit?: NumericUnitRule): number | null {
   if (typeof answer === "number") return Number.isFinite(answer) ? answer : null;
   if (typeof answer !== "string") return null;
-  const m = /^\s*(-?\d+(?:\.\d+)?)\s*([A-Za-zµ%]+)?\s*$/.exec(answer);
+  // Dukung notasi ilmiah (fisika/kimia/matematika): 6.022e23, 1e-9, 2.5E+3.
+  const m = /^\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-zµ%]+)?\s*$/.exec(answer);
   if (!m) return null;
   const value = Number(m[1]);
   if (!Number.isFinite(value)) return null;
@@ -56,9 +63,15 @@ export function parseNumericAnswer(answer: unknown, unit?: NumericUnitRule): num
   return value * factor;
 }
 
+/** Lipat apostrof/kutip melengkung → lurus (dipakai saat `unicode: true`). */
+function foldCurlyQuotes(s: string): string {
+  return s.replace(/[\u2018\u2019\u02BC\u2032]/g, "'").replace(/[\u201C\u201D\u2033]/g, '"');
+}
+
 export function normalizeShortText(input: string, rule?: GradingRule["normalize"]): string {
-  let s = input;
+  let s = typeof input === "string" ? input : "";
   if (rule?.trim !== false) s = s.trim();
+  if (rule?.unicode) s = foldCurlyQuotes(s.normalize("NFKC"));
   if (rule?.collapseSpaces !== false) s = s.replace(/\s+/g, " ");
   if (rule?.lowercase !== false) s = s.toLowerCase();
   return s;

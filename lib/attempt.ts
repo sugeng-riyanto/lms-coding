@@ -88,6 +88,14 @@ export function buildGradingRule(
           .split("\n")
           .map((s) => s.trim())
           .filter(Boolean),
+        // normalize=unicode → NFKC + lipat apostrof/kutip (English/Mandarin IME);
+        // default (atau "plain") → back-compat tanpa transform unicode.
+        normalize:
+          fields["normalize"] === "unicode"
+            ? { unicode: true }
+            : fields["normalize"] === "plain"
+              ? { unicode: false }
+              : undefined,
       };
     case "essay_manual":
     case "file_manual":
