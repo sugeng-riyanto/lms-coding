@@ -1261,3 +1261,20 @@ KURANG asli PROGRESS.md: "persist PDF ke bucket" (Phase 6). Bagian reissue (RPC
   `b452443196874056bd527530b4cf3138.pdf` terdaftar di bucket `certificates`.
 - Gates sesi: prettier · eslint 0 · tsc 0 · **npm test 516 passed / 1 skipped
   (60 files)** · build 0. Phase 6 kini TANPA KURANG tersisa.
+
+## Sesi visual sertifikat — gradasi warna + QR page 2 75% (07 Sep 2026)
+
+- **QR halaman 2 dikecilkan ke 75%** (90 → 67.5 px, `qrSize`) — tetap kanan-atas
+  tanpa tumpang tindih, buffer QR sama dengan halaman 1.
+- **Warna & gradasi (aman untuk print grayscale)**: halaman 1 — wash latar
+  vertikal putih→`#e8effc`, frame ganda, ribbon gradien navy→blue→sky
+  (`#1e3a8a→#2563eb→#38bdf8`) atas-bawah, judul navy + underline gradien, teks
+  kursus navy; halaman 2 — header tabel memakai gradien indigo muda
+  (`#eef2ff→#dbeafe`) dengan teks navy + accent line gradien di bawah judul.
+- **Kepatutan grayscale (analisis luminance)**: wash 1.00→0.86, header
+  0.89→0.81, ribbon 0.05→0.44; seluruh tinta teks (0.01–0.17) lebih gelap dari
+  semua isian → tidak ada teks hilang saat dicetak hitam-putih.
+- Verifikasi live: re-render 16,968 B ter-persist ulang (pdf_path + objek
+  bucket); inspeksi visual page 1 (ribbon, underline, layout utuh tanpa
+  tabrakan) & page 2 (header gradien, bar chart, QR 67.5) — tetap 2/2 halaman.
+- Gates sesi: prettier · eslint 0 · tsc 0.
