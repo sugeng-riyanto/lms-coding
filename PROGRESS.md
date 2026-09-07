@@ -1175,3 +1175,58 @@ plan-interactive-video-content.md (PROPOSED, belum di-coding).
 - **`lib/attempt.ts`** — `buildGradingRule` mengekspos kolom `normalize` (`unicode` / `plain`) pada rule short_text dari grading_json.
 - Fixture test baru di `tests/unit/grading.test.ts` (7): parse e-notation, autoGrade dalam/batas toleransi (fixture diperbaiki: |6.02e23−6.022e23|=2e20 → tolerance 1e21), konversi unit + e-notation, NFKC full-width, back-compat tanpa unicode, apostrof melengkung, teks Mandarin biasa.
 - Gates: prettier · eslint 0 · tsc 0 · vitest **512 passed +1 skip** (59 files) · build 0.
+
+## Sesi E2E live guru→murid→sertifikat (hosted) — 07 Sep 2026
+
+Simulasi penuh per instruksi: guru membuat content Python dari `docs/xlsx/Python_Materi_Impor (1).xlsx` + `Python_Panduan_Guru (1).xlsx`, murid belajar + asesmen, guru menilai (server-graded), sertifikat terbit & terverifikasi.
+
+- **Kursus**: "Python: From Fundamentals to a Science Project" — 12 level (1 per modul), 12 modul, 24 lesson, **120 aktivitas** (96 article + 24 code_board) ter-import dari XLSX via UI bulk-import (per-level, 0 error). Verifikasi DB: struktur utuh.
+- **Bank soal**: 4 soal kunci asli dari sheet Question Bank workbook (PY-01-Q1…Q4) di-import via format pack; assessment 4 soal × 1 poin dengan randomisasi server-seeded terhubung ke aktivitas quiz lesson 01.1.
+- **Defect #1 (fix, migration 000024 `recompute_assessment_total_points`)**: `assessments.total_points` tidak pernah dihitung ulang → quiz berisi soal tervalidasi 0 poin dan publish gagal `INVALID_POINTS`. Fix: trigger AFTER INSERT/UPDATE/DELETE pada `assessment_questions` + backfill; `total_points` kini 4 → publish sukses (Versi 1).
+- **Murid 01**: enrollment active via UI cohort; menyelesaikan 11 aktivitas lesson 01.1 + 01.2; kuis **final_score 100** (server-graded, order soal ter-shuffle seed server, autosave 4 jawaban terverifikasi di DB); recompute → lesson + level 01 `completed 100%`.
+- **Defect #2 (fix `features/actions.ts`)**: `evaluateLevelEligibility` merata-rata SEMUA lesson snapshot enrollment (termasuk level lain yang belum digarap) → level tuntas tampak 8.3/70. Koreksi: filter hanya lesson milik level yang dievaluasi (`requiredIds`).
+- **Defect #3 (fix, migration 000025 `fix_certificate_digest_resolution`)**: RPC `issue_certificate`/`reissue_certificate` memanggil `digest()` yang di hosted ada di schema `extensions` (bukan `public`) → `function digest(text, unknown) does not exist` (42883) hanya di hosted; lokal lolos. Fix: helper `private.sha256_hex` dengan search_path `private, public, extensions` + kedua RPC memakainya.
+- **Sertifikat terbit**: `CERT-20260907-53f80c`, public_id `b452443196874056bd527530b4cf3138`, status active, payload_hash sha256 64-hex (RPC dipanggil dengan JWT guru asli; idempotent).
+- **Verifier publik** `/verify/b452443196874056bd527530b4cf3138`: "Sertifikat valid ✓" — Penerima Murid 01, course, level, tanggal, serial, payload hash cocok (`90ECE54DAA19`), record valid, blockchain tidak di-anchor, minimum disclosure (tanpa email/DOB/nilai/path).
+- **PDF A4 landscape** (on-demand, auth: murid pemilik/guru cohort): status 200, `application/pdf`, **MediaBox `0 0 841.89 595.28`** (A4 landscape), 1 halaman — inspeksi visual: "Certificate of Completion", nama, course—level, tanggal+serial, fingerprint pendek, garis tanda tangan + **Sugeng Riyanto, M.Sc.** + label "Penerbit sertifikat", QR kanan-bawah, border ganda.
+- Gates sesi: tsc 0 · vitest certificate suite **23 passed** (certificate 6, reissue 9, teacher-certificates 8). Migration remote kini **000000–000025**.
+
+## Sesi perbaikan navigasi murid — Python tidak bisa lanjut ke test/ujian (07 Sep 2026)
+
+Keluhan live: materi Python tidak bisa lanjut hingga akses test dan ujian. Dua defect navigasi ditemukan & diperbaiki:
+
+- **Defect A — `/learn` mengabaikan `?enrollment=`**: `getDashboard` selalu memakai enrollment aktif PERTAMA (`.limit(1)` tanpa filter), sehingga murid dengan >1 kursus (mis. Matematika Dasar + Python) selalu mendarat di Matematika walau mengklik kursus Python di katalog. Perbaikan: `getDashboard(userId, requestedEnrollmentId?)` mem-filter `.eq("id", enrollment)` bila query menyediakannya; fallback tetap enrollment pertama.
+- **Defect B — `/learn/[id]` hanyalah stub refleksi**: route level map sebelumnya hanya textarea draft/refleksi tanpa daftar lesson/aktivitas, jadi tidak ada jalur dari dashboard ke lesson player (`/activities/[activityId]`) maupun kuis. Ditulis ulang menjadi **peta level nyata** (Server Component): modul → lesson → aktivitas ber-urutan, badge tipe (Materi/Papan kode/Kuis-Ujian/dll), status ✓ selesai / 🔒 terkunci / tersedia (unlock server-side via `computeUnlock` + tabel prerequisites), tiap aktivitas menautkan ke `/activities/{id}?enrollment=`, banner "semua aktivitas selesai" per level, dan fallback enrollment pertama bila query kosong.
+
+Verifikasi live di preview (hosted, murid01):
+1. `/learn?enrollment=<python>` → dashboard **"Python: From Fundamentals to a Science Project"** (12 level, level 01 selesai, grafik menit aktif + skor kuis "05 Summative check 100%").
+2. Level map level 02 & 01 → modul/lesson/aktivitas dengan badge; aktivitas kuis "05 Summative check — Lesson 01.1 (Kuis/Ujian)" terlihat.
+3. Klik aktivitas kuis → player quiz → **"Mulai kuis"** → exam `/quiz/{attemptId}` dengan 4 soal, autosave, timer & batas attempt server-side.
+4. Halaman `/certificates` murid menampilkan sertifikat `CERT-20260907-53f80c` dengan unduh PDF/verifikasi.
+
+Gates: prettier · eslint 0 · tsc 0 · **build 0**. Catatan jujur: kursus Python hasil import XLSX hanya memuat **1 aktivitas quiz** dari 120 aktivitas (97 article + 24 code_board + 1 quiz) — bank 48 soal di workbook guru ter-import ke bank soal tetapi belum di-wire sebagai kuis per lesson; menambahkan kuis per lesson = langkah authoring berikutnya.
+
+## Sesi sertifikat 2 halaman — halaman 2 informasi umum & kelengkapan konten (07 Sep 2026)
+
+Permintaan: halaman kedua sertifikat menampilkan general information content completeness sebagai tabel & statistik, tidak terpisahkan dari halaman 1, dengan QR dan kode unik yang SAMA (dapat diverifikasi di halaman mana pun).
+
+- **Route** `app/api/certificates/[publicId]/pdf/route.ts`: kini menghasilkan **2 halaman A4 landscape** yang tidak terpisahkan:
+  - Halaman 1: muka sertifikat (tidak berubah) — recipient, course, level, tanggal, serial, fingerprint pendek, garis tanda tangan digital **Sugeng Riyanto, M.Sc.**, QR kanan-bawah.
+  - Halaman 2: judul "Informasi Umum & Kelengkapan Konten" + catatan "Halaman 2 dari 2 — bagian tak terpisahkan dari halaman 1" + **tabel Informasi Umum** (penerima, penerbit, kursus, level, nomor serial, kode unik/public ID, tanggal terbit, fingerprint) + **tabel Kelengkapan konten per modul** (No, Modul, Pelajaran selesai/total, Aktivitas selesai/total, Kelengkapan %) + **tabel Statistik penyelesaian** (konten level selesai %, pelajaran selesai, aktivitas selesai, asesmen sumatif, nilai terbaik asesmen, waktu belajar aktif) + footer dengan **QR yang sama persis** dan kode unik + URL verifikasi yang sama.
+- Data halaman 2 diambil live via RLS viewer: modules/lessons/activities level (required), `progress_snapshots` (lesson completed), `learning_events` `activity_completed` (aktivitas), `attempts` (nilai terbaik), `study_sessions` (waktu aktif server-clamped). Statistik "Asesmen sumatif" menampilkan `N asesmen (M attempt)` bila attempt > asesmen agar tidak terbaca "2/1".
+- **Defect ditemukan via inspeksi visual**: pdfkit auto-menambah halaman kosong ke-3 saat baris footer "Halaman 2 dari 2" di `height-56` melewati batas bawah margin (`maxY = height-48`). Reproduksi minimal membuktikan: tanpa baris itu = 2 halaman, dengan = 3 halaman. Perbaikan: posisi `height-64` → output tepat **2 halaman**.
+- Verifikasi live (hosted, guru cookie, `CERT-20260907-53f80c`): status 200 `application/pdf`; `MediaBox 0 0 841.89 595.28` ×2 (A4 landscape); `/Count 2` di tree Pages; ekstraksi teks halaman 2 memuat header info umum, kelengkapan per modul (2/2 pelajaran, 11/11 aktivitas, 100%), statistik, kode unik `b452443196874056bd527530b4cf3138`, serial, dan URL verifikasi; **inspeksi visual via PDF viewer**: viewer menampilkan "2 / 2", halaman 2 render utuh (tabel + QR + kode unik sama).
+- Gates sesi: prettier · eslint 0 · tsc 0 · vitest certificate suite **23 passed** (unit certificate 6, reissue 9, teacher-certificates 8).
+
+## Sesi penyempurnaan sertifikat — English + QR kanan atas + grafik + link verifier (07 Sep 2026)
+
+Umpan balik: QR halaman 2 tumpang tindih dengan teks, minta QR kecil di kanan atas (tetap bisa discan), sertifikat memakai grafik, dan seluruh copy memakai English level IELTS 8.5+.
+
+- **Route `app/api/certificates/[publicId]/pdf/route.ts` ditulis ulang** (2 halaman A4 landscape tetap):
+  - Seluruh copy sertifikat kini **English profesional**: halaman 1 — "ACADEMY", "Certificate of Completion", "Presented to", "for the successful completion of", "Date of issue / Serial number / Fingerprint", "This certificate attests to demonstrated competence; detailed scores are not disclosed.", tanda tangan "Sugeng Riyanto, M.Sc." + label "Certificate Issuer". Halaman 2 — "General Information & Content Completeness", "Page 2 of 2 — an integral part of page 1", tabel Field/Value (Recipient/Issuer/Course/Level/Serial number/Unique code/Date of issue/Fingerprint), "Content Completeness by Module", "Completion Statistics", footer "Unique code / Serial number / Verify".
+  - **QR halaman 2 dipindah ke kanan atas, ukuran kecil (90 px)** — buffer QR sama persis dengan halaman 1 (kode unik identik, pemindaian di halaman mana pun → verifier yang sama); tidak ada lagi tumpang tindih dengan judul/teks tengah. QR halaman 1 tetap kanan-bawah (tidak bertabrakan).
+  - **Grafik nyata**: seksi "Completion Statistics" kini memakai horizontal bar charts (track slate + fill gradient biru, data live dari progress_snapshots/learning_events/attempts) untuk Level content completed, Lessons completed, Activities completed, Best assessment score; baris teks untuk Summative assessment & Active study time; assessment summary pakai "1 assessment (2 attempts)" agar tidak terbaca "2/1".
+  - Guard margin ketat (`maxY = height − 48`): teks footer "Page 2 of 2" di `height−64`, chart di-skip bila sisa ruang < batas → **tidak ada halaman kosong ke-3** (regresi phantom-page yang pernah ditemukan tetap tertutup).
+- **`app/(public)/verify/[publicId]/page.tsx`**: badge visual "✓ PDF 2 halaman (A4)" + penjelasan halaman 2 (info umum & kelengkapan konten, QR/kode unik sama) tampil saat valid; tombol "Buka PDF sertifikat (2 halaman)" hanya muncul bagi **penerima atau guru cohort** (auth check server-side via RLS, ADR-009) — pengunjung anonim mendapat catatan privasi, bukan tautan mati.
+- Verifikasi live (hosted, `CERT-20260907-53f80c`): PDF `200 application/pdf` 12043 B; **/Count 2**, kedua MediaBox `841.89×595.28`; 13/13 pemeriksaan struktur+copy lulus (2 pages, A4, marker English ada, marker Indonesian `Diberikan kepada`/`Informasi Umum`/`Penerbit sertifikat` hilang). Inspeksi visual via PDF viewer: **2/2 halaman** — halaman 2 menampilkan tabel umum, kelengkapan per modul (2/2, 11/11, 100%), bar chart Completion Statistics, QR kanan-atas tanpa overlap. Verifier: anonim → badge + catatan privasi (tanpa link); session guru → link tampil dan endpoint mengembalikan PDF.
+- Gates sesi: prettier · eslint 0 · tsc 0 · vitest certificate suite **23 passed** (unit 6, reissue 9, teacher 8) · **build 0**.
