@@ -1294,3 +1294,23 @@ KURANG asli PROGRESS.md: "persist PDF ke bucket" (Phase 6). Bagian reissue (RPC
   page 2 kecil & tajam tanpa tumpang tindih, tabel/grafik/footer utuh, tetap
   2/2 halaman.
 - Gates sesi: prettier · eslint 0 · tsc 0.
+
+## Sesi anti-overflow PDF + rekam digital web (keaslian & kelengkapan) (07 Sep 2026)
+
+Kekhawatiran: tabel "Content Completeness by Module" berisiko >2 halaman bila
+modul banyak. Ide: detail pindah ke web + pengecekan keaslian di web.
+
+- **PDF tetap deterministik 2 halaman**: `MODULE_ROWS_MAX = 6` — baris modul
+  di-cap 6; sisanya diringkas baris "+N more modules" + catatan kecil "full
+  breakdown available on the certificate's web page". Statistik agregat + tabel
+  info umum tetap; guard `maxY` yang ada memastikan tidak ada halaman ke-3.
+- **`app/(public)/verify/[publicId]/page.tsx` — "Rekam digital & keaslian"**
+  (baru, hanya untuk penerima/guru — gate `authorizedForPdf`/RLS): menampilkan
+  payload hash SHA-256 penuh + penjelasan cara cek keaslian (hash dikunci saat
+  terbit; verifier menghitung ulang → perubahan data membuat cek gagal), tabel
+  **seluruh modul tanpa cap** (aritmetika identik dengan PDF agar web=kertas),
+  dan agregat "Konten level selesai". Anonim tidak melihatnya (verifikasi curl).
+- Verifikasi live: verifier sebagai guru menampilkan section lengkap (hash
+  `90ece54d…e0064`, modul 2/2 · 11/11 · 100%); anonim 0 akses.
+- Gates sesi: prettier · eslint 0 · tsc 0 · npm test **516 passed / 1 skipped**
+  · build 0.
