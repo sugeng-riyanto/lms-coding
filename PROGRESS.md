@@ -1230,3 +1230,34 @@ Umpan balik: QR halaman 2 tumpang tindih dengan teks, minta QR kecil di kanan at
 - **`app/(public)/verify/[publicId]/page.tsx`**: badge visual "✓ PDF 2 halaman (A4)" + penjelasan halaman 2 (info umum & kelengkapan konten, QR/kode unik sama) tampil saat valid; tombol "Buka PDF sertifikat (2 halaman)" hanya muncul bagi **penerima atau guru cohort** (auth check server-side via RLS, ADR-009) — pengunjung anonim mendapat catatan privasi, bukan tautan mati.
 - Verifikasi live (hosted, `CERT-20260907-53f80c`): PDF `200 application/pdf` 12043 B; **/Count 2**, kedua MediaBox `841.89×595.28`; 13/13 pemeriksaan struktur+copy lulus (2 pages, A4, marker English ada, marker Indonesian `Diberikan kepada`/`Informasi Umum`/`Penerbit sertifikat` hilang). Inspeksi visual via PDF viewer: **2/2 halaman** — halaman 2 menampilkan tabel umum, kelengkapan per modul (2/2, 11/11, 100%), bar chart Completion Statistics, QR kanan-atas tanpa overlap. Verifier: anonim → badge + catatan privasi (tanpa link); session guru → link tampil dan endpoint mengembalikan PDF.
 - Gates sesi: prettier · eslint 0 · tsc 0 · vitest certificate suite **23 passed** (unit 6, reissue 9, teacher 8) · **build 0**.
+
+## Sesi penutupan gap Phase 6 — persist PDF ke private bucket + signed download (07 Sep 2026)
+
+KURANG asli PROGRESS.md: "persist PDF ke bucket" (Phase 6). Bagian reissue (RPC
+000010/000025 + UI `reissue-button.tsx`) sudah ada; bagian persist belum ada kode.
+
+- **`lib/certificate-store.ts` (baru, server-only)**: `certificateObjectName`
+  (murni — map public_id → `{id}.pdf`, tolak traversal/karakter aneh,
+  deterministik agar satu sertifikat = satu objek), `persistPdf` (upload
+  upsert ke bucket privat `certificates` + update `certificates.pdf_path`
+  via service client — satu-satunya jalur sah; TANPA policy authenticated
+  baru → regresi `storage.test` tetap hijau), `createPdfSignedUrl` (TTL 300 s,
+  null saat storage tak tersedia).
+- **`app/api/certificates/[publicId]/pdf/route.ts`**: select kini memuat
+  `pdf_path`. Aktif + tersimpan → **302 ke signed URL** (permission RLS sudah
+  dipaksa sebelum branch); signed URL gagal → fall through render on-demand.
+  Setelah render → persist best-effort dalam try/catch (storage gagal →
+  respons PDF-stream tetap, `pdf_path` tetap null) — degradasi anggun
+  (AC-6 plan-certificate-persist-reissue).
+- **`tests/unit/certificate-store.test.ts` (baru, 4 test)** sanitasi path
+  (hex/demo-slug valid; `../`, `%2f`, spasi, `?`, `#`, kosong → INVALID);
+  `tests/integration/hardening.test.ts` assertion lama `Penerbit sertifikat`
+  diselaraskan ke label English `Certificate Issuer` (perubahan copy PDF
+  sesi sebelumnya).
+- **Verifikasi live (hosted, `CERT-20260907-53f80c`, JWT guru)**: request 1 →
+  `200 application/pdf` (render + persist); request 2 → **302** ke
+  `…/storage/v1/object/sign/certificates/b452443…pdf?token=…`; fetch URL →
+  `200 application/pdf` 12043 B; DB `pdf_path` terisi; objek storage
+  `b452443196874056bd527530b4cf3138.pdf` terdaftar di bucket `certificates`.
+- Gates sesi: prettier · eslint 0 · tsc 0 · **npm test 516 passed / 1 skipped
+  (60 files)** · build 0. Phase 6 kini TANPA KURANG tersisa.
