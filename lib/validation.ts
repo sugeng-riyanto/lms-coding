@@ -96,11 +96,19 @@ export const questionTypeSchema = z.enum([
   "file_manual",
 ]);
 
-export const createQuestionSchema = z.object({
-  type: questionTypeSchema,
-  promptText: z.string().min(3).max(5000),
-  difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
-});
+export const createQuestionSchema = z
+  .object({
+    type: questionTypeSchema,
+    promptText: z.string().min(3).max(5000),
+    difficulty: z.enum(["easy", "medium", "hard"]).default("medium"),
+    // Opsi jawaban untuk tipe pilihan (satu baris per opsi di UI). Tanpa opsi,
+    // soal pilihan tidak bisa dijawab murid (defect live: kuis option-less).
+    options: z.array(z.string().trim().min(1).max(200)).max(10).default([]),
+  })
+  .refine(
+    (v) => (v.type === "single_choice" || v.type === "multiple_choice" ? v.options.length >= 2 : true),
+    { message: "CHOICE_NEEDS_OPTIONS", path: ["options"] },
+  );
 
 export const publishQuestionVersionSchema = z.object({
   questionId: uuidSchema,
@@ -166,6 +174,17 @@ export const updateProfileSchema = z.object({
 export const enrollStudentSchema = z.object({
   courseId: uuidSchema,
   studentId: uuidSchema,
+  cohortId: uuidSchema,
+});
+
+export const saveStudentMappingSchema = z.object({
+  studentId: uuidSchema,
+  cohortIds: z.array(uuidSchema).max(20),
+  courseIds: z.array(uuidSchema).max(20),
+});
+
+export const assignTeacherToClassSchema = z.object({
+  teacherId: uuidSchema,
   cohortId: uuidSchema,
 });
 

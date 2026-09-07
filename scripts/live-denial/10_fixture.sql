@@ -109,6 +109,13 @@ where a.idempotency_key = 'fixture-attempt-A'
 limit 1
 on conflict (attempt_id, question_version_id) do nothing;
 
+-- Link soal fixture ke assessment fixture (bahan uji RPC soal tersanitasi t15_*):
+-- tanpa link ini `get_attempt_questions` benar-benar mengembalikan 0 baris
+-- (defect live 000023: kuis kosong bukan hanya karena RLS tabel soal).
+insert into public.assessment_questions (assessment_id, question_version_id, position, points) values
+  ('a1000000-0000-0000-0000-000000000004', 'a1000000-0000-0000-0000-000000000011', 0, 10)
+on conflict do nothing;
+
 -- Tabel hasil denial (tanpa RLS; grant luas agar semua role bisa mencatat hasil).
 create table if not exists public.harness_results (
   id serial primary key,

@@ -6,6 +6,7 @@ import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { getServerEnv } from "@/lib/env";
 import { createAiProvider, extractAnswerText, type AiDraftRequest } from "@/lib/ai-feedback";
 import { createServiceClient } from "@/lib/supabase/service";
+import { getOrgAdminContext } from "@/lib/org-admin";
 import { assessmentPercent, autoGrade } from "@/lib/grading";
 import {
   clampGoalForUnit,
@@ -56,6 +57,8 @@ import {
   submitAttemptSchema,
   publishVersionSchema,
   uuidSchema,
+  saveStudentMappingSchema,
+  assignTeacherToClassSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
 import { pickPool, randomSeedHex } from "@/lib/shuffle";
@@ -64,11 +67,15 @@ import { normalizeOrder } from "@/lib/reorder";
 import { validateCourseDraft, type DraftLevel, type DraftPrereq } from "@/lib/publish-validation";
 import { checkRateLimit } from "@/lib/ratelimit";
 import {
+  MAX_ASSIGNMENT_ROWS,
   MAX_CONTENT_ROWS,
   MAX_STUDENT_ROWS,
+  MAX_TEACHER_ROWS,
   groupContentRows,
   parseContentRows,
+  parseStudentAssignmentRows,
   parseStudentRows,
+  parseTeacherRows,
   rowsOverCap,
   xlsxFileError,
   type BulkActivityType,
@@ -1065,9 +1072,12 @@ export async function anchorCertificateBatch() {
   // Jalur privileged (service): chain_anchors & link sertifikat TANPA policy
   // authenticated — hanya setelah validasi caller (guru teacher aktif org).
   const svc = createServiceClient();
+  // Filter bersarang `enrollments.courses.organization_id` hanya sah bila jalur
+  // embed-nya ikut di-select (PGRST108 bila tidak). Defect yang ditemukan saat
+  // smoke flow: tanpa embed, query error → data null → terlihat "no candidates".
   const { data: certRows } = await svc
     .from("certificates")
-    .select("id,status,chain_anchor_id,payload_hash")
+    .select("id,status,chain_anchor_id,payload_hash,enrollments(courses(organization_id))")
     .eq("status", "active")
     .is("chain_anchor_id", null)
     .eq("enrollments.courses.organization_id", orgId)
@@ -1119,6 +1129,60 @@ export async function anchorCertificateBatch() {
   }
   if (outcome.reason === "empty_hashes") return { ok: false as const, error: "ANCHOR_EMPTY" };
   return { ok: false as const, error: "ANCHOR_FAILED", root: outcome.root };
+}
+
+/**
+ * Refresh status anchor: untuk baris chain_anchors org yg masih `pending`, tanya
+ * adapter.getStatus(reference) dan naikkan ke `final` bila sudah final (idempoten;
+ * status final tidak pernah kembali ke pending). Mode mock-algorand memajukan
+ * pending→final dengan finality deterministik tanpa jaringan; provider nyata juga
+ * memakai jalur ini saat nanti dipilih (ADR-018). Hanya `final` yang diterapkan —
+ * `failed`/`pending` dibiarkan utk retry berikut (jangan korup row karena status
+ * sementara adapter).
+ */
+export async function refreshAnchorStatus() {
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  const orgId = (mem as { organization_id: string } | null)?.organization_id;
+  if (!orgId) return { ok: false as const, error: "FORBIDDEN" };
+
+  if (!isChainEnabled()) return { ok: false as const, error: "BLOCKCHAIN_DISABLED" };
+  const adapter = getChainAdapter();
+  if (adapter instanceof NoopChainAdapter) {
+    return { ok: false as const, error: "BLOCKCHAIN_PROVIDER_PENDING" };
+  }
+
+  const svc = createServiceClient();
+  const { data: rows } = await svc
+    .from("chain_anchors")
+    .select("id,transaction_ref")
+    .eq("status", "pending")
+    .eq("organization_id", orgId)
+    .limit(200);
+  let finalized = 0;
+  for (const row of (rows as { id: string; transaction_ref: string | null }[] | null) ?? []) {
+    if (!row.transaction_ref) continue;
+    const st = await adapter.getStatus(row.transaction_ref);
+    if (st.status === "final") {
+      await svc
+        .from("chain_anchors")
+        .update({ status: "final", anchored_at: new Date().toISOString() })
+        .eq("id", row.id);
+      finalized += 1;
+    }
+    // status pending/failed dibiarkan (retry berikut) — tidak menurunkan row.
+  }
+  return { ok: true as const, finalized };
 }
 
 // ---------- Auth: logout (refresh session berhenti, cookie dibersihkan) ----------
@@ -1650,7 +1714,10 @@ export async function createQuestion(input: unknown) {
     .insert({
       organization_id: org.organization_id,
       type: parsed.data.type,
-      prompt_json: { text: parsed.data.promptText },
+      prompt_json: {
+        text: parsed.data.promptText,
+        ...(parsed.data.options.length > 0 ? { options: parsed.data.options } : {}),
+      },
       difficulty: parsed.data.difficulty,
     })
     .select("id")
@@ -1664,6 +1731,32 @@ export async function publishQuestionVersion(input: unknown) {
   if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
   const supabase = await createClient();
   if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  // Kunci jawaban harus merujuk opsi yang benar-benar ada pada soal pilihan —
+  // kunci typo/asing membuat kuis tak bisa dinilai (defect live: grading 0 diam-diam).
+  const { data: base } = await supabase
+    .from("questions")
+    .select("type,prompt_json")
+    .eq("id", parsed.data.questionId)
+    .single();
+  const b = base as { type: string; prompt_json: { options?: string[] } } | null;
+  if (!b) return { ok: false as const, error: "NOT_FOUND" };
+  const grading = parsed.data.grading as Record<string, unknown>;
+  if (b.type === "single_choice" || b.type === "true_false") {
+    const key = grading["correctOptionId"];
+    const allowed = b.type === "true_false" ? ["true", "false"] : (b.prompt_json.options ?? []);
+    if (typeof key !== "string" || !allowed.includes(key))
+      return { ok: false as const, error: "INVALID_KEY" };
+  }
+  if (b.type === "multiple_choice") {
+    const keys = grading["correctOptionIds"];
+    const allowed = b.prompt_json.options ?? [];
+    if (
+      !Array.isArray(keys) ||
+      keys.length === 0 ||
+      keys.some((k) => typeof k !== "string" || !allowed.includes(k))
+    )
+      return { ok: false as const, error: "INVALID_KEY" };
+  }
   const { data: vers } = await supabase
     .from("question_versions")
     .select("version")
@@ -1767,54 +1860,57 @@ export async function getAttemptQuestions(attemptId: string) {
     question_order_json: { seed: string; order: string[] } | null;
   } | null;
   if (!att) return { ok: false as const, error: "NOT_FOUND" };
-  // RLS responses/attempts menegakkan kepemilikan; grading_json TIDAK PERNAH di-select di sini.
+  // Soal disajikan via RPC definer tersanitasi (migration 000023): murid pemilik
+  // attempt `in_progress` mendapat type/prompt_json TANPA grading/explanation.
+  // Tabel soal TETAP teacher-only via RLS (kunci jawaban) — JANGAN dibaca langsung
+  // dengan strict client di sini (defect live: kuis selalu kosong untuk murid).
   // Urutan soal = roll SERVER saat startAttempt (question_order_json); fallback posisi.
+  const { data: rowsRaw } = await supabase.rpc("get_attempt_questions", {
+    p_attempt_id: attemptId,
+  });
+  let rows =
+    (rowsRaw as
+      | {
+          question_version_id: string;
+          position: number;
+          points: number;
+          qtype: string;
+          prompt_json: { text?: string; options?: string[] };
+        }[]
+      | null) ?? [];
   const ordered = att.question_order_json?.order;
-  const linksQuery = supabase
-    .from("assessment_questions")
-    .select("question_version_id,position,points")
-    .eq("assessment_id", att.assessment_id);
-  const { data: linksRaw } =
-    ordered && ordered.length > 0 ? await linksQuery.in("question_version_id", ordered) : await linksQuery;
-  let links = (linksRaw as { question_version_id: string; position: number; points: number }[] | null) ?? [];
   if (ordered && ordered.length > 0) {
-    const byId = new Map(links.map((l) => [l.question_version_id, l]));
-    links = ordered
+    const byId = new Map(rows.map((r) => [r.question_version_id, r]));
+    rows = ordered
       .map((id) => byId.get(id))
-      .filter((l): l is { question_version_id: string; position: number; points: number } => !!l);
-  } else {
-    links.sort((a, b) => a.position - b.position);
+      .filter(
+        (
+          r,
+        ): r is {
+          question_version_id: string;
+          position: number;
+          points: number;
+          qtype: string;
+          prompt_json: { text?: string; options?: string[] };
+        } => !!r,
+      );
   }
   const out: (SanitizedQuestion & { savedAnswer: unknown })[] = [];
-  for (const link of links) {
-    const { data: qv } = await supabase
-      .from("question_versions")
-      .select("id,question_id")
-      .eq("id", link.question_version_id)
-      .single();
-    const q = qv as { id: string; question_id: string } | null;
-    if (!q) continue;
-    const { data: base } = await supabase
-      .from("questions")
-      .select("type,prompt_json")
-      .eq("id", q.question_id)
-      .single();
-    const b = base as { type: string; prompt_json: { text?: string; options?: string[] } } | null;
-    if (!b) continue;
+  for (const row of rows) {
     const { data: resp } = await supabase
       .from("responses")
       .select("answer_json")
       .eq("attempt_id", att.id)
-      .eq("question_version_id", link.question_version_id)
+      .eq("question_version_id", row.question_version_id)
       .limit(1)
       .single();
     out.push({
       ...sanitizeQuestionForAttempt({
-        questionVersionId: link.question_version_id,
-        position: link.position,
-        points: Number(link.points),
-        type: b.type as SanitizedQuestion["type"],
-        promptJson: b.prompt_json,
+        questionVersionId: row.question_version_id,
+        position: row.position,
+        points: Number(row.points),
+        type: row.qtype as SanitizedQuestion["type"],
+        promptJson: row.prompt_json,
       }),
       savedAnswer: (resp as { answer_json: unknown } | null)?.answer_json ?? null,
     });
@@ -2533,6 +2629,323 @@ export async function bulkImportContent(formData: FormData) {
     }
   }
   return { ok: true as const, modules, lessons, activities, errors };
+}
+
+// ---------- Admin org: bulk upload guru + penugasan murid→kelas/subjek ----------
+// Jalur PRIVILEGED (service client): membuat membership guru/murid, cohort lintas
+// guru, dan enrollment lintas cohort adalah provisioning admin — bukan policy guru
+// biasa. Otorisasi ORG-ADMIN diperiksa dulu di action (lib/org-admin.ts): guru
+// aktif org YANG MEMILIKI ≥1 course di org (facet Owner, ADR-008). Guru biasa
+// tetap dibatasi cohort miliknya (RBAC.md) — tidak mendapat akses admin.
+
+/** Tahun akademik label (mis. 2026/2027) dari tanggal server. */
+function currentAcademicYear(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1; // 1..12
+  return m >= 6 ? `${y}/${y + 1}` : `${y - 1}/${y}`;
+}
+
+/** Bulk daftarkan guru (XLSX: Email, Nama, [Kelas ;/,-terpisah]) — org-admin. */
+export async function bulkImportTeachers(formData: FormData) {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "FILE_MISSING" };
+  const fileErr = xlsxFileError(file);
+  if (fileErr) return { ok: false as const, error: fileErr };
+  const ctx = await getOrgAdminContext();
+  if (!ctx) return { ok: false as const, error: "FORBIDDEN" };
+
+  const sheetRows = await xlsxRows(file);
+  const { rows, errors } = parseTeacherRows(sheetRows);
+  if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+  if (rowsOverCap(rows.length, MAX_TEACHER_ROWS))
+    return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_TEACHER_ROWS, errors };
+
+  const svc = createServiceClient();
+  const emailToId = new Map<string, string>();
+  for (let i = 0; i < rows.length; i += EMAIL_CHUNK) {
+    const chunk = rows.slice(i, i + EMAIL_CHUNK).map((r) => r.email);
+    const { data } = await svc.schema("auth").from("users").select("id,email").in("email", chunk);
+    for (const u of (data as { id: string; email: string }[] | null) ?? []) emailToId.set(u.email, u.id);
+  }
+
+  const notFound: string[] = [];
+  const pending = rows.filter((r) => {
+    if (!emailToId.has(r.email)) notFound.push(r.email);
+    return emailToId.has(r.email);
+  });
+
+  // Profil + membership guru (provisioning = privileged).
+  const profileRows = pending.map((p) => ({
+    id: emailToId.get(p.email)!,
+    organization_id: ctx.orgId,
+    display_name: p.displayName,
+  }));
+  const membershipRows = pending.map((p) => ({
+    organization_id: ctx.orgId,
+    user_id: emailToId.get(p.email)!,
+    role: "teacher" as const,
+    status: "active" as const,
+  }));
+  for (let i = 0; i < profileRows.length; i += EMAIL_CHUNK) {
+    await svc.from("profiles").upsert(profileRows.slice(i, i + EMAIL_CHUNK), { onConflict: "id" });
+  }
+  for (let i = 0; i < membershipRows.length; i += EMAIL_CHUNK) {
+    await svc
+      .from("memberships")
+      .upsert(membershipRows.slice(i, i + EMAIL_CHUNK), { onConflict: "organization_id,user_id" });
+  }
+
+  // Kolom Kelas opsional: buat cohort (org, guru tsb) bila belum ada; laporkan bila
+  // nama kelas sudah diampu guru lain di org yang sama.
+  let classesCreated = 0;
+  for (const p of pending) {
+    for (const name of p.classNames) {
+      const { data: existing } = await svc
+        .from("cohorts")
+        .select("id,teacher_id")
+        .eq("organization_id", ctx.orgId)
+        .eq("name", name)
+        .maybeSingle();
+      const ex = existing as { id: string; teacher_id: string } | null;
+      if (ex) {
+        if (ex.teacher_id !== emailToId.get(p.email)) {
+          errors.push(`Kelas "${name}" sudah diampu guru lain (untuk ${p.email}).`);
+        }
+        continue;
+      }
+      const { error: cErr } = await svc.from("cohorts").insert({
+        organization_id: ctx.orgId,
+        teacher_id: emailToId.get(p.email)!,
+        name,
+        academic_year: currentAcademicYear(),
+      });
+      if (cErr) errors.push(`Kelas "${name}" untuk ${p.email}: gagal dibuat (${cErr.message}).`);
+      else classesCreated++;
+    }
+  }
+
+  return { ok: true as const, added: pending.length, existing: 0, notFound, classesCreated, errors };
+}
+
+/** Bulk penugasan murid → kelas (cohort) + subjek (course) — org-admin.
+ * XLSX: Email, Kelas (opsional), Mapel (opsional); minimal satu per baris. */
+export async function bulkImportStudentAssignments(formData: FormData) {
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false as const, error: "FILE_MISSING" };
+  const fileErr = xlsxFileError(file);
+  if (fileErr) return { ok: false as const, error: fileErr };
+  const ctx = await getOrgAdminContext();
+  if (!ctx) return { ok: false as const, error: "FORBIDDEN" };
+
+  const sheetRows = await xlsxRows(file);
+  const { rows, errors } = parseStudentAssignmentRows(sheetRows);
+  if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+  if (rowsOverCap(rows.length, MAX_ASSIGNMENT_ROWS))
+    return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_ASSIGNMENT_ROWS, errors };
+
+  const svc = createServiceClient();
+  const emailToId = new Map<string, string>();
+  for (let i = 0; i < rows.length; i += EMAIL_CHUNK) {
+    const chunk = rows.slice(i, i + EMAIL_CHUNK).map((r) => r.email);
+    const { data } = await svc.schema("auth").from("users").select("id,email").in("email", chunk);
+    for (const u of (data as { id: string; email: string }[] | null) ?? []) emailToId.set(u.email, u.id);
+  }
+
+  // Map nama → id utk kelas (cohort) & subjek (course) di org ini.
+  const { data: cohortRows } = await svc.from("cohorts").select("id,name").eq("organization_id", ctx.orgId);
+  const nameToCohort = new Map(
+    ((cohortRows as { id: string; name: string }[] | null) ?? []).map((c) => [c.name, c.id]),
+  );
+  const { data: courseRows } = await svc.from("courses").select("id,title").eq("organization_id", ctx.orgId);
+  const titleToCourse = new Map(
+    ((courseRows as { id: string; title: string }[] | null) ?? []).map((c) => [c.title, c.id]),
+  );
+
+  const notFound: string[] = [];
+  const unknownClasses = new Set<string>();
+  const unknownSubjects = new Set<string>();
+  const membershipIds = new Set<string>();
+  const cmInserts: { cohort_id: string; student_id: string; status: "active" }[] = [];
+  const enrInserts: { course_id: string; student_id: string; cohort_id: string; status: "active" }[] = [];
+  let assigned = 0;
+
+  for (const r of rows) {
+    const studentId = emailToId.get(r.email);
+    if (!studentId) {
+      notFound.push(r.email);
+      continue;
+    }
+    const cohortId = r.className ? nameToCohort.get(r.className) : undefined;
+    const courseId = r.subjectName ? titleToCourse.get(r.subjectName) : undefined;
+    if (r.className && !cohortId) unknownClasses.add(r.className);
+    if (r.subjectName && !courseId) unknownSubjects.add(r.subjectName);
+    if (!cohortId && !courseId) {
+      errors.push(`Baris ${r.email}: kelas/subjek tidak ditemukan di org ini.`);
+      continue;
+    }
+    assigned++;
+    membershipIds.add(studentId);
+    if (cohortId) cmInserts.push({ cohort_id: cohortId, student_id: studentId, status: "active" });
+    if (cohortId && courseId) {
+      enrInserts.push({ course_id: courseId, student_id: studentId, cohort_id: cohortId, status: "active" });
+    }
+  }
+
+  // Provisioning membership murid + keanggotaan kelas + enrollment subjek (chunked).
+  const membershipRows = [...membershipIds].map((uid) => ({
+    organization_id: ctx.orgId,
+    user_id: uid,
+    role: "student" as const,
+    status: "active" as const,
+  }));
+  for (let i = 0; i < membershipRows.length; i += EMAIL_CHUNK) {
+    await svc
+      .from("memberships")
+      .upsert(membershipRows.slice(i, i + EMAIL_CHUNK), { onConflict: "organization_id,user_id" });
+  }
+  const CM_CHUNK = 50;
+  for (let i = 0; i < cmInserts.length; i += CM_CHUNK) {
+    const { error } = await svc
+      .from("cohort_members")
+      .upsert(cmInserts.slice(i, i + CM_CHUNK), { onConflict: "cohort_id,student_id" });
+    if (error) errors.push(`Keanggotaan kelas batch gagal (${error.message}).`);
+  }
+  for (let i = 0; i < enrInserts.length; i += CM_CHUNK) {
+    const { error } = await svc
+      .from("enrollments")
+      .upsert(enrInserts.slice(i, i + CM_CHUNK), { onConflict: "course_id,student_id,cohort_id" });
+    if (error) errors.push(`Enrollment subjek batch gagal (${error.message}).`);
+  }
+
+  return {
+    ok: true as const,
+    assigned,
+    notFound,
+    unknownClasses: [...unknownClasses],
+    unknownSubjects: [...unknownSubjects],
+    errors,
+  };
+}
+
+/** Mapping manual satu murid → kelas + subjek (grid kelas×subjek) — org-admin. */
+export async function saveStudentMapping(input: unknown) {
+  const parsed = saveStudentMappingSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const ctx = await getOrgAdminContext();
+  if (!ctx) return { ok: false as const, error: "FORBIDDEN" };
+  const svc = createServiceClient();
+
+  // Murid harus anggota org.
+  const { data: prof } = await svc
+    .from("profiles")
+    .select("id")
+    .eq("id", parsed.data.studentId)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle();
+  if (!prof) return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+
+  // Validasi kelas & subjek milik org (batch).
+  const invalidCohorts: string[] = [];
+  const validCohorts: string[] = [];
+  if (parsed.data.cohortIds.length > 0) {
+    const { data: cs } = await svc
+      .from("cohorts")
+      .select("id")
+      .in("id", parsed.data.cohortIds)
+      .eq("organization_id", ctx.orgId);
+    const found = new Set(((cs as { id: string }[] | null) ?? []).map((c) => c.id));
+    for (const id of parsed.data.cohortIds) (found.has(id) ? validCohorts : invalidCohorts).push(id);
+  }
+  const invalidCourses: string[] = [];
+  const validCourses: string[] = [];
+  if (parsed.data.courseIds.length > 0) {
+    const { data: cs } = await svc
+      .from("courses")
+      .select("id")
+      .in("id", parsed.data.courseIds)
+      .eq("organization_id", ctx.orgId);
+    const found = new Set(((cs as { id: string }[] | null) ?? []).map((c) => c.id));
+    for (const id of parsed.data.courseIds) (found.has(id) ? validCourses : invalidCourses).push(id);
+  }
+
+  // Provisioning membership murid + cohort_members + enrollment (grid kelas×subjek).
+  await svc.from("memberships").upsert(
+    {
+      organization_id: ctx.orgId,
+      user_id: parsed.data.studentId,
+      role: "student" as const,
+      status: "active" as const,
+    },
+    { onConflict: "organization_id,user_id" },
+  );
+  let cohortMemberships = 0;
+  if (validCohorts.length > 0) {
+    const { data } = await svc
+      .from("cohort_members")
+      .upsert(
+        validCohorts.map((cohortId) => ({
+          cohort_id: cohortId,
+          student_id: parsed.data.studentId,
+          status: "active" as const,
+        })),
+        { onConflict: "cohort_id,student_id" },
+      )
+      .select("cohort_id");
+    cohortMemberships = ((data as { cohort_id: string }[] | null) ?? []).length;
+  }
+  let enrollments = 0;
+  if (validCohorts.length > 0 && validCourses.length > 0) {
+    const rows = validCohorts.flatMap((cohortId) =>
+      validCourses.map((courseId) => ({
+        course_id: courseId,
+        student_id: parsed.data.studentId,
+        cohort_id: cohortId,
+        status: "active" as const,
+      })),
+    );
+    const { data } = await svc
+      .from("enrollments")
+      .upsert(rows, { onConflict: "course_id,student_id,cohort_id" })
+      .select("id");
+    enrollments = ((data as { id: string }[] | null) ?? []).length;
+  }
+
+  return { ok: true as const, cohortMemberships, enrollments, invalidCohorts, invalidCourses };
+}
+
+/** Tetapkan guru pengampu sebuah kelas (cohort.teacher_id) — org-admin. */
+export async function assignTeacherToClass(input: unknown) {
+  const parsed = assignTeacherToClassSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const ctx = await getOrgAdminContext();
+  if (!ctx) return { ok: false as const, error: "FORBIDDEN" };
+  const svc = createServiceClient();
+
+  // Guru sasaran harus membership teacher aktif di org.
+  const { data: t } = await svc
+    .from("memberships")
+    .select("user_id")
+    .eq("user_id", parsed.data.teacherId)
+    .eq("organization_id", ctx.orgId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .maybeSingle();
+  if (!t) return { ok: false as const, error: "TEACHER_NOT_FOUND" };
+  const { data: cohort } = await svc
+    .from("cohorts")
+    .select("id")
+    .eq("id", parsed.data.cohortId)
+    .eq("organization_id", ctx.orgId)
+    .maybeSingle();
+  if (!cohort) return { ok: false as const, error: "CLASS_NOT_FOUND" };
+
+  const { error } = await svc
+    .from("cohorts")
+    .update({ teacher_id: parsed.data.teacherId, updated_at: new Date().toISOString() })
+    .eq("id", parsed.data.cohortId);
+  if (error) return { ok: false as const, error: "UPDATE_FAILED" };
+  return { ok: true as const, teacherId: parsed.data.teacherId, cohortId: parsed.data.cohortId };
 }
 
 export async function createCohort(input: unknown) {

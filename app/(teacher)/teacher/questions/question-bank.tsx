@@ -38,18 +38,29 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
   const [notice, setNotice] = useState("");
   const [type, setType] = useState<QuestionType>("single_choice");
   const [prompt, setPrompt] = useState("");
+  const [optionsText, setOptionsText] = useState("");
   const [versionQ, setVersionQ] = useState("");
   const [points, setPoints] = useState("10");
   const [gradingText, setGradingText] = useState("");
+  const needsOptions = type === "single_choice" || type === "multiple_choice";
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
+    const options = optionsText
+      .split("\n")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (needsOptions && options.length < 2) {
+      setNotice("Gagal: soal pilihan butuh ≥2 opsi (satu per baris).");
+      return;
+    }
     setBusy(true);
-    const res = await createQuestion({ type, promptText: prompt, difficulty: "medium" });
+    const res = await createQuestion({ type, promptText: prompt, difficulty: "medium", options });
     setBusy(false);
     if (!res.ok) setNotice(`Gagal: ${res.error}`);
     else {
       setPrompt("");
+      setOptionsText("");
       setNotice("Soal dibuat. Tambahkan versi + kunci di bawah.");
       router.refresh();
     }
@@ -127,6 +138,22 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
             />
           </div>
         </div>
+        {needsOptions && (
+          <div className="mt-2">
+            <label htmlFor="q-options" className="text-sm font-semibold">
+              Opsi jawaban (wajib ≥2, satu per baris — kunci versi harus sama persis dengan salah satunya)
+            </label>
+            <textarea
+              id="q-options"
+              rows={3}
+              required
+              value={optionsText}
+              onChange={(e) => setOptionsText(e.target.value)}
+              placeholder={"3\n4\n5"}
+              className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-sm"
+            />
+          </div>
+        )}
         <button
           disabled={busy}
           className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
@@ -173,7 +200,8 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
         </div>
         <label htmlFor="v-grading" className="mt-2 block text-sm font-semibold">
           Kunci (baris key=value; mis. correct=b · corrects=a,c · expected=3.14, tolAbs=0.01 ·
-          accepted=Soekarno)
+          accepted=Soekarno). Untuk soal pilihan, nilai correct/corrects harus sama persis dengan teks opsi di
+          atas, atau versi ditolak (INVALID_KEY).
         </label>
         <textarea
           id="v-grading"

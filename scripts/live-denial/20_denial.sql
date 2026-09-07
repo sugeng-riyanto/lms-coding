@@ -1212,6 +1212,94 @@ end $$;
 
 set role postgres;
 
+-- ============ t15: RPC soal attempt tersanitasi (migration 000023) ============
+-- Defect live: kuis selalu kosong untuk murid (tabel soal teacher-only, action
+-- membaca via RLS user). RPC definer mengembalikan HANYA kolom tersanitasi
+-- untuk attempt in_progress milik caller; murid lain/guru/attempt submitted → 0.
+
+-- Attempt t15 milik Murid 01 (no 7 in_progress abadi; no 8 untuk uji submitted).
+insert into public.attempts (id, assessment_id, enrollment_id, attempt_no, status, idempotency_key, started_at)
+select 'a1000000-0000-0000-0000-000000000015', 'a1000000-0000-0000-0000-000000000004', e.id, 7, 'in_progress', 'fixture-attempt-t15', now()
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1
+on conflict (id) do nothing;
+insert into public.attempts (id, assessment_id, enrollment_id, attempt_no, status, idempotency_key, started_at)
+select 'a1000000-0000-0000-0000-000000000016', 'a1000000-0000-0000-0000-000000000004', e.id, 8, 'in_progress', 'fixture-attempt-t15b', now()
+from public.enrollments e
+where e.student_id = 'b0000000-0000-0000-0000-000000000001'
+  and e.course_id = 'd0000000-0000-0000-0000-000000000001'
+limit 1
+on conflict (id) do nothing;
+
+-- Murid 01: RPC attempt miliknya (in_progress) mengembalikan ≥1 baris soal.
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.get_attempt_questions('a1000000-0000-0000-0000-000000000015');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p15_own_questions_visible', n >= 1, 'rows=' || n);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('p15_own_questions_visible', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Murid 02: RPC attempt milik Murid 01 → 0 baris.
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000002","role":"authenticated"}', false);
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.get_attempt_questions('a1000000-0000-0000-0000-000000000015');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t15_cross_student_empty', n = 0, 'rows=' || n);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t15_cross_student_empty', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Guru org-1: bukan pemilik attempt → 0 baris (guru membaca bank via RLS sendiri).
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"a0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+declare n int;
+begin
+  select count(*) into n from public.get_attempt_questions('a1000000-0000-0000-0000-000000000015');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t15_teacher_empty', n = 0, 'rows=' || n);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t15_teacher_empty', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+-- Attempt yang sudah disubmit → RPC 0 baris (soal hanya disajikan saat menjawab).
+set role authenticated;
+select set_config('request.jwt.claims',
+  '{"sub":"b0000000-0000-0000-0000-000000000001","role":"authenticated"}', false);
+
+do $$
+declare n int;
+begin
+  perform public.finalize_attempt('a1000000-0000-0000-0000-000000000016', 't15-finalize');
+  select count(*) into n from public.get_attempt_questions('a1000000-0000-0000-0000-000000000016');
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t15_submitted_empty', n = 0, 'rows=' || n);
+exception when others then
+  insert into public.harness_results (check_id, passed, detail)
+  values ('t15_submitted_empty', false, 'unexpected: ' || sqlerrm);
+end $$;
+
+set role postgres;
+
 -- Hasil (dibaca runner).
 set role postgres;
 select check_id || '|' || case when passed then 'PASS' else 'FAIL' end as result
