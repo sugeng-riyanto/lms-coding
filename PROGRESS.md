@@ -1314,3 +1314,30 @@ modul banyak. Ide: detail pindah ke web + pengecekan keaslian di web.
   `90ece54d…e0064`, modul 2/2 · 11/11 · 100%); anonim 0 akses.
 - Gates sesi: prettier · eslint 0 · tsc 0 · npm test **516 passed / 1 skipped**
   · build 0.
+
+## Digital record publik machine-readable (JSON) — verifikasi pihak ketiga
+
+- RPC kurasi `get_public_certificate_record(text)` (migration
+  `20260907123000_public_certificate_record_rpc.sql`): security definer +
+  search_path di-pin, validasi format public_id, revoke PUBLIC → grant
+  anon/authenticated (satu-satunya permukaan anon, view tetap 0 baris).
+  Output whitelist: payload_hash PENUH + contentPercent + kelengkapan per
+  modul (`lessonsCompleted/Total`, `activitiesCompleted/Total`, `percent`) —
+  aritmetika IDENTIK PDF halaman 2 / Rekam digital web (completed = semua yang
+  tuntas, total = required). Tanpa email, jawaban, nilai detail, waktu belajar,
+  storage path. Status revoked hanya mengembalikan `issuedAt`.
+- Route publik `GET /api/public/certificates/{publicId}/record` (force-dynamic,
+  rate-limit 30/menit): envelope `certificate.digital-record/v1` — recipient
+  (displayName publik seperti /verify), certificate, authenticity (SHA-256,
+  payloadHash penuh, fingerprint 12 char, chainAnchored + chainAnchor.status),
+  completeness.contentPercent + modules (tanpa cap 6 baris seperti PDF).
+- Migration no-op dokumentasi `20260907135143_...` (duplikat tak disengaja dari
+  `supabase migration new` yang terputus; sudah ter-rekam remote, dipertahankan
+  agar lokal = remote tanpa drift).
+- Live di hosted (CERT-20260907-53f80c): RPC anon langsung 200 (modul
+  2/2 · 11/11 · 100%, hash `90ece54d…e0064`); route 200 envelope penuh, id
+  acak 404, id tak valid 400.
+- Tests: +4 di `tests/integration/contracts.test.ts` (bentuk RPC + grants,
+  whitelist tanpa PII, revoked, route memakai RPC + force-dynamic).
+- Gates sesi: prettier · eslint 0 · tsc 0 · npm test **520 passed / 1 skipped**
+  · build 0.
