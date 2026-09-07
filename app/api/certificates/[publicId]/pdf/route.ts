@@ -342,8 +342,11 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   const levelTitle = (level as { title: string } | null)?.title ?? "—";
   const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
   const verifyUrl = `${base}/verify/${encodeURIComponent(parsed.data.publicId)}`;
-  // One QR buffer shared by BOTH pages → identical scannable unique code.
+  // QR buffers encode the SAME verify URL (identical code) on both pages. Page 2
+  // uses a smaller source buffer so downscaling to 33.75pt keeps modules crisp
+  // enough to stay scannable.
   const qr = await QRCode.toBuffer(verifyUrl, { type: "png", width: 180, margin: 1 });
+  const qrSmall = await QRCode.toBuffer(verifyUrl, { type: "png", width: 72, margin: 1 });
 
   const stats = await loadCompletenessData(supabase, c.enrollment_id, c.level_id);
 
@@ -356,22 +359,18 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   const W1 = doc.page.width;
   const H1 = doc.page.height;
 
-  // Subtle vertical background wash (prints as an even, near-white professional tint).
+  // Rounded outer frame — subtle radius keeps the document elegant in print.
+  const R_OUTER = 16;
+  const R_INNER = 8;
+
+  // Everything decorative is clipped to the rounded frame so the background wash
+  // and ribbons follow the corner radius instead of poking out of it.
+  doc.save();
+  doc.roundedRect(24, 24, W1 - 48, H1 - 48, R_OUTER).clip();
+
   const bgGrad = doc.linearGradient(24, 24, 24, H1 - 24);
   bgGrad.stop(0, "#ffffff").stop(0.55, "#f6f9ff").stop(1, "#e8effc");
   doc.rect(24, 24, W1 - 48, H1 - 48).fill(bgGrad);
-
-  // Double frame: outer hairline + inner accent line.
-  doc
-    .rect(24, 24, W1 - 48, H1 - 48)
-    .lineWidth(1)
-    .strokeColor("#cbd5e1")
-    .stroke();
-  doc
-    .rect(29, 29, W1 - 58, H1 - 58)
-    .lineWidth(0.75)
-    .strokeColor("#dbe3f0")
-    .stroke();
 
   // Gradient ribbons (navy → blue → sky) top & bottom — colour that separates into
   // a clean dark→mid band even in grayscale printing.
@@ -381,6 +380,20 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   const ribbonBottom = doc.linearGradient(24, H1 - 42, W1 - 24, H1 - 42);
   ribbonBottom.stop(0, "#38bdf8").stop(0.5, "#2563eb").stop(1, "#1e3a8a");
   doc.rect(24, H1 - 42, W1 - 48, 10).fill(ribbonBottom);
+
+  doc.restore();
+
+  // Rounded double frame: outer hairline + inset accent line.
+  doc
+    .roundedRect(24, 24, W1 - 48, H1 - 48, R_OUTER)
+    .lineWidth(1)
+    .strokeColor("#cbd5e1")
+    .stroke();
+  doc
+    .roundedRect(29, 29, W1 - 58, H1 - 58, R_INNER)
+    .lineWidth(0.75)
+    .strokeColor("#dbe3f0")
+    .stroke();
 
   doc.font("Helvetica").fontSize(11).fillColor("#475569").text("ACADEMY", { align: "center" });
   doc
@@ -441,12 +454,22 @@ export async function GET(_req: Request, ctx: { params: Promise<{ publicId: stri
   const H = doc.page.height;
   const maxY = H - 48; // pdfkit auto-inserts a page whenever a line crosses this bound.
 
-  doc.rect(24, 24, W - 48, H - 48).stroke();
+  // Rounded outer frame (radius matching page 1) so both pages read as one document.
+  doc
+    .roundedRect(24, 24, W - 48, H - 48, 16)
+    .lineWidth(1)
+    .strokeColor("#cbd5e1")
+    .stroke();
+  doc
+    .roundedRect(29, 29, W - 58, H - 58, 8)
+    .lineWidth(0.75)
+    .strokeColor("#dbe3f0")
+    .stroke();
 
   // Small QR in the top-right corner — identical to page 1's buffer, kept clear of the
-  // centred title so no overlap occurs; still comfortably scannable.
-  const qrSize = 67.5; // 75% dari ukuran sebelumnya (90)
-  doc.image(qr, W - 24 - qrSize - 16, 40, { width: qrSize });
+  // centred title so no overlap occurs.
+  const qrSize = 33.75; // 50% dari ukuran sebelumnya (67.5)
+  doc.image(qrSmall, W - 24 - qrSize - 16, 40, { width: qrSize });
 
   doc
     .font("Helvetica-Bold")
