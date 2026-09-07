@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { bulkImportContent } from "@/features/actions";
 import { MAX_CONTENT_ROWS, xlsxFileError } from "@/lib/bulk-import";
+import { BulkCard } from "@/components/bulk-card";
 
 interface ImportResult {
   ok: boolean;
@@ -35,18 +36,33 @@ async function run(_prev: ImportResult | null, formData: FormData): Promise<Impo
 export function ContentBulkImport({ courseId, levelId }: { courseId: string; levelId: string }) {
   const [result, formAction, pending] = useActionState(run, null);
   const [clientErr, setClientErr] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Berkas dibuang setelah sukses: reset form (server tidak pernah menyimpan file).
+  useEffect(() => {
+    if (result?.ok) formRef.current?.reset();
+  }, [result]);
 
   return (
-    <div className="rounded-xl border p-4">
-      <h2 className="font-semibold">Bulk impor materi (XLSX)</h2>
-      <p className="mt-1 text-sm text-slate-600">
-        Kolom: <code>Module</code>, <code>Lesson</code>, <code>Objective</code> (opsional),{" "}
-        <code>Activity Type</code>, <code>Activity Title</code>, <code>Content JSON</code> (opsional). Materi
-        masuk ke level ini sebagai draf. Maksimal <strong>{MAX_CONTENT_ROWS} baris</strong> per file.
-      </p>
+    <BulkCard
+      title="Bulk impor materi (XLSX)"
+      desc={
+        <>
+          Kolom: <code>Module</code>, <code>Lesson</code>, <code>Objective</code> (opsional),{" "}
+          <code>Activity Type</code>, <code>Activity Title</code>, <code>Content JSON</code> (opsional).
+          Materi masuk ke level ini sebagai draf.
+        </>
+      }
+      templateKind="content"
+      templateLabel="Template materi"
+      exportHref={`/api/export/courses/${courseId}/xlsx`}
+      exportLabel="Unduh materi kursus (XLSX)"
+      capacityText={`Maksimal ${MAX_CONTENT_ROWS} baris per file`}
+    >
       <form
+        ref={formRef}
         action={formAction}
-        className="mt-3 flex flex-wrap items-end gap-3"
+        className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"
         onSubmit={() => setClientErr(null)}
       >
         <input type="hidden" name="courseId" value={courseId} />
@@ -70,17 +86,19 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
         </div>
         <button
           disabled={pending}
-          className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+          className="rounded-xl bg-blue-700 px-5 py-2 font-semibold text-white disabled:opacity-60"
         >
           {pending ? "Memproses…" : "Impor materi"}
         </button>
       </form>
-      {clientErr && <p className="mt-2 text-sm font-medium text-red-700">{clientErr}</p>}
+      {clientErr && <p className="text-sm font-medium text-red-700">{clientErr}</p>}
       {result && (
         <div
           role="status"
-          className={`mt-3 rounded-lg p-3 text-sm ${
-            result.ok ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-900"
+          className={`rounded-xl p-3 text-sm ${
+            result.ok
+              ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
+              : "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200"
           }`}
         >
           {result.ok ? (
@@ -101,6 +119,6 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
           )}
         </div>
       )}
-    </div>
+    </BulkCard>
   );
 }

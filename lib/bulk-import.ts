@@ -277,7 +277,7 @@ export function parseStudentAssignmentRows(sheetRows: unknown[]): StudentAssignm
     const rec = raw as Record<string, unknown>;
     const email = normalizeEmail(pick(rec, ["email", "e-mail", "email siswa", "emailmurid"]));
     const className = pick(rec, ["kelas", "class", "nama kelas", "namakelas"]);
-    const subjectName = pick(rec, ["mapel", "subject", "mata pelajaran", "course", "namamapel"]);
+    const subjectName = pick(rec, ["subjek", "mapel", "subject", "mata pelajaran", "course", "namamapel"]);
     if (!email) {
       errors.push(`Baris ${line}: email kosong.`);
       continue;

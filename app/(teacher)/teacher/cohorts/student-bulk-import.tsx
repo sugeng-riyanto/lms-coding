@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { bulkImportStudents } from "@/features/actions";
 import { MAX_STUDENT_ROWS, xlsxFileError } from "@/lib/bulk-import";
+import { BulkCard } from "@/components/bulk-card";
 
 interface ImportResult {
   ok: boolean;
@@ -35,21 +36,37 @@ async function run(_prev: ImportResult | null, formData: FormData): Promise<Impo
 export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: string }[] }) {
   const [result, formAction, pending] = useActionState(run, null);
   const [clientErr, setClientErr] = useState<string | null>(null);
+  const [cohortSel, setCohortSel] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // Berkas dibuang setelah sukses: reset form (server tidak pernah menyimpan
+  // file — parse di memori lalu Buffer dibebaskan).
+  useEffect(() => {
+    if (result?.ok) formRef.current?.reset();
+  }, [result]);
 
   return (
-    <div className="rounded-xl border p-4">
-      <h2 className="font-semibold">Bulk daftarkan murid (XLSX)</h2>
-      <p className="mt-1 text-sm text-slate-600">
-        Kolom: <code>Email</code> (wajib) dan <code>Nama</code> (opsional). Murid dicocokkan berdasarkan email
-        akun yang sudah ada; profil &amp; membership dibuat otomatis oleh server. Maksimal{" "}
-        <strong>{MAX_STUDENT_ROWS} murid</strong> per file.
-      </p>
+    <BulkCard
+      title="Bulk daftarkan murid (XLSX)"
+      desc={
+        <>
+          Kolom: <code>Email</code> (wajib) dan <code>Nama</code> (opsional). Murid dicocokkan berdasarkan
+          email akun yang sudah ada; profil &amp; membership dibuat otomatis oleh server.
+        </>
+      }
+      templateKind="students"
+      templateLabel="Template murid"
+      exportHref={cohortSel ? `/api/export/cohorts/${cohortSel}/xlsx` : undefined}
+      exportLabel="Unduh roster cohort (XLSX)"
+      capacityText={`Maksimal ${MAX_STUDENT_ROWS} murid per file`}
+    >
       <form
+        ref={formRef}
         action={formAction}
-        className="mt-3 flex flex-wrap items-end gap-3"
+        className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end"
         onSubmit={() => setClientErr(null)}
       >
-        <div className="min-w-48">
+        <div>
           <label htmlFor="bulk-cohort" className="text-sm font-semibold">
             Cohort tujuan
           </label>
@@ -57,7 +74,9 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
             id="bulk-cohort"
             name="cohortId"
             required
-            className="mt-1 w-full rounded-lg border px-3 py-2"
+            value={cohortSel}
+            onChange={(e) => setCohortSel(e.target.value)}
+            className="mt-1 w-full rounded-lg border px-3 py-2 dark:bg-slate-900"
           >
             <option value="">— pilih cohort —</option>
             {cohorts.map((c) => (
@@ -86,17 +105,19 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
         </div>
         <button
           disabled={pending}
-          className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
+          className="rounded-xl bg-blue-700 px-5 py-2 font-semibold text-white disabled:opacity-60"
         >
           {pending ? "Memproses…" : "Impor murid"}
         </button>
       </form>
-      {clientErr && <p className="mt-2 text-sm font-medium text-red-700">{clientErr}</p>}
+      {clientErr && <p className="text-sm font-medium text-red-700">{clientErr}</p>}
       {result && (
         <div
           role="status"
-          className={`mt-3 rounded-lg p-3 text-sm ${
-            result.ok ? "bg-emerald-100 text-emerald-900" : "bg-red-100 text-red-900"
+          className={`rounded-xl p-3 text-sm ${
+            result.ok
+              ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
+              : "bg-red-100 text-red-900 dark:bg-red-950 dark:text-red-200"
           }`}
         >
           {result.ok ? (
@@ -123,6 +144,6 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
           )}
         </div>
       )}
-    </div>
+    </BulkCard>
   );
 }

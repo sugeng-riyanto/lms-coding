@@ -26,6 +26,7 @@ import {
   updateRubricSchema,
   createActivitySchema,
   createAssessmentSchema,
+  bulkImportQuestionPackSchema,
   createCohortSchema,
   createCourseSchema,
   createLessonSchema,
@@ -61,6 +62,9 @@ import {
   assignTeacherToClassSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
+import { sanitizeContentBlocks } from "@/lib/content-blocks";
+import { parseMarkdownToBlocks } from "@/lib/markdown-blocks";
+import { mapChoiceKey, parseQuestionPack } from "@/lib/question-pack";
 import { pickPool, randomSeedHex } from "@/lib/shuffle";
 import { checkEligibility } from "@/lib/eligibility";
 import { normalizeOrder } from "@/lib/reorder";
@@ -463,6 +467,30 @@ export async function submitAttempt(input: unknown) {
     p_idempotency_key: parsed.data.idempotencyKey,
   });
   if (error) return { ok: false as const, error: "SUBMIT_FAILED" };
+
+  // Kuis yang disubmit menandai activity assessmen-nya selesai → hook
+  // recordLearningEvent memicu recomputeProgress (snapshots terisi).
+  // client_event_id deterministik per attempt = idempoten (resubmit no-op di
+  // atas tidak sampai sini; retry submit sukses mengabaikan duplikat event).
+  // Best-effort: nilai sudah tersimpan + attempt submitted; progres menyusul.
+  const { data: asmtRow } = await supabase
+    .from("assessments")
+    .select("activity_id")
+    .eq("id", att.assessment_id)
+    .single();
+  const activityId = (asmtRow as { activity_id: string } | null)?.activity_id;
+  if (activityId) {
+    await recordLearningEvent({
+      enrollmentId: att.enrollment_id,
+      eventType: "activity_completed",
+      entityType: "activity",
+      entityId: activityId,
+      clientEventId: `attempt-submitted:${parsed.data.attemptId}`,
+      metadata: {},
+    });
+  } else {
+    await recomputeProgress({ enrollmentId: att.enrollment_id });
+  }
   return { ok: true as const };
 }
 
@@ -517,6 +545,14 @@ export async function recordLearningEvent(input: unknown) {
       p_enrollment_id: parsed.data.enrollmentId,
       p_active_ms: heartbeatActiveMs,
     });
+  }
+
+  // Progres turunan (idempoten, ADR-011): activity yang selesai memicu
+  // recomputeProgress agar snapshots/level-map/teacher-matrix/wali terisi.
+  // Best-effort seperti agregasi heartbeat: kegagalan recompute tidak boleh
+  // menggagalkan event (event tetap jadi ledger yang bisa dijumlah ulang).
+  if (parsed.data.eventType === "activity_completed") {
+    await recomputeProgress({ enrollmentId: parsed.data.enrollmentId });
   }
   return { ok: true as const };
 }
@@ -1545,10 +1581,29 @@ export async function createActivity(input: unknown) {
   if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
   const supabase = await createClient();
   if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
-  // Sanitasi konten: hanya block ter-allowlist (CONTENT_AUTHORING.md); tolak HTML arbitrer.
+  // Sanitasi konten: hanya block ter-allowlist (lib/content-blocks.ts, CONTENT_AUTHORING.md);
+  // tolak HTML arbitrer.
   const content = parsed.data.content;
   if (typeof content["html"] === "string" && content["html"].length > 0) {
     return { ok: false as const, error: "HTML_NOT_ALLOWED" };
+  }
+  if (
+    parsed.data.type !== "article" &&
+    (content["blocks"] !== undefined || content["markdown"] !== undefined)
+  ) {
+    return { ok: false as const, error: "BLOCK_INVALID" };
+  }
+  // Markdown langsung → blocks canonical (parser pure lib/markdown-blocks).
+  if (typeof content["markdown"] === "string" && content["markdown"].trim().length > 0) {
+    const md = parseMarkdownToBlocks(content["markdown"]);
+    if (!md.ok) return { ok: false as const, error: "MARKDOWN_INVALID" };
+    content["blocks"] = md.blocks;
+    delete content["markdown"];
+  }
+  if (content["blocks"] !== undefined) {
+    const sanitized = sanitizeContentBlocks(content["blocks"]);
+    if (!sanitized.ok) return { ok: false as const, error: "BLOCK_INVALID" };
+    content["blocks"] = sanitized.blocks;
   }
   const position = await nextPosition(supabase, "activities", "lesson_id", parsed.data.lessonId);
   const { data, error } = await supabase
@@ -1724,6 +1779,87 @@ export async function createQuestion(input: unknown) {
     .single();
   if (error) return { ok: false as const, error: "CREATE_FAILED" };
   return { ok: true as const, questionId: (data as { id: string }).id };
+}
+
+const MAX_PACK_QUESTIONS = 500;
+
+/**
+ * Import bank soal via question pack (lib/question-pack.ts): satu baris per soal,
+ * campur MCQ/true-false/esai. Setiap baris sah langsung dibuat (questions +
+ * question_versions versi 1 + kunci + catatan guru). Kunci divalidasi terhadap
+ * opsi nyata baris — baris rusak dilaporkan tanpa menggagalkan baris lain.
+ */
+export async function bulkImportQuestionPack(input: unknown) {
+  const parsed = bulkImportQuestionPackSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  const org = mem as { organization_id: string } | null;
+  if (!org) return { ok: false as const, error: "FORBIDDEN" };
+
+  const { rows, errors } = parseQuestionPack(parsed.data.pack);
+  if (rows.length === 0) return { ok: false as const, error: "NO_VALID_ROWS", errors };
+  if (rows.length > MAX_PACK_QUESTIONS)
+    return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_PACK_QUESTIONS, errors };
+
+  let created = 0;
+  for (const row of rows) {
+    const promptOptions = row.type === "single_choice" || row.type === "multiple_choice" ? row.options : [];
+    const { data: q } = await supabase
+      .from("questions")
+      .insert({
+        organization_id: org.organization_id,
+        type: row.type,
+        prompt_json: { text: row.prompt, ...(promptOptions.length > 0 ? { options: promptOptions } : {}) },
+        difficulty: "medium",
+        explanation_json: row.note ? { note: row.note } : {},
+      })
+      .select("id")
+      .single();
+    const qid = (q as { id: string } | null)?.id;
+    if (!qid) {
+      errors.push(`Baris ${row.line}: gagal membuat soal.`);
+      continue;
+    }
+    const mapped = mapChoiceKey(row.key, row.type, promptOptions);
+    const rule: Record<string, unknown> =
+      row.type === "single_choice"
+        ? { type: row.type, points: row.points, correctOptionId: mapped.id }
+        : row.type === "multiple_choice"
+          ? {
+              type: row.type,
+              points: row.points,
+              correctOptionIds: mapped.ids,
+              partialCredit: "exact",
+            }
+          : row.type === "true_false"
+            ? {
+                type: row.type,
+                points: row.points,
+                correctOptionId:
+                  row.key.toLowerCase() === "salah" || row.key.toLowerCase() === "false" ? "false" : "true",
+              }
+            : { type: row.type, points: row.points };
+    const { error: vErr } = await supabase.from("question_versions").insert({
+      question_id: qid,
+      version: 1,
+      grading_json: rule,
+      points: row.points,
+    });
+    if (vErr) errors.push(`Baris ${row.line}: gagal menyimpan kunci (${vErr.message}).`);
+    else created++;
+  }
+  return { ok: true as const, created, errors };
 }
 
 export async function publishQuestionVersion(input: unknown) {
@@ -2372,6 +2508,36 @@ async function xlsxRows(file: File): Promise<unknown[]> {
 
 const EMAIL_CHUNK = 100;
 
+/** Direktori user (id+email) via Auth Admin API, paginasi dengan rem keamanan.
+ * PostgREST TIDAK mengekspos skema auth (query tabel users lewat REST selalu
+ * 406 live) sehingga resolusi email HARUS lewat Admin API — defect lama: semua
+ * impor bulk berakhir notFound diam-diam. Server-only (service key). */
+async function fetchAuthDirectory(): Promise<{ id: string; email: string }[]> {
+  const svc = createServiceClient();
+  const out: { id: string; email: string }[] = [];
+  const PER_PAGE = 200;
+  for (let page = 1; page <= 25; page++) {
+    const { data, error } = await svc.auth.admin.listUsers({ page, perPage: PER_PAGE });
+    const users = error ? [] : (data?.users ?? []);
+    for (const u of users) {
+      if (u.id && u.email) out.push({ id: u.id, email: u.email });
+    }
+    if (users.length < PER_PAGE) break;
+  }
+  return out;
+}
+
+/** email (lowercase) → user id untuk daftar email impor. */
+async function resolveEmailsToIds(emails: string[]): Promise<Map<string, string>> {
+  const wanted = new Set(emails.map((e) => e.toLowerCase()));
+  const out = new Map<string, string>();
+  for (const u of await fetchAuthDirectory()) {
+    const email = u.email.toLowerCase();
+    if (wanted.has(email) && !out.has(email)) out.set(email, u.id);
+  }
+  return out;
+}
+
 /** Bulk daftarkan murid ke cohort milik guru (identitas dicocokkan via email). */
 export async function bulkImportStudents(formData: FormData) {
   const file = formData.get("file");
@@ -2402,14 +2568,9 @@ export async function bulkImportStudents(formData: FormData) {
   if (rowsOverCap(rows.length, MAX_STUDENT_ROWS))
     return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_STUDENT_ROWS, errors };
 
-  // Resolusi email → user id (service client; hanya server).
+  // Resolusi email → user id via Auth Admin API (hanya server).
   const svc = createServiceClient();
-  const emailToId = new Map<string, string>();
-  for (let i = 0; i < rows.length; i += EMAIL_CHUNK) {
-    const chunk = rows.slice(i, i + EMAIL_CHUNK).map((r) => r.email);
-    const { data } = await svc.schema("auth").from("users").select("id,email").in("email", chunk);
-    for (const u of (data as { id: string; email: string }[] | null) ?? []) emailToId.set(u.email, u.id);
-  }
+  const emailToId = await resolveEmailsToIds(rows.map((r) => r.email));
 
   let added = 0;
   let existing = 0;
@@ -2533,6 +2694,29 @@ export async function bulkImportContent(formData: FormData) {
   if (rowsOverCap(rows.length, MAX_CONTENT_ROWS))
     return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_CONTENT_ROWS, errors };
 
+  // Kolom Content JSON untuk article menerima {"markdown":"…"} — konversi ke
+  // blocks canonical; kalau markdown rusak, aktivitas diisi kosong + error.
+  const normalizeContentJson = (act: {
+    activityType?: string;
+    activityTitle?: string;
+    contentJson?: unknown;
+  }) => {
+    const base = (act.contentJson ?? {}) as Record<string, unknown>;
+    if (
+      act.activityType === "article" &&
+      typeof base["markdown"] === "string" &&
+      base["markdown"].trim().length > 0
+    ) {
+      const md = parseMarkdownToBlocks(base["markdown"]);
+      if (!md.ok) {
+        errors.push(`Aktivitas "${act.activityTitle ?? "?"}": markdown tidak valid.`);
+        return {} as Record<string, unknown>;
+      }
+      return { blocks: md.blocks };
+    }
+    return base;
+  };
+
   let modules = 0;
   let lessons = 0;
   let activities = 0;
@@ -2598,6 +2782,7 @@ export async function bulkImportContent(formData: FormData) {
       const ACT_CHUNK = 50;
       for (let i = 0; i < activityRows.length; i += ACT_CHUNK) {
         const chunk = activityRows.slice(i, i + ACT_CHUNK);
+        const chunkRows = chunk.map((act) => normalizeContentJson(act));
         const { error: aErr } = await supabase.from("activities").insert(
           chunk.map((act, j) => ({
             lesson_id: lessonId,
@@ -2605,7 +2790,7 @@ export async function bulkImportContent(formData: FormData) {
             type: act.activityType as BulkActivityType,
             title: act.activityTitle,
             required: true,
-            content_json: (act.contentJson ?? {}) as Record<string, unknown>,
+            content_json: chunkRows[j] ?? {},
           })),
         );
         if (!aErr) {
@@ -2620,7 +2805,7 @@ export async function bulkImportContent(formData: FormData) {
             type: act.activityType as BulkActivityType,
             title: act.activityTitle,
             required: true,
-            content_json: (act.contentJson ?? {}) as Record<string, unknown>,
+            content_json: chunkRows[j] ?? {},
           });
           if (oneErr) errors.push(`Aktivitas "${act.activityTitle}": gagal dibuat.`);
           else activities++;
@@ -2662,12 +2847,7 @@ export async function bulkImportTeachers(formData: FormData) {
     return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_TEACHER_ROWS, errors };
 
   const svc = createServiceClient();
-  const emailToId = new Map<string, string>();
-  for (let i = 0; i < rows.length; i += EMAIL_CHUNK) {
-    const chunk = rows.slice(i, i + EMAIL_CHUNK).map((r) => r.email);
-    const { data } = await svc.schema("auth").from("users").select("id,email").in("email", chunk);
-    for (const u of (data as { id: string; email: string }[] | null) ?? []) emailToId.set(u.email, u.id);
-  }
+  const emailToId = await resolveEmailsToIds(rows.map((r) => r.email));
 
   const notFound: string[] = [];
   const pending = rows.filter((r) => {
@@ -2745,12 +2925,7 @@ export async function bulkImportStudentAssignments(formData: FormData) {
     return { ok: false as const, error: "ROWS_OVER_CAP", cap: MAX_ASSIGNMENT_ROWS, errors };
 
   const svc = createServiceClient();
-  const emailToId = new Map<string, string>();
-  for (let i = 0; i < rows.length; i += EMAIL_CHUNK) {
-    const chunk = rows.slice(i, i + EMAIL_CHUNK).map((r) => r.email);
-    const { data } = await svc.schema("auth").from("users").select("id,email").in("email", chunk);
-    for (const u of (data as { id: string; email: string }[] | null) ?? []) emailToId.set(u.email, u.id);
-  }
+  const emailToId = await resolveEmailsToIds(rows.map((r) => r.email));
 
   // Map nama → id utk kelas (cohort) & subjek (course) di org ini.
   const { data: cohortRows } = await svc.from("cohorts").select("id,name").eq("organization_id", ctx.orgId);
