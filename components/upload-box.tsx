@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { mkT, type Lang } from "@/lib/i18n";
+import { UPLOAD } from "@/lib/ui-text/upload";
 
 /**
  * Upload submission ke bucket private `submissions` (folder /<uid>/...).
@@ -10,19 +12,20 @@ import { createClient } from "@/lib/supabase/client";
 const ALLOWED = ["application/pdf", "image/png", "image/jpeg"];
 const MAX_BYTES = 10 * 1024 * 1024;
 
-export function UploadBox({ onUploaded }: { onUploaded: (path: string) => void }) {
+export function UploadBox({ onUploaded, lang }: { onUploaded: (path: string) => void; lang: Lang }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const t = mkT(UPLOAD, lang);
 
   async function onFile(file: File | undefined) {
     if (!file) return;
     setError("");
     if (!ALLOWED.includes(file.type)) {
-      setError("Tipe file ditolak. Hanya PDF/PNG/JPEG.");
+      setError(UPLOAD.typeRejected[lang]!);
       return;
     }
     if (file.size > MAX_BYTES) {
-      setError("File maksimal 10MB.");
+      setError(UPLOAD.tooLarge[lang]!);
       return;
     }
     setBusy(true);
@@ -30,7 +33,7 @@ export function UploadBox({ onUploaded }: { onUploaded: (path: string) => void }
       const supabase = createClient();
       const { data: user } = await supabase.auth.getUser();
       const uid = user.user?.id;
-      if (!uid) throw new Error("belum masuk");
+      if (!uid) throw new Error(UPLOAD.notSignedIn[lang]!);
       const safe = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const path = `${uid}/${Date.now()}-${safe}`;
       const { error: upErr } = await supabase.storage.from("submissions").upload(path, file, {
@@ -40,7 +43,7 @@ export function UploadBox({ onUploaded }: { onUploaded: (path: string) => void }
       if (upErr) throw upErr;
       onUploaded(path);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload gagal.");
+      setError(e instanceof Error ? e.message : UPLOAD.uploadFailed[lang]!);
     }
     setBusy(false);
   }
@@ -48,7 +51,7 @@ export function UploadBox({ onUploaded }: { onUploaded: (path: string) => void }
   return (
     <div className="mt-2">
       <label htmlFor="submission-file" className="text-sm font-semibold">
-        Upload file (PDF/PNG/JPEG ≤10MB)
+        {t("label")}
       </label>
       <input
         id="submission-file"
@@ -60,7 +63,7 @@ export function UploadBox({ onUploaded }: { onUploaded: (path: string) => void }
       />
       {busy && (
         <p role="status" className="text-sm text-slate-500">
-          Mengunggah…
+          {t("uploading")}
         </p>
       )}
       {error && (

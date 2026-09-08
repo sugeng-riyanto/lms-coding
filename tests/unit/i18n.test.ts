@@ -7,6 +7,13 @@ import { CERT } from "@/lib/ui-text/cert";
 import { ANALYTICS } from "@/lib/ui-text/analytics";
 import { LEARN } from "@/lib/ui-text/learn";
 import { CHART_TEXT, STATE_TEXT } from "@/lib/ui-text/chart-kit";
+import { STUDENT_DETAIL } from "@/lib/ui-text/student-detail";
+import { QUIZ } from "@/lib/ui-text/quiz";
+import { REVIEW } from "@/lib/ui-text/review";
+import { ACTIVITY } from "@/lib/ui-text/activity";
+import { GUARDIAN } from "@/lib/ui-text/guardian";
+import { PROFILE } from "@/lib/ui-text/profile";
+import { UPLOAD } from "@/lib/ui-text/upload";
 
 /** Flatten a nested dictionary ({ id, en } pairs) into the set of pairs. */
 function pairs(dict: Record<string, unknown>): Array<{ id: string; en: string }> {
@@ -68,6 +75,13 @@ describe("page dictionaries (lib/ui-text + kit) parity — 100% UI strings dua b
     ["LEARN", LEARN],
     ["CHART_TEXT", CHART_TEXT],
     ["STATE_TEXT", STATE_TEXT],
+    ["STUDENT_DETAIL", STUDENT_DETAIL],
+    ["QUIZ", QUIZ],
+    ["REVIEW", REVIEW],
+    ["ACTIVITY", ACTIVITY],
+    ["GUARDIAN", GUARDIAN],
+    ["PROFILE", PROFILE],
+    ["UPLOAD", UPLOAD],
   ] as const;
 
   for (const [name, dict] of pageDicts) {
@@ -98,6 +112,7 @@ describe("page dictionaries (lib/ui-text + kit) parity — 100% UI strings dua b
         "✓ anchor final",
         "anchor pending",
         "Admin: mapping",
+        "Spaced review",
       ]);
       for (const p of pairs(dict as unknown as Record<string, unknown>)) {
         if (p.id.includes("{")) continue; // placeholder fragments stay language-neutral

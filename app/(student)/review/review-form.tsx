@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { submitReview } from "@/features/actions";
+import { fmt, mkT, localeFor, type Lang } from "@/lib/i18n";
+import { REVIEW } from "@/lib/ui-text/review";
 
 export interface DueItem {
   id: string;
@@ -11,29 +13,37 @@ export interface DueItem {
   intervalIdx: number;
 }
 
-const CONFIDENCE_LABELS = ["Tidak paham", "Kurang paham", "Cukup", "Paham", "Sangat paham"] as const;
-
-function dueLabel(dueAt: string, now: Date): string {
+function dueLabel(dueAt: string, now: Date, t: ReturnType<typeof mkT<typeof REVIEW>>): string {
   const ms = Date.parse(dueAt) - now.getTime();
   const days = Math.ceil(ms / 86_400_000);
-  if (days <= -1) return `Terlambat ${-days} hari`;
-  if (days === 0) return "Jatuh tempo hari ini";
-  return `Jatuh tempo ${days} hari lagi`;
+  if (days <= -1) return fmt(t("overdueDays"), { n: -days });
+  if (days === 0) return t("dueToday");
+  return fmt(t("dueInDays"), { n: days });
 }
 
 export function ReviewForm({
   enrollmentId,
   courseTitle,
   items,
+  lang,
 }: {
   enrollmentId: string;
   courseTitle: string;
   items: DueItem[];
+  lang: Lang;
 }) {
   const router = useRouter();
+  const t = mkT(REVIEW, lang);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const now = new Date();
+  const confidenceLabels = [
+    t("confidenceNotUnderstood"),
+    t("confidenceSomewhat"),
+    t("confidenceOkay"),
+    t("confidenceUnderstood"),
+    t("confidenceVery"),
+  ];
 
   async function answer(itemId: string, confidence: number) {
     setBusyId(itemId);
@@ -42,18 +52,22 @@ export function ReviewForm({
     setBusyId(null);
     if (res.ok) {
       setNotice(
-        `Review "${items.find((i) => i.id === itemId)?.title}" selesai. Berikutnya ${new Date(
-          res.nextDueAt,
-        ).toLocaleDateString("id-ID", { day: "numeric", month: "long" })}.`,
+        fmt(t("doneNext"), {
+          title: items.find((i) => i.id === itemId)?.title ?? "",
+          date: new Date(res.nextDueAt).toLocaleDateString(localeFor(lang), {
+            day: "numeric",
+            month: "long",
+          }),
+        }),
       );
       router.refresh();
     } else {
       setNotice(
         res.error === "NOT_DUE"
-          ? "Item ini belum jatuh tempo."
+          ? t("notDue")
           : res.error === "NOT_SCHEDULED"
-            ? "Item sudah dikerjakan atau tidak ditemukan."
-            : "Gagal menyimpan review. Coba lagi.",
+            ? t("notScheduled")
+            : t("saveFailed"),
       );
     }
   }
@@ -61,21 +75,22 @@ export function ReviewForm({
   return (
     <div className="mt-4 space-y-4">
       <p className="text-sm text-slate-600">
-        {courseTitle} — {items.length} item jatuh tempo. Nilai pemahamanmu; jadwal berikutnya menyesuaikan (≤2
-        ulangi, 3 sama, ≥4 maju).
+        {fmt(t("queueSummary"), { course: courseTitle, n: items.length })}
       </p>
       {items.map((item) => (
-        <section key={item.id} aria-label={`Review ${item.title}`} className="rounded-xl border p-4">
+        <section
+          key={item.id}
+          aria-label={fmt(t("itemAria"), { title: item.title })}
+          className="rounded-xl border p-4"
+        >
           <div className="flex items-baseline justify-between gap-2">
             <h2 className="font-semibold">{item.title}</h2>
-            <p className="text-sm text-slate-600">{dueLabel(item.dueAt, now)}</p>
+            <p className="text-sm text-slate-600">{dueLabel(item.dueAt, now, t)}</p>
           </div>
           <fieldset disabled={busyId !== null} className="mt-3">
-            <legend className="text-sm font-medium text-slate-700">
-              Seberapa paham kamu dengan materi ini?
-            </legend>
+            <legend className="text-sm font-medium text-slate-700">{t("howWell")}</legend>
             <div className="mt-2 flex flex-wrap gap-2">
-              {CONFIDENCE_LABELS.map((label, idx) => {
+              {confidenceLabels.map((label, idx) => {
                 const value = idx + 1;
                 return (
                   <button

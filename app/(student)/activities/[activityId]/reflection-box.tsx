@@ -4,16 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { recordLearningEvent } from "@/features/actions";
 import { enqueueEvent, makeClientEventId, type QueuedEvent } from "@/lib/sync-queue";
 import { MAX_DRAFT_CHARS } from "@/lib/active-time";
+import { mkT, type Lang } from "@/lib/i18n";
+import { ACTIVITY } from "@/lib/ui-text/activity";
 
 type DraftStatus = "idle" | "saving" | "saved" | "offline" | "error";
-
-const STATUS_TEXT: Record<DraftStatus, string> = {
-  idle: "",
-  saving: "Menyimpan…",
-  saved: "Tersimpan",
-  offline: "Offline — draf tersimpan lokal, akan dikirim ulang",
-  error: "Gagal menyimpan — draf aman di perangkat ini",
-};
 
 function draftKey(activityId: string): string {
   return `lms-draft-${activityId}`;
@@ -33,7 +27,23 @@ function readDraft(activityId: string): string {
  * (hanya panjang teks — minimisasi data). Indikator: saving → saved, offline
  * bila tanpa jaringan, error bila server menolak (draf tetap aman lokal).
  */
-export function ReflectionBox({ activityId, enrollmentId }: { activityId: string; enrollmentId: string }) {
+export function ReflectionBox({
+  activityId,
+  enrollmentId,
+  lang,
+}: {
+  activityId: string;
+  enrollmentId: string;
+  lang: Lang;
+}) {
+  const t = mkT(ACTIVITY, lang);
+  const STATUS_TEXT: Record<DraftStatus, string> = {
+    idle: "",
+    saving: t("draftSaving"),
+    saved: t("draftSaved"),
+    offline: t("draftOffline"),
+    error: t("draftError"),
+  };
   // Refresh recovery: draf dipulihkan dari localStorage via lazy initializer
   // (tanpa setState-in-effect; activityId stabil per mount).
   const [value, setValue] = useState<string>(() => readDraft(activityId));
@@ -99,7 +109,7 @@ export function ReflectionBox({ activityId, enrollmentId }: { activityId: string
   return (
     <div className="mt-4">
       <label htmlFor={`reflection-${activityId}`} className="block text-sm font-medium text-slate-700">
-        Refleksi (disimpan otomatis)
+        {t("reflectionLabel")}
       </label>
       <textarea
         id={`reflection-${activityId}`}
@@ -107,7 +117,7 @@ export function ReflectionBox({ activityId, enrollmentId }: { activityId: string
         onChange={(e) => onChange(e.target.value)}
         maxLength={MAX_DRAFT_CHARS}
         rows={5}
-        placeholder="Apa yang kamu pelajari? Bagian mana yang masih sulit?"
+        placeholder={t("reflectionPlaceholder")}
         className="mt-2 w-full rounded-lg border border-slate-300 p-3 text-sm"
       />
       <p aria-live="polite" className="mt-1 text-xs text-slate-500">

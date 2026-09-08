@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getLang } from "@/lib/i18n";
 import { ActivityView } from "./activity-view";
 import { OfflineBanner } from "@/components/offline-banner";
 import { ActivityCacheSeed } from "@/components/activity-cache-seed";
@@ -47,6 +48,7 @@ export default async function ActivityPage({
 }) {
   const { activityId } = await params;
   const { enrollment } = await searchParams;
+  const lang = await getLang();
   let data: ActivityData | null;
   try {
     data = await getActivity(activityId);
@@ -54,7 +56,7 @@ export default async function ActivityPage({
     // Offline / DB tidak terjangkau → fallback dari cache IndexedDB (slice 1).
     return (
       <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-        <OfflineActivityFallback activityId={activityId} enrollmentId={enrollment ?? ""} />
+        <OfflineActivityFallback activityId={activityId} enrollmentId={enrollment ?? ""} lang={lang} />
       </main>
     );
   }
@@ -65,7 +67,7 @@ export default async function ActivityPage({
       <ActivityCacheSeed activity={data} />
       <p className="text-sm text-slate-500">{data.type}</p>
       <h1 className="text-3xl font-bold">{data.title}</h1>
-      <ActivityView activity={data} enrollmentId={enrollment ?? ""} />
+      <ActivityView activity={data} enrollmentId={enrollment ?? ""} lang={lang} />
     </main>
   );
 }

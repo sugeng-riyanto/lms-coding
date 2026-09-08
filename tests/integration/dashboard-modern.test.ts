@@ -65,7 +65,7 @@ describe("guru /teacher — kartu + aksi (bilingual dictionary)", () => {
 describe("wali /guardian — ring + wording kosong jujur", () => {
   it("ring progress + tanpa '0 dari 0' mentah", () => {
     expect(guardian).toMatch(/ProgressRing/);
-    expect(guardian).toMatch(/Belum ada progres tercatat/);
+    expect(guardian).toMatch(/noProgress/);
     expect(guardian).not.toMatch(/dari \{c\.levelTotal \|\| 0\}/);
   });
 });

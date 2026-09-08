@@ -12,10 +12,21 @@ import { LessonBlocks } from "@/components/lesson-blocks";
 import type { ContentBlock } from "@/lib/content-blocks";
 import { useEngagementHeartbeat, useOfflineFlush } from "./use-sync";
 import { ReflectionBox } from "./reflection-box";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { ACTIVITY } from "@/lib/ui-text/activity";
 import type { ActivityData } from "./page";
 
-export function ActivityView({ activity, enrollmentId }: { activity: ActivityData; enrollmentId: string }) {
+export function ActivityView({
+  activity,
+  enrollmentId,
+  lang,
+}: {
+  activity: ActivityData;
+  enrollmentId: string;
+  lang: Lang;
+}) {
   const router = useRouter();
+  const t = mkT(ACTIVITY, lang);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const c = activity.content;
@@ -33,7 +44,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
 
   async function markComplete() {
     if (!enrollmentId) {
-      setNotice("Enrollment tidak diketahui — buka activity dari katalog.");
+      setNotice(t("noEnrollment"));
       return;
     }
     setBusy(true);
@@ -46,12 +57,12 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
       metadata: {},
     });
     setBusy(false);
-    setNotice(res.ok ? "Ditandai selesai." : `Gagal: ${res.error}`);
+    setNotice(res.ok ? t("markedComplete") : fmt(t("failed"), { error: res.error }));
   }
 
   async function startQuiz() {
     if (!activity.assessmentId || !enrollmentId) {
-      setNotice("Quiz/enrollment belum siap.");
+      setNotice(t("quizNotReady"));
       return;
     }
     setBusy(true);
@@ -61,7 +72,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
       idempotencyKey: makeClientEventId(),
     });
     setBusy(false);
-    if (!res.ok) setNotice(`Gagal mulai: ${res.error}`);
+    if (!res.ok) setNotice(fmt(t("startFailed"), { error: res.error }));
     else router.push(`/quiz/${res.attemptId}`);
   }
 
@@ -72,7 +83,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
         disabled={busy}
         className="mt-4 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
       >
-        Tandai selesai
+        {t("markComplete")}
       </button>
       {notice && (
         <p role="status" className="mt-2 text-sm">
@@ -84,7 +95,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
 
   if (activity.type === "article") {
     const blocks = Array.isArray(c["blocks"]) ? (c["blocks"] as ContentBlock[]) : [];
-    const body = typeof c["body"] === "string" ? c["body"] : "Konten belum diisi guru.";
+    const body = typeof c["body"] === "string" ? c["body"] : t("contentNotFilled");
     return (
       <div className="mt-4">
         {blocks.length > 0 ? (
@@ -104,7 +115,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
       <div className="mt-4">
         {url && (
           <a href={url} target="_blank" rel="noreferrer" className="text-blue-700 underline">
-            Tonton video
+            {t("watchVideo")}
           </a>
         )}
         {transcript && (
@@ -123,10 +134,10 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
       <div className="mt-4">
         {url ? (
           <a href={url} target="_blank" rel="noreferrer" className="text-blue-700 underline">
-            Unduh materi
+            {t("downloadMaterial")}
           </a>
         ) : (
-          <p>Belum ada file.</p>
+          <p>{t("noFile")}</p>
         )}
         {completeBtn}
       </div>
@@ -142,11 +153,11 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
         {code ? (
           <CodeBlock code={code} language={language} />
         ) : (
-          <p className="text-sm text-slate-500">Kode belum diisi oleh pengajar.</p>
+          <p className="text-sm text-slate-500">{t("codeNotProvided")}</p>
         )}
         {transcript ? (
           <details className="mt-3 rounded-lg border border-slate-200 p-3 dark:border-slate-600">
-            <summary className="cursor-pointer font-semibold">Penjelasan (transkrip)</summary>
+            <summary className="cursor-pointer font-semibold">{t("transcript")}</summary>
             <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700 dark:text-slate-200">
               {transcript}
             </p>
@@ -202,13 +213,13 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
   if (activity.type === "quiz") {
     return (
       <div className="mt-4">
-        <p>Kuis interaktif dengan timer & batas attempt server-side.</p>
+        <p>{t("quizIntro")}</p>
         <button
           onClick={startQuiz}
           disabled={busy}
           className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
-          Mulai kuis
+          {t("startQuiz")}
         </button>
       </div>
     );
@@ -216,7 +227,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
   if (activity.type === "assignment_upload") {
     return (
       <div className="mt-4">
-        <UploadBox onUploaded={() => setNotice("File terunggah. Tandai selesai bila sudah cukup.")} />
+        <UploadBox lang={lang} onUploaded={() => setNotice(t("fileUploadedHint"))} />
         {completeBtn}
       </div>
     );
@@ -228,7 +239,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
     const expected = typeof c["expectedEvidence"] === "string" ? c["expectedEvidence"] : "";
     return (
       <div className="mt-4 rounded-xl border p-4">
-        <p className="text-sm font-semibold">Tantangan Roblox (dibuka di aplikasi Roblox)</p>
+        <p className="text-sm font-semibold">{t("robloxTitle")}</p>
         {instruction && <p className="mt-2 text-sm">{instruction}</p>}
         {placeId && (
           <a
@@ -237,13 +248,13 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
             rel="noreferrer"
             className="mt-3 inline-block rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white"
           >
-            Buka di Roblox
+            {t("openRoblox")}
           </a>
         )}
-        {expected && <p className="mt-3 text-sm text-slate-600">Bukti yang diharapkan: {expected}</p>}
-        <p className="mt-3 text-xs text-slate-500">
-          Skor game tidak otomatis jadi nilai. Completion diverifikasi guru atau via integrasi server Tahap B.
-        </p>
+        {expected && (
+          <p className="mt-3 text-sm text-slate-600">{fmt(t("expectedEvidence"), { evidence: expected })}</p>
+        )}
+        <p className="mt-3 text-xs text-slate-500">{t("robloxNote")}</p>
         <div>{completeBtn}</div>
       </div>
     );
@@ -251,7 +262,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
   if (activity.type === "reflection") {
     return (
       <div className="mt-4">
-        <ReflectionBox activityId={activity.id} enrollmentId={enrollmentId} />
+        <ReflectionBox activityId={activity.id} enrollmentId={enrollmentId} lang={lang} />
         <div className="mt-2">{completeBtn}</div>
       </div>
     );
@@ -259,7 +270,7 @@ export function ActivityView({ activity, enrollmentId }: { activity: ActivityDat
   // fallback
   return (
     <div className="mt-4">
-      <p className="text-sm text-slate-600">Konten belum tersedia.</p>
+      <p className="text-sm text-slate-600">{t("contentUnavailable")}</p>
       {completeBtn}
     </div>
   );

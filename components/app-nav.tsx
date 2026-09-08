@@ -104,7 +104,7 @@ export function MobileDrawer({ eyebrow, items, lang }: { eyebrow: string; items:
                 <NavLinks items={items} onNavigate={() => setOpen(false)} />
               </nav>
               <div className="border-t p-4">
-                <LogoutButton />
+                <LogoutButton lang={lang} />
               </div>
             </div>
           </div>,

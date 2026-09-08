@@ -9,6 +9,7 @@ test-results/
 .env
 .env.local
 .env.*.local
+.env.pilot
 *.pem
 *.key
 supabase/.branches/

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { getAttemptResult, saveResponse, submitAttempt } from "@/features/actions";
 import { UploadBox } from "@/components/upload-box";
 import { makeClientEventId } from "@/lib/sync-queue";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { QUIZ } from "@/lib/ui-text/quiz";
 import type { SanitizedQuestion } from "@/lib/attempt";
 
 interface Props {
@@ -12,12 +14,14 @@ interface Props {
   questions: (SanitizedQuestion & { savedAnswer: unknown })[];
   status: string;
   locked?: boolean;
+  lang: Lang;
 }
 
 type Result = Awaited<ReturnType<typeof getAttemptResult>>;
 
-export function QuizTaker({ attemptId, questions, status, locked }: Props) {
+export function QuizTaker({ attemptId, questions, status, locked, lang }: Props) {
   const router = useRouter();
+  const t = mkT(QUIZ, lang);
   const [answers, setAnswers] = useState<Record<string, unknown>>(
     Object.fromEntries(questions.map((q) => [q.questionVersionId, q.savedAnswer ?? null])),
   );
@@ -31,18 +35,20 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
     setSaving(qvId);
     void saveResponse({ attemptId, questionVersionId: qvId, answer: value }).then((res) => {
       setSaving(null);
-      if (!res.ok) setError(`Gagal menyimpan: ${res.error}`);
+      if (!res.ok) setError(fmt(t("saveFailed"), { error: res.error }));
     });
   }
 
   async function onSubmit() {
-    if (!window.confirm("Kirim jawaban? Attempt akan dikunci.")) return;
+    if (!window.confirm(t("confirmSubmit"))) return;
     setSubmitting(true);
     setError("");
     const res = await submitAttempt({ attemptId, idempotencyKey: makeClientEventId() });
     if (!res.ok) {
       setSubmitting(false);
-      setError(res.error === "TIME_EXPIRED" ? "Waktu habis — hubungi guru." : `Gagal submit: ${res.error}`);
+      setError(
+        res.error === "TIME_EXPIRED" ? t("timeExpired") : fmt(t("submitFailed"), { error: res.error }),
+      );
       return;
     }
     const r = await getAttemptResult(attemptId);
@@ -118,11 +124,12 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
             aria-label={q.promptText}
             value={typeof v === "string" ? v : ""}
             onChange={(e) => setAnswer(q.questionVersionId, e.target.value)}
-            placeholder={q.type === "essay_manual" ? "Tulis jawabanmu…" : "Deskripsikan file proyekmu…"}
+            placeholder={q.type === "essay_manual" ? t("essayPlaceholder") : t("filePlaceholder")}
             className="mt-2 w-full rounded-lg border px-3 py-2"
           />
           {q.type === "file_manual" && !disabled && (
             <UploadBox
+              lang={lang}
               onUploaded={(path) =>
                 setAnswer(q.questionVersionId, { filePath: path, note: typeof v === "string" ? v : "" })
               }
@@ -130,7 +137,7 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
           )}
           {typeof v === "object" && v !== null && "filePath" in v && (
             <p className="mt-1 text-sm text-green-700">
-              File terunggah: {String((v as { filePath: string }).filePath)}
+              {fmt(t("fileUploaded"), { path: String((v as { filePath: string }).filePath) })}
             </p>
           )}
         </div>
@@ -157,13 +164,20 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
       )}
       {saving && (
         <p role="status" className="text-sm text-slate-500">
-          Menyimpan…
+          {t("saving")}
         </p>
       )}
       {questions.map((q, i) => (
-        <section key={q.questionVersionId} aria-label={`Soal ${i + 1}`} className="rounded-xl border p-4">
+        <section
+          key={q.questionVersionId}
+          aria-label={fmt(t("questionLabel"), { n: i + 1 })}
+          className="rounded-xl border p-4"
+        >
           <h2 className="font-semibold">
-            Soal {i + 1} <span className="text-sm font-normal text-slate-500">({q.points} poin)</span>
+            {fmt(t("questionLabel"), { n: i + 1 })}{" "}
+            <span className="text-sm font-normal text-slate-500">
+              ({fmt(t("points"), { points: q.points })})
+            </span>
           </h2>
           <p className="mt-1">{q.promptText}</p>
           {renderInput(q)}
@@ -175,18 +189,18 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
           disabled={submitting}
           className="rounded-lg bg-blue-700 px-5 py-3 font-semibold text-white disabled:opacity-60"
         >
-          {submitting ? "Mengirim…" : `Kirim jawaban (status: ${status})`}
+          {submitting ? t("submitting") : fmt(t("submitWithStatus"), { status })}
         </button>
       )}
       {result?.ok && result.visible && (
-        <section aria-label="Hasil" className="rounded-xl border border-green-200 bg-green-50 p-5">
-          <h2 className="font-bold">Hasil: {result.finalScore ?? "—"}</h2>
+        <section aria-label={t("results")} className="rounded-xl border border-green-200 bg-green-50 p-5">
+          <h2 className="font-bold">{fmt(t("resultTitle"), { score: result.finalScore ?? "—" })}</h2>
           <ul className="mt-2 text-sm">
             {result.items.map((it) => (
               <li key={it.question_version_id}>
-                Otomatis: {it.auto_score ?? "—"}
+                {fmt(t("autoScore"), { score: it.auto_score ?? "—" })}
                 {it.manual_score !== null && it.manual_score !== undefined
-                  ? ` · Manual: ${it.manual_score}`
+                  ? fmt(t("manualScore"), { score: it.manual_score })
                   : ""}
               </li>
             ))}
@@ -195,7 +209,7 @@ export function QuizTaker({ attemptId, questions, status, locked }: Props) {
       )}
       {result?.ok && !result.visible && (
         <p role="status" className="rounded-xl border p-4">
-          Jawaban terkirim. Nilai menunggu release guru.
+          {t("pendingRelease")}
         </p>
       )}
     </div>

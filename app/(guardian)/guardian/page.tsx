@@ -2,6 +2,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { ProgressRing } from "@/components/dashboard";
 import { formatJakarta } from "@/lib/time";
+import { fmt, getLang, mkT } from "@/lib/i18n";
+import { GUARDIAN } from "@/lib/ui-text/guardian";
 
 export const dynamic = "force-dynamic";
 
@@ -135,6 +137,8 @@ function daysAgo(isoUtc: string | null): number | null {
 
 export default async function GuardianPage() {
   const supabase = await createClient();
+  const lang = await getLang();
+  const t = mkT(GUARDIAN, lang);
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
   let children: ChildSummary[] = [];
@@ -150,23 +154,19 @@ export default async function GuardianPage() {
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-blue-700">Portal Orang Tua / Wali</p>
-          <h1 className="mt-1 text-3xl font-bold">Ringkasan Perkembangan Anak</h1>
+          <p className="text-sm font-semibold text-blue-700">{t("eyebrow")}</p>
+          <h1 className="mt-1 text-3xl font-bold">{t("title")}</h1>
         </div>
       </div>
-      <p className="mt-3 text-sm text-slate-600">
-        Ringkasan hanya menampilkan anak yang tertaut melalui <em>guardian link</em> aktif dan data yang
-        diizinkan kebijakan akses (profil, pendaftaran, progres — bukan jawaban atau nilai terperinci).
-      </p>
+      <p className="mt-3 text-sm text-slate-600">{fmt(t("intro"), {})}</p>
 
       {children.length === 0 ? (
         <p className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900" role="status">
-          Belum ada anak tertaut. Minta pihak sekolah menautkan akun Anda sebagai wali (guardian link aktif) —
-          misalnya ke bagian{" "}
+          {t("noChildrenBefore")}{" "}
           <Link href="/profile" className="text-blue-700 underline dark:text-blue-300">
-            profil
+            {t("profileLink")}
           </Link>
-          .
+          {t("noChildrenAfter")}
         </p>
       ) : (
         <ul className="mt-6 space-y-5">
@@ -176,7 +176,7 @@ export default async function GuardianPage() {
             return (
               <li
                 key={c.studentId}
-                aria-label={`Ringkasan ${c.displayName}`}
+                aria-label={fmt(t("summaryAria"), { name: c.displayName })}
                 className="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900"
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-blue-700 to-blue-900 p-5 text-white dark:from-blue-900 dark:to-slate-900">
@@ -190,57 +190,62 @@ export default async function GuardianPage() {
                     <div>
                       <p className="text-lg font-extrabold">{c.displayName}</p>
                       <p className="text-xs text-blue-100">
-                        Tertaut sejak {c.linkedSinceIso ? formatJakarta(c.linkedSinceIso) : "—"}
+                        {c.linkedSinceIso
+                          ? fmt(t("linkedSince"), { date: formatJakarta(c.linkedSinceIso) })
+                          : "—"}
                       </p>
                     </div>
                   </div>
                   <span
-                    aria-label={`Status ${c.displayName}`}
+                    aria-label={fmt(t("statusAria"), { name: c.displayName })}
                     className="rounded-full bg-white/20 px-3 py-1 text-sm font-semibold"
                   >
-                    Tertaut aktif
+                    {t("linkedActive")}
                   </span>
                 </div>
 
                 <div className="grid gap-4 p-5 md:grid-cols-3">
                   <div className="flex items-center justify-center">
-                    <ProgressRing pct={c.progressPct} label={`Progress belajar ${c.displayName}`} />
+                    <ProgressRing
+                      pct={c.progressPct}
+                      label={fmt(t("progressAria"), { name: c.displayName })}
+                    />
                   </div>
                   <div className="grid grid-cols-2 gap-3 md:col-span-2">
                     <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
                       <p className="text-2xl font-extrabold">{c.activeEnrollments}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Enrollment aktif</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{t("activeEnrollments")}</p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
                       <p className="text-2xl font-extrabold">{hasProgress ? `${c.masteryPct}%` : "—"}</p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Mastery rata-rata</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{t("avgMastery")}</p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
                       <p className="text-2xl font-extrabold">
-                        {last === null ? "—" : last === 0 ? "Hari ini" : `${last} hari`}
+                        {last === null ? "—" : last === 0 ? t("today") : fmt(t("daysAgo"), { n: last })}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Terakhir aktif</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{t("lastActive")}</p>
                     </div>
                     <div className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
                       <p className="text-2xl font-extrabold">
                         {hasProgress ? `${c.levelCompleted}/${c.levelTotal}` : "—"}
                       </p>
-                      <p className="text-xs text-slate-500 dark:text-slate-400">Level tuntas</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{t("levelsCompleted")}</p>
                     </div>
                   </div>
                 </div>
 
                 <p className="border-t px-5 py-3 text-xs text-slate-500 dark:text-slate-400">
                   {hasProgress
-                    ? `Level tuntas ${c.levelCompleted} dari ${c.levelTotal} pada enrollment aktif.`
-                    : "Belum ada progres tercatat — data muncul setelah anak mulai belajar."}
+                    ? fmt(t("progressFootnote"), { done: c.levelCompleted, total: c.levelTotal })
+                    : t("noProgress")}
                 </p>
 
                 <div className="border-t px-5 py-4">
-                  <p className="text-sm font-bold">Sertifikat terbit otomatis</p>
+                  <p className="text-sm font-bold">{t("certAuto")}</p>
                   {c.certificates.length === 0 ? (
                     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400" role="status">
-                      Belum ada sertifikat — akan muncul otomatis saat quiz 100% dan ujian akhir ≥ 70%.
+                      {t("noCerts")}
                     </p>
                   ) : (
                     <ul className="mt-3 space-y-2">
@@ -256,19 +261,17 @@ export default async function GuardianPage() {
                                 href={`/api/certificates/${cert.publicId}/pdf`}
                                 className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-[var(--glow-btn)]"
                               >
-                                Unduh PDF resmi
+                                {t("downloadPdf")}
                               </a>
                               <Link
                                 href={`/verify/${cert.publicId}`}
                                 className="rounded-lg border px-3 py-1.5 text-xs font-semibold"
                               >
-                                Verifikasi
+                                {t("verify")}
                               </Link>
                             </div>
                           ) : (
-                            <p className="mt-1 text-xs text-red-700 dark:text-red-300">
-                              Sertifikat ini dicabut; unduhan valid tidak tersedia.
-                            </p>
+                            <p className="mt-1 text-xs text-red-700 dark:text-red-300">{t("revokedNote")}</p>
                           )}
                         </li>
                       ))}

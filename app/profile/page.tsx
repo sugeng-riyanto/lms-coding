@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getLang, mkT } from "@/lib/i18n";
+import { PROFILE } from "@/lib/ui-text/profile";
 import { LogoutButton } from "./logout-button";
 import { EditProfile } from "./edit-profile";
 
@@ -8,6 +10,8 @@ export const dynamic = "force-dynamic";
 /** Profil minimal: data sendiri + peran + tombol keluar. */
 export default async function ProfilePage() {
   const supabase = await createClient();
+  const lang = await getLang();
+  const t = mkT(PROFILE, lang);
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
   if (!userId) redirect("/login");
@@ -29,32 +33,32 @@ export default async function ProfilePage() {
 
   return (
     <main id="main" className="mx-auto max-w-xl px-4 py-16">
-      <h1 className="text-3xl font-bold">Profil</h1>
+      <h1 className="text-3xl font-bold">{t("title")}</h1>
       {p ? (
         <dl className="mt-6 space-y-2 rounded-xl border p-5">
           <div className="flex justify-between">
-            <dt className="text-slate-500">Nama tampilan</dt>
+            <dt className="text-slate-500">{t("displayName")}</dt>
             <dd className="font-semibold">{p.display_name}</dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-slate-500">Status</dt>
+            <dt className="text-slate-500">{t("status")}</dt>
             <dd className="font-semibold" role="status">
               {p.status}
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-slate-500">Peran (server)</dt>
+            <dt className="text-slate-500">{t("roles")}</dt>
             <dd className="font-semibold">{roles.length > 0 ? roles.join(", ") : "—"}</dd>
           </div>
         </dl>
       ) : (
         <p role="alert" className="mt-6 rounded-xl border p-5">
-          Profil belum tersedia. Hubungi admin sekolah.
+          {t("unavailable")}
         </p>
       )}
       <div className="mt-6 space-y-4">
-        {p && <EditProfile initialName={p.display_name} />}
-        <LogoutButton />
+        {p && <EditProfile initialName={p.display_name} lang={lang} />}
+        <LogoutButton lang={lang} />
       </div>
     </main>
   );

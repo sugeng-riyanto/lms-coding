@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { signOut } from "@/features/actions";
 import { COMMON, type Lang } from "@/lib/i18n";
 
-export function LogoutButton({ lang = "id" }: { lang?: Lang }) {
+export function LogoutButton({ lang }: { lang: Lang }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 

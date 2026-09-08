@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { orderedReviewQueue, startOfNextDayInTz } from "@/lib/progress-planning";
+import { getLang, mkT } from "@/lib/i18n";
+import { REVIEW } from "@/lib/ui-text/review";
 import { ReviewForm, type DueItem } from "./review-form";
 
 export const dynamic = "force-dynamic";
@@ -75,6 +77,8 @@ async function getDueItems(userId: string): Promise<{
 
 export default async function ReviewPage() {
   const supabase = await createClient();
+  const lang = await getLang();
+  const t = mkT(REVIEW, lang);
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
   let data: Awaited<ReturnType<typeof getDueItems>> = null;
@@ -88,19 +92,23 @@ export default async function ReviewPage() {
 
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-      <p className="text-sm font-semibold text-blue-700">Ulasan terjadwal</p>
-      <h1 className="mt-1 text-3xl font-bold">Spaced review</h1>
+      <p className="text-sm font-semibold text-blue-700">{t("eyebrow")}</p>
+      <h1 className="mt-1 text-3xl font-bold">{t("title")}</h1>
       {!data ? (
         <p className="mt-4 rounded-xl border p-5" role="status">
-          Belum ada enrollment aktif. Hubungi guru Anda untuk didaftarkan ke kelas.
+          {t("noEnrollment")}
         </p>
       ) : data.items.length === 0 ? (
         <p className="mt-4 rounded-xl border p-5" role="status">
-          Tidak ada review yang jatuh tempo. Kembali lagi sesuai jadwal — retrieval practice memperkuat
-          ingatan jangka panjang. 🧠
+          {t("noneDue")}
         </p>
       ) : (
-        <ReviewForm enrollmentId={data.enrollmentId} courseTitle={data.courseTitle} items={data.items} />
+        <ReviewForm
+          enrollmentId={data.enrollmentId}
+          courseTitle={data.courseTitle}
+          items={data.items}
+          lang={lang}
+        />
       )}
     </main>
   );

@@ -10,7 +10,7 @@ import { COMMON, type Lang } from "@/lib/i18n";
  * orang lain — aman untuk semua peran.
  */
 export async function SettingsPanel({ lang, children }: { lang?: Lang; children?: React.ReactNode }) {
-  const l = lang ?? "id";
+  const l = lang ?? "en";
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
@@ -51,7 +51,7 @@ export async function SettingsPanel({ lang, children }: { lang?: Lang; children?
         </dl>
         {p && (
           <div className="mt-4">
-            <EditProfile initialName={p.display_name} />
+            <EditProfile initialName={p.display_name} lang={l} />
           </div>
         )}
       </section>
@@ -78,7 +78,7 @@ export async function SettingsPanel({ lang, children }: { lang?: Lang; children?
           {l === "id" ? "Keluar dari akun ini di perangkat ini." : "Sign out of this account on this device."}
         </p>
         <div className="mt-3">
-          <LogoutButton />
+          <LogoutButton lang={l} />
         </div>
       </section>
     </div>
