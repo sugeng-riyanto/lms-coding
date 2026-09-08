@@ -1555,3 +1555,19 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
   sample 21, pelanggaran terakhir 07.42.59; log `csp-alert ACTIVE`.
   Gates: lint 0 · tsc 0 · **546 passed / 1 skipped** (+4) · build 0.
   Belum di-commit.
+
+## CSP persistence + digest + webhook alerting
+
+- **Migration `20260908000001`**: `csp_events` table (bigint PK, kind, recorded_at) with
+  service-role-only RLS (insert + select). Nightly digest view + `get_csp_daily_digest()` RPC.
+- **lib/csp-alerts.ts** rewritten: Supabase table is primary store (restart-safe, multi-instance);
+  in-memory ring buffer retained as fallback for dev/local mode. All callers updated (async).
+- **lib/csp-notify.ts** (new): env-gated webhook — fires POST to `CSP_ALERT_WEBHOOK_URL` on
+  ACTIVE/CLEARED transitions. Fire-and-forget, 5 s timeout, errors logged but never thrown.
+- **app/api/operator/csp-digest/route.ts** (new): 24h hourly bucket aggregation from persisted
+  table. Teachers only, rate-limited 10/min.
+- **components/security-monitor.tsx** extended: refresh now also fetches digest; renders a
+  `ColumnChart` (existing component, amber tone, 80px height) showing 24h hourly event counts.
+- **lib/env.ts** + `.env.example`: `CSP_ALERT_WEBHOOK_URL` added (optional URL).
+- **app/api/csp-report/route.ts**: `logAlertTransition` now also fires webhook on state change.
+- **Tests**: 550 passed / 1 skipped (9 csp-alerts + 4 csp-notify new). Build 0.
