@@ -48,10 +48,10 @@ describe("buildCspPolicy", () => {
     expect(policy).toContain("frame-ancestors 'none'");
   });
 
-  it("frame-src per-host memuat seluruh host media-embed", () => {
+  it("frame-src per-host memuat seluruh host media-embed (yt, Drive, PhET, oPhysics)", () => {
     const policy = buildCspPolicy({ nonce: "n1" });
     expect(policy).toContain(
-      "frame-src 'self' https://www.youtube-nocookie.com https://docs.google.com https://*.supabase.co",
+      "frame-src 'self' https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com https://phet.colorado.edu https://ophysics.com https://*.supabase.co",
     );
   });
 

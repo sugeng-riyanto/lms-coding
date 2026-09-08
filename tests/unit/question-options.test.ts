@@ -74,6 +74,14 @@ describe("bank UI — field opsi untuk soal pilihan", () => {
     expect(ui).toMatch(/q-options/);
     expect(ui).toMatch(/needsOptions/);
     expect(ui).toMatch(/options\.length < 2/);
-    expect(ui).toMatch(/createQuestion\(\{ type, promptText: prompt, difficulty: "medium", options \}\)/);
+    expect(ui).toMatch(
+      /createQuestion\(\{ type, promptText: prompt, difficulty: "medium", options, media \}\)/,
+    );
+  });
+
+  it("form soal menyediakan lampiran media (embed butir soal)", () => {
+    expect(ui).toMatch(/q-media-type/);
+    expect(ui).toMatch(/q-media-url/);
+    expect(ui).toMatch(/\["youtube", "pdf", "web", "video", "image", "audio"\]/);
   });
 });

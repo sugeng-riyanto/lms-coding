@@ -7,7 +7,14 @@ import { makeClientEventId } from "@/lib/sync-queue";
 import { UploadBox } from "@/components/upload-box";
 import { CodeBlock } from "@/components/code-block";
 import { CodeRunner } from "@/components/code-runner";
-import { EmbedAudio, EmbedFile, EmbedPdf, EmbedYoutube } from "@/components/media-embed";
+import {
+  EmbedAudio,
+  EmbedFile,
+  EmbedPdf,
+  EmbedVideo,
+  EmbedWeb,
+  EmbedYoutube,
+} from "@/components/media-embed";
 import { LessonBlocks } from "@/components/lesson-blocks";
 import type { ContentBlock } from "@/lib/content-blocks";
 import { useEngagementHeartbeat, useOfflineFlush } from "./use-sync";
@@ -206,6 +213,26 @@ export function ActivityView({
     return (
       <div className="mt-4">
         <EmbedFile url={url} title={title} />
+        {completeBtn}
+      </div>
+    );
+  }
+  if (activity.type === "embed_web") {
+    const url = typeof c["url"] === "string" ? c["url"] : "";
+    const title = typeof c["title"] === "string" ? c["title"] : "";
+    return (
+      <div className="mt-4">
+        <EmbedWeb url={url} title={title} />
+        {completeBtn}
+      </div>
+    );
+  }
+  if (activity.type === "embed_video") {
+    const url = typeof c["url"] === "string" ? c["url"] : "";
+    const title = typeof c["title"] === "string" ? c["title"] : "";
+    return (
+      <div className="mt-4">
+        <EmbedVideo url={url} title={title} />
         {completeBtn}
       </div>
     );

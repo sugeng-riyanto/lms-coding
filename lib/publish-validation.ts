@@ -34,7 +34,9 @@ export interface DraftActivity {
     | "embed_youtube"
     | "embed_pdf"
     | "embed_audio"
-    | "embed_file";
+    | "embed_file"
+    | "embed_web"
+    | "embed_video";
   title: string;
   /** quiz: total poin + apakah setiap butir punya kunci jawaban */
   points?: number;

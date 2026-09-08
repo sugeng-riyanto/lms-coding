@@ -88,6 +88,9 @@ export const activityTypeSchema = z.enum([
   "embed_pdf",
   "embed_audio",
   "embed_file",
+  // Media kaya (migration 000030): web interaktif (PhET/oPhysics) + video.
+  "embed_web",
+  "embed_video",
 ]);
 
 export const createActivitySchema = z.object({
@@ -119,6 +122,9 @@ export const createQuestionSchema = z
     // Opsi jawaban untuk tipe pilihan (satu baris per opsi di UI). Tanpa opsi,
     // soal pilihan tidak bisa dijawab murid (defect live: kuis option-less).
     options: z.array(z.string().trim().min(1).max(200)).max(10).default([]),
+    // Media opsional pada butir soal (embed youtube/pdf/web/video/image/audio).
+    // Disanitasi ulang server via sanitizeQuestionMedia sebelum disimpan.
+    media: z.unknown().optional(),
   })
   .refine(
     (v) => (v.type === "single_choice" || v.type === "multiple_choice" ? v.options.length >= 2 : true),
@@ -240,6 +246,17 @@ export const saveResponseSchema = z.object({
   attemptId: uuidSchema,
   questionVersionId: uuidSchema,
   answer: z.unknown(),
+});
+
+export const saveCanvasStrokesSchema = z.object({
+  attemptId: uuidSchema,
+  questionVersionId: uuidSchema,
+  strokes: z.array(z.unknown()).max(2000),
+});
+
+export const getCanvasStrokesSchema = z.object({
+  attemptId: uuidSchema,
+  questionVersionId: uuidSchema,
 });
 
 export const submitAttemptSchema = z.object({

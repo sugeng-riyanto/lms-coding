@@ -51,6 +51,8 @@ import {
   resolveAlertSchema,
   revokeCertificateSchema,
   saveResponseSchema,
+  saveCanvasStrokesSchema,
+  getCanvasStrokesSchema,
   setWeeklyGoalSchema,
   suspendEnrollmentSchema,
   updateContentSchema,
@@ -65,7 +67,8 @@ import {
   persistLoginLanguageSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
-import { sanitizeContentBlocks } from "@/lib/content-blocks";
+import { sanitizeContentBlocks, sanitizeQuestionMedia } from "@/lib/content-blocks";
+import { sanitizeCanvasStrokes, type CanvasRole } from "@/lib/canvas";
 import { parseMarkdownToBlocks } from "@/lib/markdown-blocks";
 import { mapChoiceKey, parseQuestionPack } from "@/lib/question-pack";
 import { pickPool, randomSeedHex } from "@/lib/shuffle";
@@ -301,7 +304,9 @@ export async function publishCourseVersion(input: unknown) {
             a.type === "embed_youtube" ||
             a.type === "embed_pdf" ||
             a.type === "embed_audio" ||
-            a.type === "embed_file"
+            a.type === "embed_file" ||
+            a.type === "embed_web" ||
+            a.type === "embed_video"
           ) {
             activities.push({ id: a.id, position: a.position, type: a.type, title: a.title });
           }
@@ -1857,6 +1862,9 @@ export async function createQuestion(input: unknown) {
     .single();
   const org = mem as { organization_id: string } | null;
   if (!org) return { ok: false as const, error: "FORBIDDEN" };
+  // Media butir soal (embed youtube/pdf/web/video/image/audio) — disanitasi
+  // ulang server; prompt_json.media dibaca murid via RPC tersanitasi.
+  const media = sanitizeQuestionMedia(parsed.data.media);
   const { data, error } = await supabase
     .from("questions")
     .insert({
@@ -1865,6 +1873,7 @@ export async function createQuestion(input: unknown) {
       prompt_json: {
         text: parsed.data.promptText,
         ...(parsed.data.options.length > 0 ? { options: parsed.data.options } : {}),
+        ...(media ? { media } : {}),
       },
       difficulty: parsed.data.difficulty,
     })
@@ -2071,6 +2080,87 @@ export async function saveResponse(input: unknown) {
   return { ok: true as const };
 }
 
+// ---------- Kanvas anotasi sains/math (murid menjawab, guru memberi umpan balik) ----------
+// Role ditentukan SERVER (anggota teacher org attempt → teacher, selain itu
+// murid pemilik); RLS tabel canvas_annotations tetap penegak akhir per baris.
+// Org di-resolve via service client (read-only) karena guru non-owner course
+// tidak punya policy baca courses — org hanya data audit, bukan otorisasi.
+export async function saveCanvasStrokes(input: unknown) {
+  const parsed = saveCanvasStrokesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const userId = (claims?.claims as { sub?: string } | undefined)?.sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  const svc = createServiceClient();
+  const { data: attRow } = await svc
+    .from("attempts")
+    .select("id,enrollment_id")
+    .eq("id", parsed.data.attemptId)
+    .single();
+  const att = attRow as { id: string; enrollment_id: string } | null;
+  if (!att) return { ok: false as const, error: "NOT_FOUND" };
+  const { data: enrRow } = await svc
+    .from("enrollments")
+    .select("course_id")
+    .eq("id", att.enrollment_id)
+    .single();
+  const enr = enrRow as { course_id: string } | null;
+  if (!enr) return { ok: false as const, error: "NOT_FOUND" };
+  const { data: courseRow } = await svc
+    .from("courses")
+    .select("organization_id")
+    .eq("id", enr.course_id)
+    .single();
+  const orgId = (courseRow as { organization_id: string } | null)?.organization_id;
+  if (!orgId) return { ok: false as const, error: "NOT_FOUND" };
+
+  const { data: teacherMems } = await svc
+    .from("memberships")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("organization_id", orgId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1);
+  const isOrgTeacher = ((teacherMems as { user_id: string }[] | null) ?? []).length > 0;
+  const role: CanvasRole = isOrgTeacher ? "teacher" : "student";
+
+  const strokes = sanitizeCanvasStrokes(parsed.data.strokes);
+  const { error } = await supabase.from("canvas_annotations").upsert(
+    {
+      organization_id: orgId,
+      attempt_id: parsed.data.attemptId,
+      question_version_id: parsed.data.questionVersionId,
+      author_role: role,
+      strokes,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "attempt_id,question_version_id,author_role" },
+  );
+  if (error) return { ok: false as const, error: "SAVE_FAILED" };
+  return { ok: true as const, saved: strokes.length };
+}
+
+/** Baca kanvas murid + guru untuk (attempt, soal) — RLS per peran. */
+export async function getCanvasStrokes(input: unknown) {
+  const parsed = getCanvasStrokesSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: rows } = await supabase
+    .from("canvas_annotations")
+    .select("author_role,strokes")
+    .eq("attempt_id", parsed.data.attemptId)
+    .eq("question_version_id", parsed.data.questionVersionId);
+  const list = (rows as { author_role: string; strokes: unknown }[] | null) ?? [];
+  const student = sanitizeCanvasStrokes(list.find((r) => r.author_role === "student")?.strokes);
+  const teacher = sanitizeCanvasStrokes(list.find((r) => r.author_role === "teacher")?.strokes);
+  return { ok: true as const, student, teacher };
+}
+
 // ---------- Attempt: soal tersanitasi untuk browser (tanpa grading/explanation) ----------
 export async function getAttemptQuestions(attemptId: string) {
   if (!uuidSchema.safeParse(attemptId).success) return { ok: false as const, error: "INVALID_INPUT" };
@@ -2104,7 +2194,7 @@ export async function getAttemptQuestions(attemptId: string) {
           position: number;
           points: number;
           qtype: string;
-          prompt_json: { text?: string; options?: string[] };
+          prompt_json: { text?: string; options?: string[]; media?: unknown };
         }[]
       | null) ?? [];
   const ordered = att.question_order_json?.order;
@@ -2120,7 +2210,7 @@ export async function getAttemptQuestions(attemptId: string) {
           position: number;
           points: number;
           qtype: string;
-          prompt_json: { text?: string; options?: string[] };
+          prompt_json: { text?: string; options?: string[]; media?: unknown };
         } => !!r,
       );
   }

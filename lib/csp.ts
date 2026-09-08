@@ -22,6 +22,9 @@ const FRAME_SRC = [
   "'self'",
   "https://www.youtube-nocookie.com", // YouTube — src selalu DIREKONSTRUKSI dari id
   "https://docs.google.com", // viewer PDF Google Drive (host umum sekolah)
+  "https://drive.google.com", // preview Google Drive (PDF/video, embed_web/embed_video)
+  "https://phet.colorado.edu", // sim sains interaktif (embed_web)
+  "https://ophysics.com", // sim fisika/math (embed_web)
   "https://*.supabase.co", // PDF di private Storage via signed URL
 ].join(" ");
 

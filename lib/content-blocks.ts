@@ -25,6 +25,49 @@ export function isSafeHttpUrl(url: string): boolean {
   }
 }
 
+/**
+ * Host yang boleh dimuat di iframe generic (embed_web). Sempit dan eksplisit:
+ * sim interaktif sains/math yang dipakai sekolah (PhET, oPhysics) + preview
+ * Google Drive. Host lain DIBLOKIR — perluas hanya lewat edit + e2e, sama
+ * seperti kebijakan CSP frame-src (lib/csp.ts).
+ */
+export const EMBED_IFRAME_HOSTS = new Set([
+  "phet.colorado.edu", // sim sains interaktif (Buoyancy Basics, dll)
+  "ophysics.com", // sim fisika/matematika (L12 pendulum, dll)
+  "drive.google.com", // preview file Google Drive (PDF/video)
+]);
+
+/** URL http(s) dengan host di allowlist iframe generic; selain itu null. */
+export function isAllowedIframeHost(url: string): boolean {
+  if (!isSafeHttpUrl(url)) return false;
+  try {
+    return EMBED_IFRAME_HOSTS.has(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ubah URL Google Drive menjadi src preview iframe (drive.google.com/file/d/
+ * {id}/preview) — cara aman embed PDF/video Drive tanpa API. Mendukung bentuk:
+ *   https://drive.google.com/file/d/{id}/view?usp=...
+ *   https://drive.google.com/file/d/{id}/edit
+ *   https://drive.google.com/open?id={id}
+ * Bukan URL Drive / bukan http(s) → null (komponen memilih fallback non-iframe).
+ */
+export function gdrivePreviewSrc(url: string): string | null {
+  if (!isSafeHttpUrl(url)) return null;
+  try {
+    const u = new URL(url);
+    if (u.hostname !== "drive.google.com") return null;
+    const fileMatch = /^\/file\/d\/([\w-]+)/.exec(u.pathname);
+    const id = fileMatch?.[1] ?? u.searchParams.get("id");
+    return id ? `https://drive.google.com/file/d/${id}/preview` : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Ubah URL YouTube menjadi src embed youtube-nocookie (atau null bila tidak valid). */
 export function youtubeEmbedSrc(url: string): string | null {
   if (!isSafeHttpUrl(url)) return null;
@@ -54,6 +97,8 @@ export const BLOCK_KINDS = [
   "embed_pdf",
   "embed_audio",
   "embed_file",
+  "embed_web",
+  "embed_video",
 ] as const;
 
 export type ContentBlockKind = (typeof BLOCK_KINDS)[number];
@@ -74,7 +119,57 @@ const LIMITS: Record<ContentBlockKind, Record<string, number>> = {
   embed_pdf: { url: 2_000, title: 300 },
   embed_audio: { url: 2_000, transcript: 5_000 },
   embed_file: { url: 2_000, title: 300 },
+  embed_web: { url: 2_000, title: 300 },
+  embed_video: { url: 2_000, title: 300 },
 };
+
+/**
+ * Media opsional pada butir soal (kuis) — "Provide in the materials or quiz".
+ * Dipakai prompt_json.media; disanitasi dengan aturan SAMA seperti blok materi:
+ * hanya jenis + field yang di-allowlist, URL http(s) + host iframe di-allowlist.
+ */
+export const QUESTION_MEDIA_TYPES = ["youtube", "pdf", "web", "video", "image", "audio"] as const;
+export type QuestionMediaType = (typeof QUESTION_MEDIA_TYPES)[number];
+
+export interface QuestionMediaSpec {
+  type: QuestionMediaType;
+  url: string;
+  title?: string;
+  transcript?: string;
+  caption?: string;
+  alt?: string;
+}
+
+export function sanitizeQuestionMedia(input: unknown): QuestionMediaSpec | null {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return null;
+  const src = input as Record<string, unknown>;
+  const type = src["type"];
+  if (typeof type !== "string" || !(QUESTION_MEDIA_TYPES as readonly string[]).includes(type)) return null;
+  const url = src["url"];
+  if (typeof url !== "string" || !isSafeHttpUrl(url)) return null;
+  const t = type as QuestionMediaType;
+  const spec: QuestionMediaSpec = { type: t, url: url.slice(0, 2_000) };
+  if (t === "web" && !isAllowedIframeHost(url)) return null;
+  if (t === "youtube" && youtubeEmbedSrc(url) === null) return null;
+  const str = (k: string, max: number) => {
+    const v = src[k];
+    return typeof v === "string" && v.trim().length > 0 ? v.slice(0, max).trim() : undefined;
+  };
+  const title = str("title", 300);
+  if (title) spec.title = title;
+  if (t === "audio") {
+    const transcript = str("transcript", 5_000);
+    if (transcript) spec.transcript = transcript;
+  }
+  if (t === "image") {
+    const caption = str("caption", 500);
+    if (caption) spec.caption = caption;
+    const alt = str("alt", 300);
+    if (alt) spec.alt = alt;
+    else if (!caption) return null; // image wajib alt/caption (aksesibilitas)
+  }
+  return spec;
+}
 
 export type SanitizeBlocksResult =
   { ok: true; blocks: ContentBlock[] } | { ok: false; error: "BLOCK_INVALID"; message: string };
@@ -202,6 +297,28 @@ export function sanitizeContentBlocks(input: unknown): SanitizeBlocksResult {
         const url = required("url");
         if (!url.ok || !isSafeHttpUrl(url.value)) {
           return { ok: false, error: "BLOCK_INVALID", message: `Berkas #${i + 1} butuh URL http(s) valid.` };
+        }
+        block = { kind: k, url: url.value, ...opt("title") };
+        break;
+      }
+      case "embed_web": {
+        // iframe generic: HANYA host di allowlist (PhET/oPhysics/Drive).
+        const url = required("url");
+        if (!url.ok || !isAllowedIframeHost(url.value)) {
+          return {
+            ok: false,
+            error: "BLOCK_INVALID",
+            message: `Web #${i + 1}: host tidak diizinkan (PhET/oPhysics/Google Drive).`,
+          };
+        }
+        block = { kind: k, url: url.value, ...opt("title") };
+        break;
+      }
+      case "embed_video": {
+        // Video: preview Google Drive (iframe) ATAU file video langsung (<video>).
+        const url = required("url");
+        if (!url.ok || !isSafeHttpUrl(url.value)) {
+          return { ok: false, error: "BLOCK_INVALID", message: `Video #${i + 1} butuh URL http(s) valid.` };
         }
         block = { kind: k, url: url.value, ...opt("title") };
         break;

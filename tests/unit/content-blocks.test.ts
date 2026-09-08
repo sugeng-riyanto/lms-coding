@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   BLOCK_KINDS,
+  gdrivePreviewSrc,
+  isAllowedIframeHost,
   isSafeHttpUrl,
   MAX_BLOCKS,
   sanitizeContentBlocks,
+  sanitizeQuestionMedia,
   youtubeEmbedSrc,
 } from "@/lib/content-blocks";
 
@@ -124,7 +127,7 @@ describe("sanitizeContentBlocks", () => {
     if (withHtml.ok) expect(withHtml.blocks[0]?.text).toContain("<script>"); // disimpan sbg teks, dirender ter-escape
   });
 
-  it("BLOCK_KINDS berisi 8 kind dokumen", () => {
+  it("BLOCK_KINDS berisi 10 kind dokumen (termasuk embed_web/embed_video)", () => {
     expect(BLOCK_KINDS).toEqual([
       "heading",
       "paragraph",
@@ -134,6 +137,109 @@ describe("sanitizeContentBlocks", () => {
       "embed_pdf",
       "embed_audio",
       "embed_file",
+      "embed_web",
+      "embed_video",
     ]);
+  });
+});
+
+describe("isAllowedIframeHost / gdrivePreviewSrc", () => {
+  it("embed_web hanya host allowlist (PhET/oPhysics/Drive)", () => {
+    expect(
+      isAllowedIframeHost(
+        "https://phet.colorado.edu/sims/html/buoyancy-basics/latest/buoyancy-basics_all.html",
+      ),
+    ).toBe(true);
+    expect(isAllowedIframeHost("https://ophysics.com/l12.html")).toBe(true);
+    expect(isAllowedIframeHost("https://drive.google.com/file/d/abc/preview")).toBe(true);
+    expect(isAllowedIframeHost("https://evil.example.com/embed")).toBe(false);
+    expect(isAllowedIframeHost("javascript:alert(1)")).toBe(false);
+  });
+
+  it("gdrivePreviewSrc mengubah URL Drive menjadi preview iframe", () => {
+    expect(gdrivePreviewSrc("https://drive.google.com/file/d/1ZL2I4CiAATDwh5vVxtU2cpDwxOoegBsl/view")).toBe(
+      "https://drive.google.com/file/d/1ZL2I4CiAATDwh5vVxtU2cpDwxOoegBsl/preview",
+    );
+    expect(gdrivePreviewSrc("https://drive.google.com/file/d/abc123/edit?usp=sharing")).toBe(
+      "https://drive.google.com/file/d/abc123/preview",
+    );
+    expect(gdrivePreviewSrc("https://drive.google.com/open?id=xyz789")).toBe(
+      "https://drive.google.com/file/d/xyz789/preview",
+    );
+    expect(gdrivePreviewSrc("https://youtube.com/watch?v=dQw4w9WgXcQ")).toBeNull();
+    expect(gdrivePreviewSrc("javascript:alert(1)")).toBeNull();
+  });
+});
+
+describe("sanitizeQuestionMedia (media butir soal kuis)", () => {
+  it("menerima youtube/pdf/web/video/image/audio dengan URL aman", () => {
+    expect(
+      sanitizeQuestionMedia({
+        type: "youtube",
+        url: "https://www.youtube.com/watch?v=Q7twwJbocDM",
+        title: "Pengantar",
+      }),
+    ).toEqual({
+      type: "youtube",
+      url: "https://www.youtube.com/watch?v=Q7twwJbocDM",
+      title: "Pengantar",
+    });
+    expect(
+      sanitizeQuestionMedia({
+        type: "pdf",
+        url: "https://drive.google.com/file/d/1ZL2I4CiAATDwh5vVxtU2cpDwxOoegBsl/view",
+      }),
+    )?.toMatchObject({ type: "pdf" });
+    expect(
+      sanitizeQuestionMedia({
+        type: "web",
+        url: "https://phet.colorado.edu/sims/html/buoyancy-basics/latest/buoyancy-basics_all.html",
+      }),
+    )?.toMatchObject({ type: "web" });
+    expect(
+      sanitizeQuestionMedia({
+        type: "image",
+        url: "https://files.example.com/grafik.png",
+        alt: "Grafik fungsi",
+      }),
+    )?.toMatchObject({ type: "image", alt: "Grafik fungsi" });
+  });
+
+  it("menolak jenis tak dikenal / URL tidak aman / host iframe di luar allowlist", () => {
+    expect(sanitizeQuestionMedia({ type: "iframe", url: "https://x" })).toBeNull();
+    expect(sanitizeQuestionMedia({ type: "pdf", url: "javascript:alert(1)" })).toBeNull();
+    expect(sanitizeQuestionMedia({ type: "web", url: "https://evil.example.com/embed" })).toBeNull();
+    expect(sanitizeQuestionMedia({ type: "youtube", url: "https://evil.example.com/v" })).toBeNull();
+    expect(sanitizeQuestionMedia(null)).toBeNull();
+    expect(sanitizeQuestionMedia("text")).toBeNull();
+  });
+
+  it("image wajib alt atau caption (aksesibilitas)", () => {
+    expect(sanitizeQuestionMedia({ type: "image", url: "https://files.example.com/x.png" })).toBeNull();
+    expect(
+      sanitizeQuestionMedia({ type: "image", url: "https://files.example.com/x.png", caption: "Gbr 1" }),
+    )?.toMatchObject({ type: "image", caption: "Gbr 1" });
+  });
+
+  it("blok embed_web/embed_video diterima di sanitizeContentBlocks", () => {
+    const okWeb = sanitizeContentBlocks([
+      {
+        kind: "embed_web",
+        url: "https://phet.colorado.edu/sims/html/buoyancy-basics/latest/buoyancy-basics_all.html",
+        title: "Buoyancy",
+      },
+      { kind: "embed_video", url: "https://drive.google.com/file/d/abc123/view" },
+    ]);
+    expect(okWeb.ok).toBe(true);
+    if (okWeb.ok) {
+      expect(okWeb.blocks[0]).toMatchObject({ kind: "embed_web", title: "Buoyancy" });
+      expect(okWeb.blocks[1]).toMatchObject({ kind: "embed_video" });
+    }
+    // Host di luar allowlist ditolak (iframe tidak pernah host arbitrer).
+    expect(sanitizeContentBlocks([{ kind: "embed_web", url: "https://evil.example.com/x" }]).ok).toBe(false);
+    // Video non-Drive tetap boleh (fallback <video> native).
+    expect(sanitizeContentBlocks([{ kind: "embed_video", url: "https://files.example.com/v.mp4" }]).ok).toBe(
+      true,
+    );
   });
 });

@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { getAttemptResult, saveResponse, submitAttempt } from "@/features/actions";
 import { UploadBox } from "@/components/upload-box";
+import { CanvasPad } from "@/components/canvas-pad";
+import { QuestionMedia } from "@/components/media-embed";
 import { makeClientEventId } from "@/lib/sync-queue";
 import { fmt, mkT, type Lang } from "@/lib/i18n";
 import { QUIZ } from "@/lib/ui-text/quiz";
@@ -127,6 +129,18 @@ export function QuizTaker({ attemptId, questions, status, locked, lang }: Props)
             placeholder={q.type === "essay_manual" ? t("essayPlaceholder") : t("filePlaceholder")}
             className="mt-2 w-full rounded-lg border px-3 py-2"
           />
+          {/* Kanvas anotasi sains/math: murid menggambar jawaban/coretan di sini. */}
+          {q.type === "essay_manual" && (
+            <div className="mt-3">
+              <CanvasPad
+                attemptId={attemptId}
+                questionVersionId={q.questionVersionId}
+                lang={lang}
+                role="student"
+                readOnly={disabled}
+              />
+            </div>
+          )}
           {q.type === "file_manual" && !disabled && (
             <UploadBox
               lang={lang}
@@ -179,6 +193,8 @@ export function QuizTaker({ attemptId, questions, status, locked, lang }: Props)
               ({fmt(t("points"), { points: q.points })})
             </span>
           </h2>
+          {/* Media embed pada butir soal (materi/kuis): youtube, pdf, web, video, audio, image. */}
+          <QuestionMedia media={q.media} />
           <p className="mt-1">{q.promptText}</p>
           {renderInput(q)}
         </section>

@@ -1,4 +1,5 @@
 import type { GradingRule, NumericUnitRule, QuestionType } from "@/lib/grading";
+import type { QuestionMediaSpec } from "@/lib/content-blocks";
 
 /** Parse "kg:1,g:0.001" + unit basis menjadi NumericUnitRule (atau undefined). */
 export function parseUnitRule(factorsCsv: string, expectedUnit: string): NumericUnitRule | undefined {
@@ -22,6 +23,8 @@ export interface SanitizedQuestion {
   type: QuestionType;
   promptText: string;
   options: string[];
+  /** Media embed pada butir soal (sudah disanitasi server saat authoring). */
+  media: QuestionMediaSpec | null;
 }
 
 /**
@@ -33,7 +36,7 @@ export function sanitizeQuestionForAttempt(input: {
   position: number;
   points: number;
   type: QuestionType;
-  promptJson: { text?: string; options?: string[] };
+  promptJson: { text?: string; options?: string[]; media?: unknown };
 }): SanitizedQuestion {
   return {
     questionVersionId: input.questionVersionId,
@@ -42,6 +45,7 @@ export function sanitizeQuestionForAttempt(input: {
     type: input.type,
     promptText: input.promptJson.text ?? "",
     options: input.promptJson.options ?? [],
+    media: input.promptJson.media ? (input.promptJson.media as QuestionMediaSpec) : null,
   };
 }
 

@@ -7,7 +7,14 @@
  * caption) untuk aksesibilitas.
  */
 import { CodeBlock } from "@/components/code-block";
-import { EmbedAudio, EmbedFile, EmbedPdf, EmbedYoutube } from "@/components/media-embed";
+import {
+  EmbedAudio,
+  EmbedFile,
+  EmbedPdf,
+  EmbedVideo,
+  EmbedWeb,
+  EmbedYoutube,
+} from "@/components/media-embed";
 import type { ContentBlock } from "@/lib/content-blocks";
 
 export function LessonBlocks({ blocks }: { blocks: ContentBlock[] }) {
@@ -83,6 +90,22 @@ export function LessonBlocks({ blocks }: { blocks: ContentBlock[] }) {
           case "embed_file":
             return (
               <EmbedFile
+                key={i}
+                url={typeof b.url === "string" ? b.url : ""}
+                title={typeof b.title === "string" ? b.title : undefined}
+              />
+            );
+          case "embed_web":
+            return (
+              <EmbedWeb
+                key={i}
+                url={typeof b.url === "string" ? b.url : ""}
+                title={typeof b.title === "string" ? b.title : undefined}
+              />
+            );
+          case "embed_video":
+            return (
+              <EmbedVideo
                 key={i}
                 url={typeof b.url === "string" ? b.url : ""}
                 title={typeof b.title === "string" ? b.title : undefined}

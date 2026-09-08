@@ -8,7 +8,7 @@ import { test, expect } from "@playwright/test";
  * berjalan di CI (dev server demo) dan terhadap deployment enforce.
  */
 const FRAME_SRC_ALLOWLIST =
-  "frame-src 'self' https://www.youtube-nocookie.com https://docs.google.com https://*.supabase.co";
+  "frame-src 'self' https://www.youtube-nocookie.com https://docs.google.com https://drive.google.com https://phet.colorado.edu https://ophysics.com https://*.supabase.co";
 const HARDENING_DIRECTIVES = [
   "object-src 'none'",
   "base-uri 'self'",
