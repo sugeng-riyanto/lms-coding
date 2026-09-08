@@ -318,6 +318,12 @@ Node listens on `127.0.0.1:3000` only; TLS terminates at Caddy. Set
 
 ## 8. Pilot release checklist (execution order)
 
+> **Dry-run playbook:** `docs/pilot-deployment.md` has the concrete, rehearsed
+> steps — pilot env template + render script, the exact db-push → deploy →
+> smoke sequence for a **fresh** pilot project, and the mapped + rehearsed
+> restore procedure (restore 9/9, live-denial 95/95, gates green, 08 Sep 2026).
+> Execute the checklist below using that playbook.
+
 - [ ] Pick host type (§1) and canonical domain (§4.1–4.3); DNS + HTTPS live.
 - [ ] Create/assign the **pilot** Supabase project; record its ref in the pilot
       env set; do not reuse the demo project for real data.
