@@ -163,9 +163,17 @@ restore-rehearsal and hermetic e2e on every push/PR to `main`.
    `Reporting-Endpoints: csp-endpoint="/api/csp-report"`; nothing is blocked.
    The `/api/csp-report` route logs redacted violations (URIs stripped of
    query strings, `script-sample` never extracted; rate-limited 60/min/IP;
-   body ≤ 64 KB). Development is **always** report-only and keeps
-   `'unsafe-eval'` (required by React dev tooling — per the official Next.js
-   CSP guide). To enforce: set `CSP_REPORT_ONLY=false` on the target
+   body ≤ 64 KB) and feeds a rolling spike aggregator (`lib/csp-alerts.ts`):
+   when the violation rate in the 60 s window reaches
+   `CSP_ALERT_THRESHOLD_PER_MIN` (default 20/min, validated in `lib/env.ts`),
+   a single-line `csp-alert ACTIVE` log entry is emitted, and `csp-alert
+   CLEARED` when it subsides — wire a log/alerting rule (journald, PaaS log
+   stream, uptime check) on `type="csp-alert"`. Aggregate state (counts,
+   rate, sample size, threshold — **no URIs/PII**) is readable by teachers at
+   `GET /api/operator/csp-alerts`. State is per-process; multi-instance
+   deployments must move the aggregation to Redis/Supabase.
+   Development is **always** report-only and keeps `'unsafe-eval'` (required
+   by React dev tooling — per the official Next.js CSP guide). To enforce: set `CSP_REPORT_ONLY=false` on the target
    environment, watch `/api/csp-report` logs for a clean stream first, then
    re-run the e2e suite. Known, deliberate trade-off: `style-src` keeps
    `'unsafe-inline'` because the chart/dashboard components set dynamic
@@ -290,6 +298,7 @@ Node listens on `127.0.0.1:3000` only; TLS terminates at Caddy. Set
 | p95 latency | >3 s over 5 min | investigate (DB query, export, PDF render) |
 | Auth failures | spike >5× baseline | check for brute force; review Auth logs |
 | Certificate route errors | any failure in `/api/certificates/…/pdf` | verify storage bucket + signing secret intact |
+| CSP violations (`csp-alert`) | rate ≥ `CSP_ALERT_THRESHOLD_PER_MIN`/min (default 20) in a 60 s window | possible injection attempt — review `/api/csp-report` log; aggregate state at `GET /api/operator/csp-alerts` (teacher-only, rate-limited) |
 | Backup/restore | rehearsal job fails in CI or manual run | do not ship DB changes until green |
 
 ### 7.4 Supabase observability

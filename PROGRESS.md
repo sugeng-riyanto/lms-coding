@@ -1481,3 +1481,51 @@ Gates: prettier · lint 0 · tsc 0 · **533 passed / 1 skipped** (+13 unit CSP)
 
 Jalan otomatis di CI (job `e2e` hermetic — `npm run e2e` memuat semua spec
 tests/e2e). Lokal penuh: **25 passed / 34 skipped / 0 failed** (+7 spec ini).
+
+### Enforce CSP dibuktikan live (CSP_REPORT_ONLY=false, mode produksi)
+
+Jendela laporan bersih: 0 pelanggaran nyata (hanya probe sintetis evil.example
+dari test). Build + `npm run start` port 5055 dengan `CSP_REPORT_ONLY=false`:
+
+- Header live: `content-security-policy` (ENFORCE, bukan Report-Only),
+  `script-src 'self' 'nonce-…' 'strict-dynamic'` TANPA unsafe-eval /
+  unsafe-inline di script-src; frame-src allowlist + hardening utuh;
+  `x-nonce` segar tiap request; HTML **13/13 script tag ber-nonce, 0 tanpa**.
+- **Playwright penuh vs enforce (Chromium nyata): 25 passed / 34 skipped /
+  0 failed** — semua halaman publik ter-hidrasi benar di bawah enforce.
+  Menemukan & memperbaiki bug spec: assertion unsafe-inline harus di-scope ke
+  segmen script-src (style-src sah memakai unsafe-inline) — hanya tertangkap
+  saat test enforce benar-benar jalan.
+- **Pilot smoke loop vs enforce: 26/26 GREEN** — guru→murid→nilai→wali→
+  sertifikat (PDF 2 halaman A4) → verifier anon → JSON record → health,
+  semua lewat server enforce.
+- Laporan pelanggaran di server enforce: 0 pelanggaran nyata (2 entri
+  evil.example = POST sintetis dari spec e2e report-endpoint).
+
+Server enforce dimatikan setelah uji; preview dev (report-only) tetap hidup.
+Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
+
+### Alerting operator untuk spike laporan CSP (kemungkinan injection attempt)
+
+- **`lib/csp-alerts.ts`** (murni, teruji): agregator ring buffer ber-timestamp —
+  event = violation valid ATAU attempt yang di-block rate-limiter (bom laporan
+  juga tanda serangan). Spike = rate ≥ threshold dalam window 60 s bergulir;
+  state agregat (rate/violations/blocked per menit, sampleSize, total,
+  threshold, windowMs, lastUpdated) — TIDAK pernah menyimpan/menampilkan URI
+  atau PII. Ring buffer di-cap 2.000 event.
+- **`/api/csp-report`**: setiap event direkam; saat spike NAIK → satu baris
+  log `csp-alert ACTIVE` (state lengkap), saat TURUN → `csp-alert CLEARED`
+  (transisi in-memory per proses; multi-instance → Redis/Supabase, DEPLOYMENT
+  §4.7/§7.3).
+- **`GET /api/operator/csp-alerts`** (baru): state agregat untuk operator —
+  role guru dari membership server-side (bukan client), rate-limit 20/menit;
+  HANYA agregat (min disclosure).
+- **Env**: `CSP_ALERT_THRESHOLD_PER_MIN` (default 20, fallback aman; lib/env.ts
+  + .env.example + DEPLOYMENT §7.3 baris alert baru).
+- **Unit test 9 baru** (spike trigger, decay keluar window, blocked ikut
+  dihitung, threshold env + fallback, cap buffer, min-disclosure agregat).
+- **Bukti live (dev 50496)**: spike 25 report → log `csp-alert ACTIVE`
+  (rate 20→25/min, sampleSize 20→25); anon → 401; guru (cookie SSR) → 200
+  `{alertActive:true, ratePerMin:25, sampleSize:25, thresholdPerMin:20}`;
+  spec e2e CSP tetap 7/7. Gates: lint 0 · tsc 0 · **542 passed / 1 skipped**
+  (+9) · build 0. Belum di-commit (bersama fix spec e2e sebelumnya).
