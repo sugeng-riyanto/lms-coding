@@ -33,7 +33,18 @@ export function navForRole(role: Role, isOrgAdmin: boolean): NavItem[] {
         { href: "/teacher/certificates", label: "Sertifikat", desc: "Terbit & anchor" },
         // Facet Owner (ADR-008): hanya guru pemilik course yang melihat tautan admin.
         ...(isOrgAdmin
-          ? [{ href: "/teacher/admin/map", label: "Admin", desc: "Mapping kelas & subjek" } satisfies NavItem]
+          ? [
+              {
+                href: "/teacher/admin/map",
+                label: "Admin",
+                desc: "Mapping kelas & subjek",
+              } satisfies NavItem,
+              {
+                href: "/teacher/admin/security",
+                label: "Security",
+                desc: "Monitoring CSP",
+              } satisfies NavItem,
+            ]
           : []),
         settings,
       ];

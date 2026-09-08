@@ -1529,3 +1529,29 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
   `{alertActive:true, ratePerMin:25, sampleSize:25, thresholdPerMin:20}`;
   spec e2e CSP tetap 7/7. Gates: lint 0 · tsc 0 · **542 passed / 1 skipped**
   (+9) · build 0. Belum di-commit (bersama fix spec e2e sebelumnya).
+
+### Panel admin "Security & monitoring" (UI guru)
+
+- **Route** `app/(teacher)/teacher/admin/security/page.tsx`: guard org-admin
+  (facet Owner, getOrgAdminContext — sama dengan /teacher/admin/map); state
+  dibaca LANGSUNG dari lib/csp-alerts di server (tanpa HTTP round-trip).
+- **`components/security-monitor.tsx`** (client): banner spike (teks + ikon,
+  bukan warna saja — ⚠️ merah + role=alert saat aktif, ✅ hijau + role=status
+  saat tenang), 8 kartu metrik agregat (rate vs ambang, violations/blocked
+  per menit, sampleSize+jendela, total, total diblokir, pelanggaran terakhir,
+  terakhir diperbarui), tombol "Muat ulang" → GET /api/operator/csp-alerts
+  (role server-side + rate-limit), error state ditampilkan tanpa kehilangan
+  data lama. Waktu diformat id-ID hanya setelah mount
+  (useSyncExternalStore — tanpa setState dalam effect, tanpa mismatch
+  hidrasi).
+- **Nav**: item "Security" baru di role-nav.ts untuk org-admin
+  (berdampingan dengan "Admin").
+- **Component test 4 baru** (tests/component/security-monitor.test.tsx):
+  tenang, spike, refresh sukses, refresh gagal.
+- **Bukti live (dev 50496, sesi guru)**: halaman render — banner hijau
+  tenang + kartu (rate 0, ambang 20, sample 0, "8/9/2026, 07.42.50"); setelah
+  21 report dikirim + klik "Muat ulang" → banner MERAH
+  "⚠️ Spike laporan CSP terdeteksi" + rate 21/menit, violations 21,
+  sample 21, pelanggaran terakhir 07.42.59; log `csp-alert ACTIVE`.
+  Gates: lint 0 · tsc 0 · **546 passed / 1 skipped** (+4) · build 0.
+  Belum di-commit.
