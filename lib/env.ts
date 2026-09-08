@@ -2,6 +2,13 @@ import { z } from "zod";
 
 const serverEnvSchema = z.object({
   NEXT_PUBLIC_APP_URL: z.string().url().default("http://localhost:3000"),
+  // CSP rollout (lib/csp.ts + proxy.ts): true = report-only (default, aman);
+  // false = enforce nonce-based strict CSP. Baca di proxy via process.env;
+  // di sini hanya divalidasi agar /api/health mencerminkan konfigurasi.
+  CSP_REPORT_ONLY: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(10),
   SUPABASE_SECRET_KEY: z.string().min(10).optional(),
@@ -44,6 +51,7 @@ export function getServerEnv(): ServerEnv {
   if (cached) return cached;
   const parsed = serverEnvSchema.safeParse({
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+    CSP_REPORT_ONLY: process.env.CSP_REPORT_ONLY,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,

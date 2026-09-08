@@ -13,17 +13,9 @@ const nextConfig: NextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          {
-            key: "Content-Security-Policy",
-            value: [
-              "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-              "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: https:",
-              "connect-src 'self' https://*.supabase.co",
-              "frame-ancestors 'none'",
-            ].join("; "),
-          },
+          // CSP TIDAK di sini: kebijakan nonce-based (per-request) dikirim oleh
+          // proxy.ts — lihat lib/csp.ts. Header statis di sini justru akan
+          // di-union dengan kebijakan nonce dan memblokir semua script.
         ],
       },
     ];
