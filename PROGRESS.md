@@ -1805,3 +1805,109 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
 - Sisa tradeoff terdokumentasi: Pyodide berjalan di main thread (loop tak
   berujung bisa membekukan tab; sandbox eksternal Piston tetap default produksi
   via `CODE_RUNNER_PROVIDER=http`); migrasi Web Worker = langkah berikutnya.
+
+## AC-53 CLOSED — Competency mastery traceable to evidence (teacher view) — 08 Sep 2026
+
+- **Gap ditemukan**: `progress_snapshots` hanya menyimpan entity level/lesson/
+  activity; TIDAK ada mastery per kompetensi di mana pun dan `competencyMastery`
+  (lib/mastery.ts) adalah dead code. Attempt + rubrik + revisi ada, tapi belum
+  dirangkai menjadi lintasan per kompetensi.
+- **Solusi** (tanpa migrasi — semua data sudah ada):
+  - `lib/mastery-evidence.ts` (murni, 0 DB): mastery per kompetensi =
+    Σ(weight×bestScore)/Σ(weight) berbobot `activity_competencies`, bestScore =
+    final_score tertinggi attempt submitted per assessment. Lintasan per
+    kompetensi: assessment → attempt (no/status/skor/waktu) → grade_revisions
+    (prev/next/reason/actor) → rubrik + skor kriteria versi final (draft=false).
+  - Halaman guru `/teacher/students/[studentId]`: seksi "Competency mastery &
+    evidence" (bilingual via `lib/ui-text/student-detail.ts`), fetch DI BAWAH
+    RLS guru-cohort dan terikat attempt milik murid (bukan scan org).
+- **Verifikasi LIVE hosted** (guru, murid01): PY-FUND 100% (Artikel Pengenalan,
+  Best 100, attempt submitted + in_progress dengan revisi bernama actor
+  a0000000 · reason ai_draft:approved) dan PY-LOOP 100% (05 Summative check).
+  Untuk itu ditambahkan 2 kompetensi demo anonim + 2 mapping
+  `activity_competencies` (via Management API; data anonim, tidak menyentuh
+  produksi).
+- Gates: eslint 0 · tsc 0 · **vitest 634 passed / 1 skipped** (+9 unit
+  mastery-evidence, +4 pinned integration) · build 0.
+
+## Review dashboard Wali vs view_linked_child_summary + keputusan cakupan (ADR-019) — 08 Sep 2026
+
+- **Audit hasil**: dashboard Wali (`app/(guardian)/guardian/page.tsx`) sudah
+  menampilkan persis kapabilitas summary — per anak tertaut-aktif: progress %,
+  mastery rata-rata, level tuntas, terakhir aktif, enrollment aktif — plus
+  sertifikat (serial/status/tanggal + **unduh PDF** + verifikasi). RLS wali:
+  profiles/enrollments/progress_snapshots via `guardian_links` aktif +
+  `certs_guardian_select` (migration 20260907110000). Attempts/responses/
+  grade_revisions/study_sessions TIDAK punya policy wali (by design).
+- **Keputusan (dokumentasi di RBAC.md + DECISIONS.md ADR-019)**:
+  1. Sertifikat (PDF + verifikasi) — TETAP (sudah jalan, data publik minimal).
+  2. Nilai quiz/ujian terperinci — TIDAK untuk pilot (summary sudah cukup;
+     detail = risiko privasi + tekanan nilai).
+  3. Absensi — TIDAK untuk pilot (LMS asinkron tanpa roll-call; proksi =
+     menit aktif study_sessions yang belum punya policy wali).
+  - Revisi hanya jika feedback pilot tertulis; jalur wajib RPC security-definer
+    + policy sempit + denial test, bukan widening SELECT.
+- Catatan lanjutan: dashboard Wali masih hardcoded Indonesian (belum bilingual;
+  di luar scope lint translated-surface) → backlog terjemahan.
+
+## Pilot release checklist §3 end-to-end + defect fixed — 08 Sep 2026
+
+- **Target**: satu-satunya project Supabase pada akun (`jspmxdzgxevtfwvldwxy`,
+  demo seed — pilot project fresh tetap langkah human per §0 inventory; tidak ada
+  project pilot terpisah yang bisa diprovision dari lingkungan ini).
+- **Env set**: `.env.pilot` dirender via `scripts/pilot-env-render.mjs` (23 keys,
+  flag produksi all-OFF), `check-env` PASS struktural.
+- **Migrations pushed**: `supabase db push --linked` idempotent ("Remote database
+  is up to date"), lalu +2 migrasi baru: `20260908115922_public_anchor_honesty`
+  dan `20260908120654_csp_digest_security_invoker`.
+- **§5.5 smoke loop** (`SMOKE_APP_URL=http://localhost:52611 node .freebuff/smoke-pilot-loop.mjs`):
+  **PILOT SMOKE GREEN — 26/26 PASS** (guru/murid01/wali sign-in, content tree,
+  author question idempotent, study loop 100, grading, wali min-disclosure,
+  JSON record + verifier + PDF 2-page, health).
+- **Defect yang ditemukan & diperbaiki oleh checklist**: public record/verifier
+  melaporkan anchor MOCK (`provider='mock'`) sebagai klaim blockchain nyata
+  (`chainAnchored=true, chainAnchorStatus='final'`) — melanggar aturan "tanpa
+  klaim blockchain palsu". Fix migrasi `20260908115922` (view
+  `certificates_public` + `get_public_certificate` + `get_public_certificate_record`:
+  provider mock/algorand-mock → `chainAnchored=false`, status null). Teacher UI
+  (baca `chain_anchors` langsung) tidak berubah.
+- **Defect pre-existing yang dibersihkan** (blokir gate §2): view
+  `csp_events_daily_digest` `security_invoker=false` → true (migrasi
+  `20260908120654`); advisor `scripts/db-advisor.mjs` regex secret salah-positif
+  pada nama role `service_role` → pattern presisi (JWT/sb_secret_/assignment).
+- **Gates pasca-DB**: db advisor OK (39 tabel, 5 view) · live-denial **95/95** ·
+  restore rehearsal **9/9** · vitest **636 passed / 1 skipped** · lint 0 · tsc 0 ·
+  build 0 · smoke 26/26.
+- **Human-only remaining steps** (tidak bisa dieksekusi dari lingkungan ini):
+  buat project pilot fresh + DNS `pilot.<domain>` + HTTPS (PaaS deploy), rotasi
+  akun demo `DemoPass-2026!` sebelum undang peserta, CSP report→enforce window.
+
+## Deep pages bilingual (quiz, review, activities, guardian, profile, upload) — 08 Sep 2026
+
+- **Scope diperluas**: dictionary baru `lib/ui-text/{quiz,review,activity,guardian,profile,upload}.ts`
+  (dictionary-per-page, pola sama dengan dash/cert/analytics/learn/student-detail).
+- **Halaman/komponen diubah ke bilingual penuh**:
+  - `app/(student)/quiz/[attemptId]` (page + quiz-taker, incl. timer/confirm/submit/result
+    states, upload file, pending-release).
+  - `app/(student)/review` (page + review-form, incl. confidence labels 1–5, due labels,
+    date format via `localeFor(lang)`).
+  - `app/(student)/activities/[activityId]` (page + activity-view + reflection-box: semua
+    tipe activity article/video/resource/code_board/youtube/pdf/audio/file/quiz/upload/
+    roblox/reflection + fallback offline + draft autosave states).
+  - `app/(guardian)/guardian` — dashboard wali penuh (summary, statistik, sertifikat,
+    unduh PDF, verifikasi, revoked note) via `GUARDIAN`.
+  - `app/profile` (page + edit-profile) via `PROFILE`; `LogoutButton` lang wajib (bukan
+    default 'id'); `settings-panel` fallback 'id'→'en' + EditProfile/LogoutButton lang.
+  - `components/upload-box` via `UPLOAD` (dipakai quiz-taker & activity-view).
+- **Konsistensi a11y**: `<html lang>`/aria-label ikut bahasa; `localeFor(lang)` untuk
+  tanggal review (id-ID vs en-US).
+- **Lint scope diperluas**: TRANSLATED_SURFACES kini meliputi quiz/review/activities/
+  guardian/profile/upload-box — literal Indonesia inline di permukaan itu = regresi lint.
+- **Defect react-hooks/purity yang ditemukan**: `mkT`'s `t` closure yang dipanggil di
+  dalam async handler membuat linter purity salah-flagg `Date.now()` pada upload-box
+  (false positive analyzer). Solusi: lookup langsung `UPLOAD.key[lang]` di dalam handler,
+  `mkT` tetap untuk JSX; type `satisfies TextDict` agar key literal dipertahankan.
+- **Gates**: prettier ✓ · eslint 0 · tsc 0 · **vitest 648 passed / 1 skipped** (72 files) ·
+  build ✓ Compiled successfully.
+- Test update: `dashboard-modern.test.ts` (wali) kini menegaskan dict key `noProgress`;
+  `reflection-box.test.tsx` render dengan `lang="id"`.
