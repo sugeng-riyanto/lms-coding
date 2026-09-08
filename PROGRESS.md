@@ -1722,3 +1722,86 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
   /teacher/analytics, /learn, /learn/[id] semua menampilkan English konsisten (label,
   tabel, empty states, aria, digest, chip anchor, grafik).
 - Gates akhir tetap hijau: prettier ✓ · eslint 0 · tsc 0 · vitest 597/1 · build 0.
+
+## Pre-sign-in language + profile persistence + translated-surface lint gate (08 Sep 2026)
+
+- **Login screen is language-selectable before auth** (toggle sets `lms-lang`
+  visitor cookie) and now **persists the visitor choice into `profiles.language`
+  on first sign-in** (`persistLoginLanguage` server action, idempotent). Semantics
+  that matter: the column default is `'id'`, so a profile still at `'id'` means
+  "never chose" → the visitor's pre-auth pick is persisted; an explicitly saved
+  `'en'` stays authoritative (the stale cookie never silently overrides it).
+- `app/(auth)/login/page.tsx` resolves the login language from the profile when a
+  session exists (returning user sees their saved language on the login screen),
+  else the visitor cookie, else Indonesian.
+- **`<html lang>` a11y fix**: the root layout hardcoded `lang="id"` while content
+  renders in the user's language — screen readers announced English UI as
+  Indonesian. Now `lang` follows `getLang()`.
+- **Lint gate for translated pages** (extends `lms/no-indonesian-shell-text`):
+  the ESLint config now applies the Indonesian-literal rule to `TRANSLATED_SURFACES`
+  (teacher dashboard/certificates/analytics, student learn + their components,
+  charts/dashboard/anchor-status kits) — on those t()-routed pages a hardcoded
+  Indonesian string is a regression and fails CI. `CHART_TEXT`/`STATE_TEXT`
+  dictionaries moved to `lib/ui-text/chart-kit.ts` (data, not inline literals);
+  components re-export them.
+- Live proof on hosted: murid01 profile `id` → picked English pre-auth → signed
+  in → profile became `en` and /learn rendered English; then picked Indonesian
+  pre-auth → profile stayed `en` (explicit preference wins); guru profile `en`
+  untouched. murid01 restored to `id` afterwards.
+- Gates: prettier · eslint 0 (incl. new translated-surface scope) · tsc 0 ·
+  **vitest 603 passed / 1 skipped** · build 0. Language-policy unit tests now pin
+  the TRANSLATED_SURFACES scope and the idempotent/non-override action semantics.
+
+## Default UI language = English (English-first pilot) — 08 Sep 2026
+
+- **`lib/i18n.ts`**: `DEFAULT_LANG` flipped `'id'` → `'en'` (single server-side
+  knob used by `getLang()` → all dashboards, chrome, and `<html lang>`).
+  Comment documents why the **DB column default stays `'id'`**: that stored
+  value is the "never chose" sentinel for `persistLoginLanguage`, not a UI
+  default.
+- **Login surface**: `app/(auth)/login/page.tsx` `DEFAULT_LOGIN_LANG` → `en`;
+  `login-form.tsx` client fallback `'id'` → `'en'`. Anonymous first visit now
+  renders English by default; users opt into Indonesian via the toggle or
+  Settings, and the choice persists on first sign-in.
+- **Semantics kept intact**: an explicitly stored non-default choice stays
+  authoritative (cookie never silently overrides `'en'`); the sentinel `'id'`
+  stored value is treated as an explicit Indonesian choice for legacy rows
+  (documented edge).
+- **docs/language-policy.md rewritten** to match the actual architecture
+  (full-app bilingual via dictionaries; English-only public shells; lint rule
+  applied to shells AND translated surfaces).
+- Live proof (dev server, hosted Supabase): cleared cookies + session →
+  `/login` anonymous renders English (English pressed, Indonesian not);
+  signed in as murid01 **without toggling** → profile `'id'`→`'en'` persisted,
+  `/learn` renders fully English (nav, weekly target, charts, level path,
+  "Updated: 9/8/2026 …" en-US date).
+- Gates: prettier · eslint 0 · tsc 0 · **vitest 619 passed / 1 skipped** ·
+  build 0.
+
+## In-browser Python (Pyodide WASM) — LIVE proof on code_board activity — 08 Sep 2026
+
+- **Real execution verified end-to-end in the browser** (no server POST, code never
+  leaves the device) on activity `02 Python example and walkthrough`
+  (`/activities/d44664ea-…?enrollment=d94bbd74-…`, murid01, hosted Supabase):
+  1. `print(...)` ×3 → stdout `Coding laboratory\nTrial 1\n5\n`, **exit 0**;
+  2. `a = input(); print("got:", a)` with stdin `42` → `got: 42\n`, exit 0;
+  3. `print("before"); 1 / 0` → stdout `before\n` + stderr traceback
+     (`ZeroDivisionError`), **exit 1** — parity dengan semantik Piston.
+  Pyodide `v0.26.4` dimuat dari `cdn.jsdelivr.net` (script + wasm + stdlib,
+  terlihat di network log, tanpa CSP violation di dev report-only).
+- **Dua bug Pyodide 0.26 yang ditemukan & diperbaiki selama live drive:**
+  - `setStdout({ batched })` MEMBUANG newline per baris → output menggumpal
+    (`"Coding laboratoryTrial 15"`). Diganti handler `write` (Uint8Array
+    byte-perfect, per streams.ts Pyodide 0.26) + `TextDecoder` streaming.
+  - Exception Python TIDAK lewat sys.stderr (traceback diformat ke `message`
+    error yang dilempar) → deteksi eksplisit `isPythonTraceback(err)` → outcome
+    `ok, exitCode 1, stderr traceback` (bukan PROVIDER_ERROR). `raw` option
+    ternyata callback per-char-code (bukan Uint8Array) — dihindari.
+- stdin reader (baris + `\n`, EOF undefined + autoEOF) terbukti kompatibel
+  dengan `LegacyReader` Pyodide (yang auto-append `\n` & EOF aman saat baris
+  terakhir bukan newline).
+- Gates: eslint 0 · tsc 0 · **vitest 621 passed / 1 skipped** (+2 tes
+  `isPythonTraceback`, +2 sebelumnya) · build 0.
+- Sisa tradeoff terdokumentasi: Pyodide berjalan di main thread (loop tak
+  berujung bisa membekukan tab; sandbox eksternal Piston tetap default produksi
+  via `CODE_RUNNER_PROVIDER=http`); migrasi Web Worker = langkah berikutnya.
