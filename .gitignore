@@ -16,3 +16,6 @@ supabase/.temp/
 # Agent tool runtime (bukan source proyek)
 .freebuff/
 
+
+# Seed content spreadsheets (local data, not code)
+docs/xlsx/
