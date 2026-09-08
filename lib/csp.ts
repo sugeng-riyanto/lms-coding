@@ -29,10 +29,18 @@ export interface CspOptions {
   nonce: string;
   /** Dev: 'unsafe-eval' (React dev) + Supabase lokal http://127.0.0.1. */
   isDev?: boolean;
+  /**
+   * Eksekusi kode in-browser (Pyodide/WASM) AKTIF — lihat
+   * NEXT_PUBLIC_CODE_RUNNER_IN_BROWSER. Kelonggaran SEMPIT dan eksplisit:
+   * `'wasm-unsafe-eval'` (kompilasi WASM Pyodide, BUKAN eval JS) + host CDN
+   * Pyodide di script-src/connect-src. TIDAK pernah menambah 'unsafe-eval'.
+   * Tanpa flag ini kebijakan tetap ketat (default).
+   */
+  inBrowserCode?: boolean;
 }
 
 /** Bangun satu string kebijakan (enforce & report-only memakai string sama). */
-export function buildCspPolicy({ nonce, isDev = false }: CspOptions): string {
+export function buildCspPolicy({ nonce, isDev = false, inBrowserCode = false }: CspOptions): string {
   const scriptSrc = [
     "'self'",
     `'nonce-${nonce}'`,
@@ -40,6 +48,9 @@ export function buildCspPolicy({ nonce, isDev = false }: CspOptions): string {
     // React dev memakai eval untuk stack trace/source maps — hanya di dev.
     // Produksi TIDAK butuh eval (React/Next tidak memakainya).
     ...(isDev ? ["'unsafe-eval'"] : []),
+    // Pyodide (in-browser): kompilasi WASM butuh token khusus ini — bukan
+    // eval JS. Host CDN perluasan di script-src (muatan pyodide.js).
+    ...(inBrowserCode ? ["'wasm-unsafe-eval'", "https://cdn.jsdelivr.net"] : []),
   ].join(" ");
 
   const connectSrc = [
@@ -47,6 +58,8 @@ export function buildCspPolicy({ nonce, isDev = false }: CspOptions): string {
     "https://*.supabase.co",
     // Dev: Supabase lokal + HMR websocket (report-only, jadi tidak memblokir).
     ...(isDev ? ["http://127.0.0.1:*", "ws://127.0.0.1:*"] : []),
+    // In-browser code: fetch runtime WASM/data Pyodide dari CDN.
+    ...(inBrowserCode ? ["https://cdn.jsdelivr.net"] : []),
   ].join(" ");
 
   return [

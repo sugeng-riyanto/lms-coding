@@ -27,6 +27,27 @@ describe("buildCspPolicy", () => {
     expect(policy).not.toContain("127.0.0.1");
   });
 
+  it("default TANPA in-browser code: tidak ada wasm-unsafe-eval/CDN Pyodide", () => {
+    const policy = buildCspPolicy({ nonce: "n1" });
+    expect(policy).not.toContain("wasm-unsafe-eval");
+    expect(policy).not.toContain("cdn.jsdelivr.net");
+  });
+
+  it("inBrowserCode menambah kelonggaran SEMPIT: wasm-unsafe-eval + CDN, bukan unsafe-eval", () => {
+    const policy = buildCspPolicy({ nonce: "n1", inBrowserCode: true });
+    expect(policy).toContain("'wasm-unsafe-eval'");
+    expect(policy).toContain("https://cdn.jsdelivr.net");
+    expect(policy).toContain("connect-src 'self' https://*.supabase.co https://cdn.jsdelivr.net");
+    // 'unsafe-eval' TIDAK PERNAH ditambahkan oleh mode in-browser; script-src
+    // tetap bebas 'unsafe-inline' (hanya style-src yang memakainya).
+    expect(policy).not.toContain("'unsafe-eval'");
+    const scriptSrc = policy.split(";").find((d) => d.trim().startsWith("script-src")) ?? "";
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    // Sisa hardening tetap utuh.
+    expect(policy).toContain("object-src 'none'");
+    expect(policy).toContain("frame-ancestors 'none'");
+  });
+
   it("frame-src per-host memuat seluruh host media-embed", () => {
     const policy = buildCspPolicy({ nonce: "n1" });
     expect(policy).toContain(

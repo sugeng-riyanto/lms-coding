@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CODE_RUNNER_LANGUAGES,
+  browserEngineFor,
   buildCodeAiPrompt,
   buildPistonPayload,
   createCodeRunnerProvider,
@@ -40,6 +41,27 @@ describe("resolveLanguage — allowlist & alias", () => {
     ]) {
       expect(ids).toContain(id);
     }
+  });
+});
+
+describe("browserEngineFor — in-browser (WASM) hanya untuk bahasa tertentu", () => {
+  it("python → pyodide; bahasa lain tetap sandbox eksternal", () => {
+    expect(browserEngineFor("python")).toBe("pyodide");
+    for (const id of [
+      "javascript",
+      "typescript",
+      "c",
+      "cpp",
+      "java",
+      "go",
+      "rust",
+      "ruby",
+      "php",
+      "csharp",
+    ]) {
+      expect(browserEngineFor(id)).toBeNull();
+    }
+    expect(browserEngineFor("")).toBeNull();
   });
 });
 

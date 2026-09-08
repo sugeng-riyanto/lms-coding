@@ -172,6 +172,27 @@ export function languageDef(id: string): CodeRunnerLanguage | null {
   return CODE_RUNNER_LANGUAGES.find((l) => l.id === id) ?? null;
 }
 
+/**
+ * Engine in-browser (WebAssembly) untuk bahasa tertentu — bagian dari strategi
+ * "coding dunia nyata": bahasa ringan/amatir dijalankan DI PERANGKAT murid
+ * (Pyodide), sisanya tetap di sandbox eksternal (Piston). Murni fungsi:
+ * keputusan UI & client tidak pernah menyentuh jaringan/server.
+ */
+export type BrowserEngineId = "pyodide";
+
+/**
+ * Bahasa yang didukung eksekusi in-browser. Python via Pyodide (WASM).
+ * JS/TS/C/C++/Java/dll TIDAK ada di sini — tetap sandbox eksternal agar
+ * tidak menurunkan keamanan (eval JS in-browser butuh 'unsafe-eval' =
+ * DITOLAK oleh kebijakan CSP proyek).
+ */
+export const IN_BROWSER_LANGUAGES: ReadonlySet<string> = new Set(["python"]);
+
+/** Mesin in-browser untuk id bahasa canonical; null bila sandbox eksternal. */
+export function browserEngineFor(languageId: string): BrowserEngineId | null {
+  return IN_BROWSER_LANGUAGES.has(languageId) ? "pyodide" : null;
+}
+
 /** Validasi ukuran/format sebelum dikirim ke provider (hanya error yang mungkin). */
 export function validateRunInput(input: CodeRunInput): Extract<CodeRunOutcome, { ok: false }> | null {
   const lang = resolveLanguage(input.language);

@@ -1,7 +1,16 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CODE_RUNNER_LANGUAGES, buildCodeAiPrompt, type CodeRunOutcome } from "@/lib/code-runner";
+import { runPythonInBrowser } from "@/lib/browser-python";
+import {
+  CODE_RUNNER_LANGUAGES,
+  browserEngineFor,
+  buildCodeAiPrompt,
+  type CodeRunOutcome,
+} from "@/lib/code-runner";
+
+/** Eksekusi in-browser (Pyodide) hanya aktif bila operator mengizinkan. */
+const BROWSER_RUN_ENABLED = process.env.NEXT_PUBLIC_CODE_RUNNER_IN_BROWSER === "true";
 
 /** Hasil tampilan: memungkinkan error UI non-provider (mis. 401) juga. */
 type RunDisplay = CodeRunOutcome | { ok: false; error: string; message: string };
@@ -47,10 +56,19 @@ export function CodeRunner({
     [lang],
   );
 
+  /** Mesin untuk bahasa aktif: pyodide (in-browser) bila diizinkan, else null. */
+  const engine = BROWSER_RUN_ENABLED ? browserEngineFor(lang) : null;
+
   async function run() {
     setRunning(true);
     setResult(null);
     try {
+      if (engine === "pyodide") {
+        // Python: eksekusi WASM di perangkat murid — tanpa POST ke server.
+        const outcome = await runPythonInBrowser({ code, stdin });
+        setResult(outcome);
+        return;
+      }
       const res = await fetch("/api/code/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -116,6 +134,11 @@ export function CodeRunner({
           <div>
             <label htmlFor="cr-lang" className="text-xs font-semibold text-slate-600 dark:text-slate-300">
               Bahasa
+              {engine === "pyodide" && (
+                <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200">
+                  ⚡ in-browser (WASM)
+                </span>
+              )}
             </label>
             <select
               id="cr-lang"
@@ -177,7 +200,9 @@ export function CodeRunner({
             {running ? "Menjalankan…" : "▶ Jalankan"}
           </button>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Dieksekusi di sandbox eksternal (bukan server LMS). Output &amp; kode tidak disimpan.
+            {engine === "pyodide"
+              ? "Dieksekusi di browser Anda (WebAssembly Pyodide). Kode & output tidak meninggalkan perangkat."
+              : "Dieksekusi di sandbox eksternal (bukan server LMS). Output & kode tidak disimpan."}
           </p>
         </div>
 

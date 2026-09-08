@@ -19,7 +19,9 @@ export async function proxy(request: NextRequest) {
   const mode: CspMode = isDev || process.env.CSP_REPORT_ONLY !== "false" ? "report-only" : "enforce";
 
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
-  const policy = buildCspPolicy({ nonce, isDev });
+  // In-browser code (Pyodide) menambah kelonggaran CSP SEMPIT — lihat lib/csp.ts.
+  const inBrowserCode = process.env.NEXT_PUBLIC_CODE_RUNNER_IN_BROWSER === "true";
+  const policy = buildCspPolicy({ nonce, isDev, inBrowserCode });
   const cspHeader = cspHeaderName(mode);
 
   // Nonce + CSP harus ada di REQUEST headers (agar SSR meng-inject nonce) DAN
