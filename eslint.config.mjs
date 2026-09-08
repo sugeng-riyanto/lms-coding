@@ -24,6 +24,20 @@ const SHELL_FILES = [
   "components/theme-toggle.{ts,tsx}",
 ];
 
+// Permukaan yang sudah bilingual penuh lewat t()/mkT + dictionary
+// (lib/ui-text/{dash,cert,analytics,learn}): teks Indonesia BOLEH muncul,
+// tetapi hanya via dictionary — literal Indonesia inline adalah regresi.
+const TRANSLATED_SURFACES = [
+  "app/(teacher)/teacher/page.{ts,tsx}",
+  "app/(teacher)/teacher/alert-controls.{ts,tsx}",
+  "app/(teacher)/teacher/analytics/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/certificates/**/*.{ts,tsx}",
+  "app/(student)/learn/**/*.{ts,tsx}",
+  "components/charts.{ts,tsx}",
+  "components/dashboard.{ts,tsx}",
+  "components/anchor-status.{ts,tsx}",
+];
+
 function textOf(value) {
   if (!value) return null;
   if (value.type === "Literal" || value.type === "StringLiteral") {
@@ -86,6 +100,10 @@ const config = [
   },
   {
     files: SHELL_FILES,
+    rules: { "lms/no-indonesian-shell-text": "warn" },
+  },
+  {
+    files: TRANSLATED_SURFACES,
     rules: { "lms/no-indonesian-shell-text": "warn" },
   },
   {

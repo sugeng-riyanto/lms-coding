@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { Linter } from "eslint";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,8 +10,23 @@ import {
 /**
  * Kebijakan bahasa UI (docs/language-policy.md): shell publik WAJIB English;
  * dashboard peran sengaja Bahasa Indonesia. Rule `lms/no-indonesian-shell-text`
- * aktif hanya pada path shell. Test ini mengunci perilaku rule + daftar kata.
+ * aktif pada path shell DAN pada permukaan yang sudah bilingual penuh
+ * (TRANSLATED_SURFACES di bawah, disinkronkan dengan eslint.config.mjs): di
+ * sana literal Indonesia hardcoded adalah regresi — string baru harus masuk
+ * dictionary lib/ui-text dan dipakai via t()/mkT.
  */
+
+// Keep in sync with eslint.config.mjs TRANSLATED_SURFACES.
+const TRANSLATED_SURFACES = [
+  "app/(teacher)/teacher/page.{ts,tsx}",
+  "app/(teacher)/teacher/alert-controls.{ts,tsx}",
+  "app/(teacher)/teacher/analytics/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/certificates/**/*.{ts,tsx}",
+  "app/(student)/learn/**/*.{ts,tsx}",
+  "components/charts.{ts,tsx}",
+  "components/dashboard.{ts,tsx}",
+  "components/anchor-status.{ts,tsx}",
+];
 
 function lint(code: string): string[] {
   const linter = new Linter({ configType: "flat" });
@@ -90,5 +106,23 @@ describe("language policy invariants", () => {
     for (const s of ["Masuk", "Sertifikat", "Analitik kelas", "Antrian penilaian", "Pengaturan"]) {
       expect(INDO_WORD_RE.test(s)).toBe(true);
     }
+  });
+});
+
+describe("eslint.config.mjs: translated surfaces are gated too", () => {
+  it("applies lms/no-indonesian-shell-text to TRANSLATED_SURFACES (not just shells)", () => {
+    const cfg = readFileSync("eslint.config.mjs", "utf8");
+    expect(cfg).toMatch(/TRANSLATED_SURFACES/);
+    for (const pattern of TRANSLATED_SURFACES) {
+      // Every surface pattern appears in the config AND is wired to the rule.
+      expect(cfg, `missing pattern ${pattern}`).toContain(pattern);
+    }
+    // The translated block sits next to the shell block and enables the rule.
+    const translatedBlock = cfg.slice(cfg.indexOf("TRANSLATED_SURFACES"));
+    expect(translatedBlock).toMatch(/rules: \{ "lms\/no-indonesian-shell-text": "warn" \}/);
+  });
+
+  it("still ignores the bilingual ternary idiom (expression containers are dynamic)", () => {
+    expect(lint('export default function T(){return <p>{l === "id" ? "Tema:" : "Theme:"}</p>;}')).toEqual([]);
   });
 });

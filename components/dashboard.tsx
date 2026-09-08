@@ -6,7 +6,11 @@
  * permukaan memakai palet slate/blue/emerald/amber yang sudah dipetakan ke
  * dark mode di `globals.css` + varian `dark:` eksplisit untuk gradien.
  */
-import { mkT, type Lang, type TextDict } from "@/lib/i18n";
+import { mkT, type Lang } from "@/lib/i18n";
+// Dictionary state badge dipisah ke lib/ui-text (DATA id/en, bukan literal
+// inline): komponen ini hanya memakai via mkT. Re-export untuk kompatibilitas.
+export { STATE_TEXT } from "@/lib/ui-text/chart-kit";
+import { STATE_TEXT } from "@/lib/ui-text/chart-kit";
 
 export type StatTone = "blue" | "emerald" | "amber" | "rose" | "slate";
 
@@ -106,14 +110,6 @@ export function SectionHeader({ title, hint }: { title: string; hint?: string })
     </div>
   );
 }
-
-/** State labels for the dashboard badge, per state key. */
-export const STATE_TEXT = {
-  locked: { id: "Terkunci", en: "Locked" },
-  available: { id: "Tersedia", en: "Available" },
-  in_progress: { id: "Dikerjakan", en: "In progress" },
-  completed: { id: "Selesai", en: "Completed" },
-} as const satisfies TextDict;
 
 const STATE_STYLE: Record<string, { badge: string; dot: string }> = {
   locked: {

@@ -1,12 +1,9 @@
 import type { ReactNode } from "react";
-import { fmt, mkT, type Lang, type TextDict } from "@/lib/i18n";
-
-/** Dictionary internal komponen grafik (caption, tooltip, label pembaruan). */
-export const CHART_TEXT = {
-  updated: { id: "Diperbarui: {at}.", en: "Updated: {at}." },
-  noData: { id: "{label}: belum ada data", en: "{label}: no data yet" },
-  valuePerCategory: { id: "Nilai per kategori: {values}", en: "Values per category: {values}" },
-} as const satisfies TextDict;
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+// Dictionary teks grafik dipisah ke lib/ui-text (bukan data inline di
+// komponen): id/en adalah DATA — halaman/komponen hanya memakai via t()/mkT.
+export { CHART_TEXT } from "@/lib/ui-text/chart-kit";
+import { CHART_TEXT } from "@/lib/ui-text/chart-kit";
 
 /**
  * Kit grafik ringan — SERVER-SAFE (tanpa JS klien, tanpa dependensi baru).

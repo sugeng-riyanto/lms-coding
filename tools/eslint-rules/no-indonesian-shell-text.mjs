@@ -1,9 +1,14 @@
 /**
  * Rule lokal: lindungi kebijakan bahasa UI (docs/language-policy.md).
- * Shell publik (auth, verifier, health, error/not-found/unauthorized/inactive,
- * landing, layout, theme-toggle) WAJIB English; dashboard peran (teacher /
- * student / guardian / profile / settings) sengaja tetap Bahasa Indonesia.
- * Rule ini hanya aktif di path shell (files di eslint.config.mjs) dan menandai
+ * Dua gol:
+ *  1. Shell publik (auth, verifier, health, error/not-found/unauthorized/
+ *     inactive, landing, layout, theme-toggle) WAJIB English — dashboard peran
+ *     sengaja Bahasa Indonesia.
+ *  2. Permukaan yang sudah diterjemahkan penuh lewat t()/mkT (teacher dash /
+ *     certificates / analytics, student learn, komponen berbagi) TIDAK BOLEH
+ *     punya teks Indonesia hardcoded sebagai literal: string UI baru harus
+ *     masuk dictionary lib/ui-text, bukan ditulis inline (CI: --max-warnings=0).
+ * Rule hanya aktif pada path yang dipilih di eslint.config.mjs dan menandai
  * kata Indonesia yang tidak ambigu sebagai warning (CI: --max-warnings=0).
  */
 export const INDONESIAN_UI_WORDS = [
@@ -84,12 +89,12 @@ export const noIndonesianShellText = {
   meta: {
     type: "suggestion",
     docs: {
-      description: "Flags Indonesian UI words in public/shell components (English required)",
+      description: "Flags Indonesian UI words hardcoded in English-only shells and t()-routed pages",
       recommended: false,
     },
     messages: {
       indoText:
-        'Teks Indonesia "{{text}}" di komponen shell publik. Shell WAJIB English (docs/language-policy.md): pakai padanan Inggris, atau pindahkan label ke dashboard peran bila memang untuk pengguna internal.',
+        'Teks Indonesia "{{text}}" hardcoded. Kebijakan bahasa (docs/language-policy.md): shell publik WAJIB English; halaman yang sudah bilingual lewat t()/mkT hanya boleh memuat Indonesia lewat dictionary (lib/ui-text), bukan literal inline.',
     },
     schema: [],
   },
