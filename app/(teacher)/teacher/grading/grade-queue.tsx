@@ -5,23 +5,25 @@ import { useRouter } from "next/navigation";
 import { approveAiDraft, gradeResponse, rejectAiDraft, requestAiDraft } from "@/features/actions";
 import type { AiConfig, QueueItem } from "./page";
 import { RubricGradePanel } from "@/components/rubric-grade-panel";
+import { ResponseCanvasArea } from "@/components/response-canvas";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { AI_ERROR_KEY, GRADING } from "@/lib/ui-text/grading";
 
-function aiErrorText(code: string): string {
-  const map: Record<string, string> = {
-    AI_DISABLED: "Fitur AI nonaktif.",
-    AI_PROVIDER_UNCONFIGURED: "Provider AI belum dikonfigurasi.",
-    AI_NO_CONSENT: "Organisasi belum menyetujui penggunaan AI.",
-    AI_PROVIDER_ERROR: "Provider AI gagal merespons — coba lagi.",
-    DRAFT_FAILED: "Gagal menyimpan draf.",
-    APPROVE_FAILED: "Gagal menyetujui draf.",
-    REJECT_FAILED: "Gagal menolak draf.",
-    ALREADY_APPROVED: "Draf sudah disetujui.",
-    NOT_FOUND: "Data tidak ditemukan.",
-  };
-  return map[code] ?? code;
+function aiErrorText(t: (k: keyof typeof GRADING) => string, code: string): string {
+  const key = AI_ERROR_KEY[code];
+  return key ? t(key) : code;
 }
 
-export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem[]; aiConfig: AiConfig }) {
+export function GradeQueue({
+  initialItems,
+  aiConfig,
+  lang,
+}: {
+  initialItems: QueueItem[];
+  aiConfig: AiConfig;
+  lang: Lang;
+}) {
+  const t = mkT(GRADING, lang);
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
@@ -36,7 +38,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
       feedback: feedbacks[item.responseId] ?? "",
     });
     setBusy(null);
-    setNotice(res.ok ? "Nilai tersimpan (revisi tercatat)." : `Gagal: ${res.error}`);
+    setNotice(res.ok ? t("noticeSaved") : fmt(t("failPrefix"), { error: res.error }));
     if (res.ok) router.refresh();
   }
 
@@ -44,7 +46,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
     setBusy(item.responseId);
     const res = await requestAiDraft({ responseId: item.responseId });
     setBusy(null);
-    setNotice(res.ok ? "Draf AI dibuat — tinjau sebelum menyetujui." : `Gagal: ${aiErrorText(res.error)}`);
+    setNotice(res.ok ? t("noticeDraftCreated") : fmt(t("failPrefix"), { error: aiErrorText(t, res.error) }));
     if (res.ok) router.refresh();
   }
 
@@ -53,11 +55,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
     setBusy(item.responseId);
     const res = await approveAiDraft({ draftId: item.aiDraft.id });
     setBusy(null);
-    setNotice(
-      res.ok
-        ? "Draf AI disetujui — feedback terpasang (audit tercatat)."
-        : `Gagal: ${aiErrorText(res.error)}`,
-    );
+    setNotice(res.ok ? t("noticeDraftApproved") : fmt(t("failPrefix"), { error: aiErrorText(t, res.error) }));
     if (res.ok) router.refresh();
   }
 
@@ -66,22 +64,22 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
     setBusy(item.responseId);
     const res = await rejectAiDraft({ draftId: item.aiDraft.id });
     setBusy(null);
-    setNotice(res.ok ? "Draf AI ditolak." : `Gagal: ${aiErrorText(res.error)}`);
+    setNotice(res.ok ? t("noticeDraftRejected") : fmt(t("failPrefix"), { error: aiErrorText(t, res.error) }));
     if (res.ok) router.refresh();
   }
 
   if (initialItems.length === 0) {
     return (
       <p className="mt-6 rounded-xl border p-5" role="status">
-        Antrian kosong. 🎉
+        {t("queueEmpty")}
       </p>
     );
   }
 
   const aiBlockedReason = !aiConfig.enabled
-    ? "Fitur AI nonaktif (AI_FEEDBACK_ENABLED=false)."
+    ? t("aiBlockedEnv")
     : !aiConfig.consent
-      ? "Organisasi belum menyetujui penggunaan AI."
+      ? t("aiBlockedConsent")
       : null;
 
   return (
@@ -92,27 +90,38 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
         </p>
       )}
       {initialItems.map((it) => (
-        <section key={it.responseId} aria-label={`Nilai ${it.studentName}`} className="rounded-xl border p-4">
+        <section
+          key={it.responseId}
+          aria-label={fmt(t("gradeAria"), { name: it.studentName })}
+          className="rounded-xl border p-4"
+        >
           <p className="font-semibold">
-            {it.studentName} · attempt #{it.attemptNo} ({it.attemptStatus})
+            {fmt(t("attemptHeader"), { student: it.studentName, no: it.attemptNo, status: it.attemptStatus })}
           </p>
           <p className="mt-1 text-sm">
-            <strong>Soal [{it.qtype}]:</strong> {it.promptText}
+            <strong>{fmt(t("questionLabel"), { type: it.qtype })}</strong> {it.promptText}
           </p>
           <p className="mt-1 rounded bg-slate-50 p-2 text-sm">
-            Jawaban: {JSON.stringify(it.answer)?.slice(0, 500)}
+            {t("answerLabel")} {JSON.stringify(it.answer)?.slice(0, 500)}
           </p>
+          {/* Kanvas anotasi sains/math: coretan murid (read-only) + umpan balik guru. */}
+          <ResponseCanvasArea attemptId={it.attemptId} questionVersionId={it.questionVersionId} lang={lang} />
           {it.revisions.length > 0 && (
             <ul className="mt-1 text-xs text-slate-500">
               {it.revisions.map((r, i) => (
                 <li key={i}>
-                  Revisi: {r.previous ?? "—"} → {r.new ?? "—"} · {r.reason} · {r.at}
+                  {fmt(t("revisionLine"), {
+                    prev: r.previous ?? "—",
+                    next: r.new ?? "—",
+                    reason: r.reason,
+                    at: r.at,
+                  })}
                 </li>
               ))}
             </ul>
           )}
           {it.rubric ? (
-            <RubricGradePanel responseId={it.responseId} rubric={it.rubric} />
+            <RubricGradePanel responseId={it.responseId} rubric={it.rubric} lang={lang} />
           ) : (
             <>
               {/* AI draft feedback (ADR-014/015): draft jelas berlabel, wajib persetujuan guru. */}
@@ -125,7 +134,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
                     aria-disabled="true"
                     className="cursor-not-allowed rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-500"
                   >
-                    Saran draf AI (nonaktif)
+                    {t("aiBlockedDisabled")}
                   </button>
                 ) : !it.aiDraft || it.aiDraft.status === "rejected" ? (
                   <button
@@ -135,20 +144,22 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
                     className="rounded-lg border border-amber-600 px-3 py-1.5 text-sm font-semibold text-amber-800 disabled:opacity-60 dark:text-amber-200"
                   >
                     {busy === it.responseId
-                      ? "Meminta…"
+                      ? t("requesting")
                       : it.aiDraft?.status === "rejected"
-                        ? "Minta draf AI baru (yang lama ditolak)"
-                        : "Saran draf AI"}
+                        ? t("requestDraftRejected")
+                        : t("requestDraft")}
                   </button>
                 ) : it.aiDraft.status === "draft" ? (
                   <>
                     <p className="text-xs font-bold uppercase tracking-wide text-amber-800 dark:text-amber-200">
-                      DRAFT AI — perlu persetujuan guru
+                      {t("draftLabel")}
                     </p>
                     <p className="mt-1 whitespace-pre-wrap rounded bg-white/60 p-2 text-sm dark:bg-slate-900/40">
                       {it.aiDraft.body}
                     </p>
-                    <p className="mt-1 text-xs text-slate-500">Model: {it.aiDraft.model}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {fmt(t("modelLabel"), { model: it.aiDraft.model })}
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -156,7 +167,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
                         disabled={busy !== null}
                         className="rounded-lg bg-emerald-700 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-60"
                       >
-                        {busy === it.responseId ? "Menyetujui…" : "Setujui & pakai"}
+                        {busy === it.responseId ? t("approving") : t("approve")}
                       </button>
                       <button
                         type="button"
@@ -164,21 +175,19 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
                         disabled={busy !== null}
                         className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-60"
                       >
-                        {busy === it.responseId ? "Menolak…" : "Tolak"}
+                        {busy === it.responseId ? t("rejecting") : t("reject")}
                       </button>
                     </div>
                   </>
                 ) : (
-                  <p className="text-sm text-emerald-800 dark:text-emerald-200">
-                    ✓ Draft AI disetujui — feedback sudah terpasang (penanda ai_approved, audit tercatat).
-                  </p>
+                  <p className="text-sm text-emerald-800 dark:text-emerald-200">{t("draftApproved")}</p>
                 )}
               </div>
 
               <div className="mt-3 grid gap-2 md:grid-cols-3">
                 <div>
                   <label htmlFor={`s-${it.responseId}`} className="text-sm font-semibold">
-                    Skor manual (0–100)
+                    {t("scoreLabel")}
                   </label>
                   <input
                     id={`s-${it.responseId}`}
@@ -192,7 +201,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
                 </div>
                 <div className="md:col-span-2">
                   <label htmlFor={`f-${it.responseId}`} className="text-sm font-semibold">
-                    Feedback
+                    {t("feedbackLabel")}
                   </label>
                   <input
                     id={`f-${it.responseId}`}
@@ -208,7 +217,7 @@ export function GradeQueue({ initialItems, aiConfig }: { initialItems: QueueItem
                 disabled={busy !== null}
                 className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
               >
-                {busy === it.responseId ? "Menyimpan…" : "Simpan nilai"}
+                {busy === it.responseId ? t("saving") : t("saveScore")}
               </button>
             </>
           )}

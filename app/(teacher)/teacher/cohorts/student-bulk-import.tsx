@@ -4,6 +4,8 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { bulkImportStudents } from "@/features/actions";
 import { MAX_STUDENT_ROWS, xlsxFileError } from "@/lib/bulk-import";
 import { BulkCard } from "@/components/bulk-card";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { COHORT } from "@/lib/ui-text/cohort";
 
 interface ImportResult {
   ok: boolean;
@@ -15,25 +17,32 @@ interface ImportResult {
   errors?: string[];
 }
 
-const ERROR_TEXT: Record<string, string> = {
-  FILE_MUST_BE_XLSX: "Berkas harus berformat .xlsx.",
-  FILE_EMPTY: "Berkas kosong (0 byte).",
-  FILE_TOO_LARGE: "Berkas melebihi batas ukuran 5 MB.",
-  FILE_MIME_REJECTED: "Jenis berkas tidak dikenali sebagai spreadsheet.",
+const ERROR_KEY: Record<string, keyof typeof COHORT> = {
+  FILE_MUST_BE_XLSX: "errMustBeXlsx",
+  FILE_EMPTY: "errEmpty",
+  FILE_TOO_LARGE: "errTooLarge",
+  FILE_MIME_REJECTED: "errMimeRejected",
 };
 
-function errorText(err: string | undefined, cap?: number): string {
+function errorText(t: (k: keyof typeof COHORT) => string, err: string | undefined, cap?: number): string {
   if (!err) return "";
-  if (err === "ROWS_OVER_CAP")
-    return `File melebihi batas ${cap ?? MAX_STUDENT_ROWS} baris valid. Pecah menjadi beberapa file.`;
-  return ERROR_TEXT[err] ?? err;
+  if (err === "ROWS_OVER_CAP") return fmt(t("errRowsOverCap"), { cap: cap ?? MAX_STUDENT_ROWS });
+  const key = ERROR_KEY[err];
+  return key ? t(key) : err;
 }
 
 async function run(_prev: ImportResult | null, formData: FormData): Promise<ImportResult> {
   return (await bulkImportStudents(formData)) as ImportResult;
 }
 
-export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: string }[] }) {
+export function StudentBulkImport({
+  cohorts,
+  lang,
+}: {
+  cohorts: { id: string; name: string }[];
+  lang: Lang;
+}) {
+  const t = mkT(COHORT, lang);
   const [result, formAction, pending] = useActionState(run, null);
   const [clientErr, setClientErr] = useState<string | null>(null);
   const [cohortSel, setCohortSel] = useState("");
@@ -47,18 +56,14 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
 
   return (
     <BulkCard
-      title="Bulk daftarkan murid (XLSX)"
-      desc={
-        <>
-          Kolom: <code>Email</code> (wajib) dan <code>Nama</code> (opsional). Murid dicocokkan berdasarkan
-          email akun yang sudah ada; profil &amp; membership dibuat otomatis oleh server.
-        </>
-      }
+      lang={lang}
+      title={t("bulkTitle")}
+      desc={t("bulkDesc")}
       templateKind="students"
-      templateLabel="Template murid"
+      templateLabel={t("bulkTemplateLabel")}
       exportHref={cohortSel ? `/api/export/cohorts/${cohortSel}/xlsx` : undefined}
-      exportLabel="Unduh roster cohort (XLSX)"
-      capacityText={`Maksimal ${MAX_STUDENT_ROWS} murid per file`}
+      exportLabel={t("bulkExportLabel")}
+      capacityText={fmt(t("bulkCapacity"), { max: MAX_STUDENT_ROWS })}
     >
       <form
         ref={formRef}
@@ -68,7 +73,7 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
       >
         <div>
           <label htmlFor="bulk-cohort" className="text-sm font-semibold">
-            Cohort tujuan
+            {t("targetCohort")}
           </label>
           <select
             id="bulk-cohort"
@@ -78,7 +83,7 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
             onChange={(e) => setCohortSel(e.target.value)}
             className="mt-1 w-full rounded-lg border px-3 py-2 dark:bg-slate-900"
           >
-            <option value="">— pilih cohort —</option>
+            <option value="">{t("selectCohort")}</option>
             {cohorts.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
@@ -88,7 +93,7 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
         </div>
         <div>
           <label htmlFor="bulk-file" className="text-sm font-semibold">
-            Berkas XLSX
+            {t("fileLabel")}
           </label>
           <input
             id="bulk-file"
@@ -99,7 +104,9 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
             className="mt-1 block w-full text-sm"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              setClientErr(f ? (xlsxFileError(f) ? errorText(xlsxFileError(f) ?? undefined) : null) : null);
+              setClientErr(
+                f ? (xlsxFileError(f) ? errorText(t, xlsxFileError(f) ?? undefined) : null) : null,
+              );
             }}
           />
         </div>
@@ -107,7 +114,7 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
           disabled={pending}
           className="rounded-xl bg-blue-700 px-5 py-2 font-semibold text-white disabled:opacity-60"
         >
-          {pending ? "Memproses…" : "Impor murid"}
+          {pending ? t("processing") : t("importStudents")}
         </button>
       </form>
       {clientErr && <p className="text-sm font-medium text-red-700">{clientErr}</p>}
@@ -122,13 +129,13 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
         >
           {result.ok ? (
             <>
-              <p>
-                Selesai: <strong>{result.added}</strong> ditambahkan, <strong>{result.existing}</strong> sudah
-                menjadi anggota.
-              </p>
+              <p>{fmt(t("doneSummary"), { added: result.added ?? 0, existing: result.existing ?? 0 })}</p>
               {result.notFound && result.notFound.length > 0 && (
                 <p className="mt-1">
-                  Email tidak ditemukan ({result.notFound.length}): {result.notFound.slice(0, 5).join(", ")}
+                  {fmt(t("notFound"), {
+                    count: result.notFound.length,
+                    list: result.notFound.slice(0, 5).join(", "),
+                  })}
                   {result.notFound.length > 5 ? "…" : ""}
                 </p>
               )}
@@ -138,7 +145,7 @@ export function StudentBulkImport({ cohorts }: { cohorts: { id: string; name: st
             </>
           ) : (
             <p>
-              Gagal: {errorText(result.error, result.cap)}
+              {fmt(t("failed"), { error: errorText(t, result.error, result.cap) })}
               {result.errors && result.errors.length > 0 ? ` — ${result.errors.slice(0, 3).join("; ")}` : ""}
             </p>
           )}

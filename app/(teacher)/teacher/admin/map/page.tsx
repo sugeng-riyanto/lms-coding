@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getOrgAdminContext } from "@/lib/org-admin";
+import { getLang, mkT } from "@/lib/i18n";
+import { ADMIN_MAP } from "@/lib/ui-text/admin-map";
 import { TeacherBulkImport } from "./teacher-bulk-import";
 import { AssignmentBulkImport } from "./assignment-bulk-import";
 import { MappingPanel } from "./mapping-panel";
@@ -67,14 +69,16 @@ async function loadOrgData(orgId: string): Promise<AdminMapData> {
 }
 
 export default async function AdminMapPage() {
+  const lang = await getLang();
+  const t = mkT(ADMIN_MAP, lang);
   const ctx = await getOrgAdminContext();
   if (!ctx) {
     return (
       <main id="main" className="mx-auto max-w-4xl px-4 py-10">
         <p role="alert" className="rounded-xl border border-red-200 p-4">
-          Halaman admin hanya untuk guru yang memiliki course di organisasi ini (facet Owner, ADR-008).{" "}
+          {t("denied")}{" "}
           <Link href="/teacher" className="text-blue-700 underline">
-            Kembali ke dashboard
+            {t("backToDashboard")}
           </Link>
           .
         </p>
@@ -88,7 +92,7 @@ export default async function AdminMapPage() {
   } catch {
     return (
       <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-        <p role="alert">Data admin tidak dapat dimuat.</p>
+        <p role="alert">{t("loadFailed")}</p>
       </main>
     );
   }
@@ -97,21 +101,18 @@ export default async function AdminMapPage() {
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <p className="text-sm text-slate-500">
         <Link href="/teacher" className="text-blue-700 underline">
-          ← Dashboard
+          ← {t("backToDashboard")}
         </Link>
       </p>
-      <h1 className="mt-1 text-3xl font-bold">Admin — mapping kelas &amp; subjek</h1>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-        Kelola guru, murid, dan penugasannya ke kelas (cohort) dan subjek (course). Import identitas via XLSX,
-        lalu rapikan mapping secara manual di panel bawah.
-      </p>
+      <h1 className="mt-1 text-3xl font-bold">{t("title")}</h1>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("subtitle")}</p>
 
       <div className="mt-6 grid gap-4 md:grid-cols-2">
-        <TeacherBulkImport />
-        <AssignmentBulkImport />
+        <TeacherBulkImport lang={lang} />
+        <AssignmentBulkImport lang={lang} />
       </div>
 
-      <MappingPanel data={data} />
+      <MappingPanel data={data} lang={lang} />
     </main>
   );
 }

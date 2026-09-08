@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { cspAlertState } from "@/lib/csp-alerts";
 import { getOrgAdminContext } from "@/lib/org-admin";
+import { getLang, mkT } from "@/lib/i18n";
+import { SECURITY } from "@/lib/ui-text/security";
 import { SecurityMonitor } from "@/components/security-monitor";
 
 export const dynamic = "force-dynamic";
@@ -12,14 +14,16 @@ export const dynamic = "force-dynamic";
  * Owner, ADR-008) — guard sama dengan halaman /teacher/admin/map.
  */
 export default async function AdminSecurityPage() {
+  const lang = await getLang();
+  const t = mkT(SECURITY, lang);
   const ctx = await getOrgAdminContext();
   if (!ctx) {
     return (
       <main id="main" className="mx-auto max-w-4xl px-4 py-10">
         <p role="alert" className="rounded-xl border border-red-200 p-4">
-          Halaman admin hanya untuk guru yang memiliki course di organisasi ini (facet Owner, ADR-008).{" "}
+          {t("denied")}{" "}
           <Link href="/teacher" className="text-blue-700 underline">
-            Kembali ke dashboard
+            {t("backToDashboard")}
           </Link>
           .
         </p>
@@ -31,18 +35,13 @@ export default async function AdminSecurityPage() {
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <p className="text-sm text-slate-500">
         <Link href="/teacher/admin/map" className="text-blue-700 underline">
-          ← Admin
+          {t("backToAdmin")}
         </Link>
       </p>
-      <h1 className="mt-1 text-3xl font-bold">Admin — Security &amp; monitoring</h1>
-      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-        Pantau laporan Content-Security-Policy dari browser. Lonjakan (spike) bisa menandakan percobaan
-        injection — lihat juga baris log{" "}
-        <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">csp-alert</code> dan DEPLOYMENT.md §7.3
-        untuk ambang batas serta tindakan.
-      </p>
+      <h1 className="mt-1 text-3xl font-bold">{t("title")}</h1>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("subtitle")}</p>
       <div className="mt-6">
-        <SecurityMonitor initial={await cspAlertState()} />
+        <SecurityMonitor initial={await cspAlertState()} lang={lang} />
       </div>
     </main>
   );

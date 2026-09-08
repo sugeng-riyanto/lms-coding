@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { getLang, mkT } from "@/lib/i18n";
+import { QUESTION } from "@/lib/ui-text/question";
 import { QuestionBank, type RubricInfo } from "./question-bank";
 
 export const dynamic = "force-dynamic";
@@ -91,6 +93,8 @@ async function getBank(userId: string) {
 }
 
 export default async function BankPage() {
+  const lang = await getLang();
+  const t = mkT(QUESTION, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub ?? "";
@@ -102,12 +106,9 @@ export default async function BankPage() {
   }
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Bank soal</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Soal berversi; kunci jawaban tidak pernah ke browser murid. Soal esai/proyek dapat diberi rubrik
-        penilaian berversi.
-      </p>
-      <QuestionBank initialQuestions={bank.questions} />
+      <h1 className="text-3xl font-bold">{t("title")}</h1>
+      <p className="mt-1 text-sm text-slate-600">{t("subtitle")}</p>
+      <QuestionBank initialQuestions={bank.questions} lang={lang} />
     </main>
   );
 }

@@ -36,7 +36,7 @@ afterEach(() => {
 
 describe("SecurityMonitor", () => {
   it("state tenang: banner hijau + ambang + metrik agregat", () => {
-    render(<SecurityMonitor initial={base} />);
+    render(<SecurityMonitor initial={base} lang="id" />);
     expect(screen.getByRole("status").textContent).toContain("Tidak ada spike laporan CSP");
     expect(screen.getByText("4/menit")).toBeTruthy();
     expect(screen.getByText("ambang 20/menit")).toBeTruthy();
@@ -46,7 +46,9 @@ describe("SecurityMonitor", () => {
   });
 
   it("spike: banner alert + teks injection attempt", () => {
-    render(<SecurityMonitor initial={{ ...base, alertActive: true, ratePerMin: 25, sampleSize: 25 }} />);
+    render(
+      <SecurityMonitor initial={{ ...base, alertActive: true, ratePerMin: 25, sampleSize: 25 }} lang="id" />,
+    );
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("Spike laporan CSP terdeteksi");
     expect(alert.textContent).toContain("injection");
@@ -66,7 +68,7 @@ describe("SecurityMonitor", () => {
         return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
       }),
     );
-    render(<SecurityMonitor initial={base} />);
+    render(<SecurityMonitor initial={base} lang="id" />);
     fireEvent.click(screen.getByRole("button", { name: "Muat ulang" }));
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toContain("Spike laporan CSP terdeteksi");
@@ -76,7 +78,7 @@ describe("SecurityMonitor", () => {
 
   it("refresh gagal: error ditampilkan, state lama tetap", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429, json: async () => ({}) }));
-    render(<SecurityMonitor initial={base} />);
+    render(<SecurityMonitor initial={base} lang="id" />);
     fireEvent.click(screen.getByRole("button", { name: "Muat ulang" }));
     await waitFor(() => {
       expect(screen.getByRole("alert").textContent).toContain("Gagal memuat ulang");
@@ -108,7 +110,7 @@ describe("SecurityMonitor", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SecurityMonitor initial={base} />);
+    render(<SecurityMonitor initial={base} lang="id" />);
 
     // Populate digest via refresh
     fireEvent.click(screen.getByRole("button", { name: "Muat ulang" }));
@@ -146,7 +148,7 @@ describe("SecurityMonitor", () => {
       }),
     );
     const user = userEvent.setup();
-    render(<SecurityMonitor initial={base} />);
+    render(<SecurityMonitor initial={base} lang="id" />);
 
     // Populate
     fireEvent.click(screen.getByRole("button", { name: "Muat ulang" }));
@@ -166,7 +168,7 @@ describe("SecurityMonitor", () => {
 
   it("refresh button disabled saat busy", async () => {
     vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
-    render(<SecurityMonitor initial={base} />);
+    render(<SecurityMonitor initial={base} lang="id" />);
     fireEvent.click(screen.getByRole("button", { name: "Muat ulang" }));
     await waitFor(() => {
       expect((screen.getByRole("button", { name: "Memuat ulang\u2026" }) as HTMLButtonElement).disabled).toBe(

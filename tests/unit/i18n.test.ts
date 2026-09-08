@@ -15,6 +15,16 @@ import { GUARDIAN } from "@/lib/ui-text/guardian";
 import { PROFILE } from "@/lib/ui-text/profile";
 import { UPLOAD } from "@/lib/ui-text/upload";
 import { CODE } from "@/lib/ui-text/code-runner";
+import { GRADING, RUBRIC_PANEL } from "@/lib/ui-text/grading";
+import { COHORT } from "@/lib/ui-text/cohort";
+import { QUESTION, RUBRIC_EDITOR } from "@/lib/ui-text/question";
+import { ADMIN_MAP } from "@/lib/ui-text/admin-map";
+import { SECURITY } from "@/lib/ui-text/security";
+import { BULK } from "@/lib/ui-text/bulk";
+import { COURSE } from "@/lib/ui-text/course";
+import { LEVEL } from "@/lib/ui-text/level";
+import { EDIT_NODE } from "@/lib/ui-text/edit-node";
+import { CANVAS } from "@/lib/ui-text/canvas";
 
 /** Flatten a nested dictionary ({ id, en } pairs) into the set of pairs. */
 function pairs(dict: Record<string, unknown>): Array<{ id: string; en: string }> {
@@ -84,6 +94,18 @@ describe("page dictionaries (lib/ui-text + kit) parity — 100% UI strings dua b
     ["PROFILE", PROFILE],
     ["UPLOAD", UPLOAD],
     ["CODE", CODE],
+    ["GRADING", GRADING],
+    ["RUBRIC_PANEL", RUBRIC_PANEL],
+    ["COHORT", COHORT],
+    ["QUESTION", QUESTION],
+    ["RUBRIC_EDITOR", RUBRIC_EDITOR],
+    ["ADMIN_MAP", ADMIN_MAP],
+    ["SECURITY", SECURITY],
+    ["BULK", BULK],
+    ["COURSE", COURSE],
+    ["LEVEL", LEVEL],
+    ["EDIT_NODE", EDIT_NODE],
+    ["CANVAS", CANVAS],
   ] as const;
 
   for (const [name, dict] of pageDicts) {
@@ -116,6 +138,22 @@ describe("page dictionaries (lib/ui-text + kit) parity — 100% UI strings dua b
         "Admin: mapping",
         "Spaced review",
         "⚡ in-browser (WASM)",
+        "Cohort & enrollment",
+        "Security & monitoring",
+        "Feedback",
+        "Course",
+        "Enrollments",
+        "Student ID (UUID)",
+        "Import pack",
+        "← Admin",
+        "Admin — Security & monitoring",
+        "+ Module",
+        "+ Lesson",
+        "+ Activity",
+        "+ Level",
+        "← Dashboard",
+        "Status: ",
+        "Objective: ",
       ]);
       for (const p of pairs(dict as unknown as Record<string, unknown>)) {
         if (p.id.includes("{")) continue; // placeholder fragments stay language-neutral

@@ -1,4 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
+import { getLang, mkT } from "@/lib/i18n";
+import { COHORT } from "@/lib/ui-text/cohort";
 import { CohortManager } from "./cohort-manager";
 import { StudentBulkImport } from "./student-bulk-import";
 
@@ -61,6 +63,8 @@ async function getCohorts(userId: string, myCourseIds: string[], myCourseTitles:
 }
 
 export default async function CohortsPage() {
+  const lang = await getLang();
+  const t = mkT(COHORT, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub ?? "";
@@ -79,14 +83,12 @@ export default async function CohortsPage() {
   }
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Cohort & enrollment</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Suspend enrollment menonaktifkan akses murid tanpa menghapus riwayat.
-      </p>
+      <h1 className="text-3xl font-bold">{t("title")}</h1>
+      <p className="mt-1 text-sm text-slate-600">{t("subtitle")}</p>
       <div className="mt-4">
-        <StudentBulkImport cohorts={cohorts.map((c) => ({ id: c.id, name: c.name }))} />
+        <StudentBulkImport cohorts={cohorts.map((c) => ({ id: c.id, name: c.name }))} lang={lang} />
       </div>
-      <CohortManager initialCohorts={cohorts} courses={myCourses} />
+      <CohortManager initialCohorts={cohorts} courses={myCourses} lang={lang} />
     </main>
   );
 }

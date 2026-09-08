@@ -4,13 +4,24 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { finalizeResponseGrades, saveCriterionGrade } from "@/features/actions";
 import type { QueueRubric } from "@/app/(teacher)/teacher/grading/page";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { RUBRIC_PANEL } from "@/lib/ui-text/grading";
 
 /**
  * Penilaian per kriteria (rubrik): simpan draf per kriteria lalu Finalize —
  * semua kriteria harus sudah final (draft=false) sebelum RPC menghitung
  * manual_score + grade_revisions + audit. Skor dicek server (<= max poin).
  */
-export function RubricGradePanel({ responseId, rubric }: { responseId: string; rubric: QueueRubric }) {
+export function RubricGradePanel({
+  responseId,
+  rubric,
+  lang,
+}: {
+  responseId: string;
+  rubric: QueueRubric;
+  lang: Lang;
+}) {
+  const t = mkT(RUBRIC_PANEL, lang);
   const router = useRouter();
   const [busy, setBusy] = useState<false | "draft" | "final">(false);
   const [notice, setNotice] = useState("");
@@ -27,7 +38,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
       .map(({ c, raw }) => ({ c, value: raw === undefined ? NaN : Number(raw) }))
       .filter(({ value }) => Number.isFinite(value) && value >= 0);
     if (entries.length !== rubric.criteria.length) {
-      setNotice("Isi skor untuk semua kriteria terlebih dahulu (0 boleh).");
+      setNotice(t("fillAll"));
       return;
     }
     setBusy(mode);
@@ -42,7 +53,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
       });
       if (!res.ok) {
         setBusy(false);
-        setNotice(`Gagal menyimpan kriteria "${c.title}": ${res.error}`);
+        setNotice(fmt(t("saveCriterionFail"), { title: c.title, error: res.error }));
         return;
       }
     }
@@ -50,7 +61,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
       const res = await finalizeResponseGrades({ responseId });
       if (!res.ok) {
         setBusy(false);
-        setNotice(`Gagal finalisasi: ${res.error}`);
+        setNotice(fmt(t("finalizeFail"), { error: res.error }));
         return;
       }
     }
@@ -63,9 +74,9 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
   return (
     <div className="mt-3">
       <p className="text-sm font-semibold">
-        Penilaian rubrik: {rubric.title}
+        {fmt(t("rubricTitle"), { title: rubric.title })}
         <span className="ml-2 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-          {allFinal ? "sudah final — nilai manual terhitung" : "draf — belum terhitung"}
+          {allFinal ? t("statusFinal") : t("statusDraft")}
         </span>
       </p>
       <div className="mt-2 space-y-2">
@@ -78,15 +89,18 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="font-semibold">
-                  {c.title} <span className="font-normal text-slate-500">(maks {c.maxPoints} poin)</span>
+                  {c.title}{" "}
+                  <span className="font-normal text-slate-500">
+                    {fmt(t("maxPoints"), { max: c.maxPoints })}
+                  </span>
                   {final && (
                     <span className="ml-2 rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-900 dark:bg-emerald-100">
-                      final
+                      {t("finalBadge")}
                     </span>
                   )}
                 </p>
                 <label htmlFor={`cs-${responseId}-${c.criterionId}`} className="flex items-center gap-2">
-                  <span className="text-xs font-semibold">Skor</span>
+                  <span className="text-xs font-semibold">{t("scoreLabel")}</span>
                   <input
                     id={`cs-${responseId}-${c.criterionId}`}
                     type="number"
@@ -103,7 +117,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
                 htmlFor={`cf-${responseId}-${c.criterionId}`}
                 className="mt-1 block text-xs font-semibold"
               >
-                Feedback kriteria
+                {t("feedbackLabel")}
               </label>
               <textarea
                 id={`cf-${responseId}-${c.criterionId}`}
@@ -113,7 +127,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
                 onChange={(e) => setFeedbacks((s) => ({ ...s, [c.criterionId]: e.target.value }))}
                 maxLength={2000}
                 className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                placeholder="Catatan untuk kriteria ini (terlihat murid setelah release)."
+                placeholder={t("feedbackPlaceholder")}
               />
             </div>
           );
@@ -126,7 +140,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
           disabled={busy !== false || allFinal}
           className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:border-slate-600"
         >
-          {busy === "draft" ? "Menyimpan draf…" : "Simpan sebagai draf"}
+          {busy === "draft" ? t("savingDraft") : t("saveDraft")}
         </button>
         <button
           type="button"
@@ -134,7 +148,7 @@ export function RubricGradePanel({ responseId, rubric }: { responseId: string; r
           disabled={busy !== false || allFinal}
           className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
         >
-          {busy === "final" ? "Memfinalisasi…" : allFinal ? "Nilai sudah final" : "Finalize nilai"}
+          {busy === "final" ? t("finalizing") : allFinal ? t("alreadyFinal") : t("finalize")}
         </button>
       </div>
       {notice && (

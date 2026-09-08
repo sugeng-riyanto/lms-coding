@@ -69,7 +69,9 @@ describe("halaman /teacher/admin/map", () => {
   it("force-dynamic + penjaga org-admin + komponen import + data org-wide via service", () => {
     expect(page).toMatch(/export const dynamic = "force-dynamic"/);
     expect(page).toMatch(/getOrgAdminContext\(\)/);
-    expect(page).toMatch(/Halaman admin hanya untuk guru yang memiliki course/);
+    // Teks penolakan admin dipindah ke dictionary bilingual (lib/ui-text/admin-map).
+    expect(page).not.toMatch(/Halaman admin hanya untuk guru yang memiliki course/);
+    expect(page).toMatch(/ADMIN_MAP/);
     expect(page).toMatch(/TeacherBulkImport/);
     expect(page).toMatch(/AssignmentBulkImport/);
     expect(page).toMatch(/MappingPanel/);

@@ -22,10 +22,22 @@ const TRANSLATED_SURFACES = [
   "app/(teacher)/teacher/alert-controls.{ts,tsx}",
   "app/(teacher)/teacher/analytics/**/*.{ts,tsx}",
   "app/(teacher)/teacher/certificates/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/grading/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/cohorts/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/questions/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/admin/map/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/admin/security/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/courses/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/students/**/*.{ts,tsx}",
   "app/(student)/learn/**/*.{ts,tsx}",
   "components/charts.{ts,tsx}",
   "components/dashboard.{ts,tsx}",
   "components/anchor-status.{ts,tsx}",
+  "components/bulk-card.{ts,tsx}",
+  "components/security-monitor.{ts,tsx}",
+  "components/rubric-editor.{ts,tsx}",
+  "components/rubric-grade-panel.{ts,tsx}",
+  "components/edit-node.{ts,tsx}",
 ];
 
 function lint(code: string): string[] {

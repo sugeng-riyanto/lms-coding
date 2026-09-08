@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createRubricVersion, updateRubricVersion } from "@/features/actions";
 import type { RubricInfo } from "@/app/(teacher)/teacher/questions/question-bank";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { RUBRIC_EDITOR } from "@/lib/ui-text/question";
 
 interface CriterionRow {
   key: number;
@@ -27,12 +29,15 @@ export function RubricEditor({
   versionId,
   versionNumber,
   existing,
+  lang,
 }: {
   questionType: string;
   versionId: string | null;
   versionNumber: number | null;
   existing: RubricInfo | null;
+  lang: Lang;
 }) {
+  const t = mkT(RUBRIC_EDITOR, lang);
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -58,37 +63,28 @@ export function RubricEditor({
       <div className="mt-2 rounded-lg border border-slate-200 p-3 text-xs dark:border-slate-600">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="font-semibold">
-            Rubrik v{existing.version}: {existing.title}
+            {fmt(t("attached"), { version: existing.version, title: existing.title })}
           </p>
           <button
             type="button"
             onClick={startEdit}
             className="rounded-lg border border-slate-300 px-3 py-1.5 font-semibold hover:bg-slate-50 dark:border-slate-600 dark:hover:bg-slate-800"
           >
-            Edit → versi {existing.version + 1}
+            {fmt(t("editTo"), { version: existing.version + 1 })}
           </button>
         </div>
         <ul className="mt-1 list-inside list-disc text-slate-600 dark:text-slate-300">
           {existing.criteria.map((c) => (
-            <li key={c.criterionId}>
-              {c.title} — {c.maxPoints} poin
-            </li>
+            <li key={c.criterionId}>{fmt(t("criterionLine"), { title: c.title, points: c.maxPoints })}</li>
           ))}
         </ul>
-        <p className="mt-1 text-slate-500">
-          Mengedit rubrik menaikkan versi dan menyimpan salinan kriteria — versi lama tetap utuh untuk riwayat
-          nilai yang sudah tercatat.
-        </p>
+        <p className="mt-1 text-slate-500">{t("reversionNote")}</p>
       </div>
     );
   }
 
   if (!versionId && !existing) {
-    return (
-      <p className="mt-2 text-xs text-slate-500">
-        Terbitkan versi soal terlebih dahulu untuk memakai rubrik.
-      </p>
-    );
+    return <p className="mt-2 text-xs text-slate-500">{t("publishFirst")}</p>;
   }
 
   function addCriterion() {
@@ -106,7 +102,7 @@ export function RubricEditor({
       .map((c) => ({ title: c.title.trim(), maxPoints: Number(c.maxPoints) }))
       .filter((c) => c.title !== "" && Number.isFinite(c.maxPoints) && c.maxPoints > 0);
     if (title.trim().length < 3 || cleaned.length === 0) {
-      setNotice("Isi judul rubrik (min. 3 karakter) dan minimal satu kriteria dengan poin &gt; 0.");
+      setNotice(t("errFill"));
       return;
     }
     setBusy(true);
@@ -120,11 +116,11 @@ export function RubricEditor({
           : null;
     setBusy(false);
     if (!res) {
-      setNotice("Gagal menyimpan rubrik: versi soal belum tersedia.");
+      setNotice(t("errNoVersion"));
       return;
     }
     if (!res.ok) {
-      setNotice(`Gagal menyimpan rubrik: ${res.error}.`);
+      setNotice(fmt(t("errSave"), { error: res.error }));
       return;
     }
     setOpen(false);
@@ -136,15 +132,15 @@ export function RubricEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-semibold">
           {editing && existing
-            ? `Edit rubrik v${existing.version} → v${existing.version + 1}`
-            : `Rubrik baru — soal v${versionNumber}`}
+            ? fmt(t("editHeading"), { from: existing.version, to: existing.version + 1 })
+            : fmt(t("newHeading"), { version: versionNumber ?? "" })}
         </p>
         <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 underline">
-          Batal
+          {t("cancel")}
         </button>
       </div>
       <label htmlFor={`rub-${existing?.id ?? versionId}-title`} className="mt-2 block text-xs font-semibold">
-        Judul rubrik
+        {t("titleLabel")}
       </label>
       <input
         id={`rub-${existing?.id ?? versionId}-title`}
@@ -153,7 +149,7 @@ export function RubricEditor({
         minLength={3}
         maxLength={200}
         className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-        placeholder="Mis. Rubrik Esai Pemrograman"
+        placeholder={t("titlePlaceholder")}
       />
       <div className="mt-2 space-y-2">
         {criteria.map((c, i) => (
@@ -163,7 +159,7 @@ export function RubricEditor({
                 htmlFor={`rub-${existing?.id ?? versionId}-c-${c.key}`}
                 className="text-xs font-semibold"
               >
-                Kriteria {i + 1}
+                {fmt(t("criterionLabel"), { n: i + 1 })}
               </label>
               <input
                 id={`rub-${existing?.id ?? versionId}-c-${c.key}`}
@@ -171,7 +167,7 @@ export function RubricEditor({
                 onChange={(e) => patch(c.key, "title", e.target.value)}
                 maxLength={200}
                 className="mt-1 w-full rounded-lg border px-3 py-2 text-sm"
-                placeholder="Mis. Ketepatan algoritma"
+                placeholder={t("criterionPlaceholder")}
               />
             </div>
             <div>
@@ -179,7 +175,7 @@ export function RubricEditor({
                 htmlFor={`rub-${existing?.id ?? versionId}-m-${c.key}`}
                 className="text-xs font-semibold"
               >
-                Poin maks
+                {t("maxPointsLabel")}
               </label>
               <input
                 id={`rub-${existing?.id ?? versionId}-m-${c.key}`}
@@ -194,10 +190,10 @@ export function RubricEditor({
               type="button"
               onClick={() => removeCriterion(c.key)}
               disabled={criteria.length <= 1}
-              aria-label={`Hapus kriteria ${i + 1}`}
+              aria-label={fmt(t("removeAria"), { n: i + 1 })}
               className="rounded-lg border px-2 py-1.5 text-xs disabled:opacity-40"
             >
-              Hapus
+              {t("remove")}
             </button>
           </div>
         ))}
@@ -208,7 +204,7 @@ export function RubricEditor({
           onClick={addCriterion}
           className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold dark:border-slate-600"
         >
-          + Kriteria
+          {t("addCriterion")}
         </button>
         <button
           type="button"
@@ -216,7 +212,7 @@ export function RubricEditor({
           disabled={busy}
           className="rounded-lg bg-blue-700 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
         >
-          {busy ? "Menyimpan…" : editing && existing ? "Simpan sebagai versi baru" : "Simpan rubrik"}
+          {busy ? t("saving") : editing && existing ? t("saveNewVersion") : t("saveRubric")}
         </button>
       </div>
       {notice && (

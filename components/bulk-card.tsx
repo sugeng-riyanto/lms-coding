@@ -1,4 +1,6 @@
 import type { BulkTemplateKind } from "@/lib/bulk-template";
+import { mkT, type Lang } from "@/lib/i18n";
+import { BULK } from "@/lib/ui-text/bulk";
 
 /**
  * Cangkang kartu bulk up/download: judul + deskripsi + tautan template
@@ -6,6 +8,7 @@ import type { BulkTemplateKind } from "@/lib/bulk-template";
  * untuk keempat jalur bulk (murid, materi, guru, penugasan).
  */
 export function BulkCard({
+  lang,
   title,
   desc,
   templateKind,
@@ -15,6 +18,7 @@ export function BulkCard({
   capacityText,
   children,
 }: {
+  lang: Lang;
   title: string;
   desc: React.ReactNode;
   templateKind: BulkTemplateKind;
@@ -24,6 +28,7 @@ export function BulkCard({
   capacityText: string;
   children: React.ReactNode;
 }) {
+  const t = mkT(BULK, lang);
   return (
     <section
       aria-label={title}
@@ -49,16 +54,13 @@ export function BulkCard({
               download
               className="rounded-lg border px-3 py-1.5 font-semibold text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800"
             >
-              ⬇ {exportLabel ?? "Unduh data (XLSX)"}
+              ⬇ {exportLabel ?? t("defaultExportLabel")}
             </a>
           )}
           <span className="text-xs text-slate-500 dark:text-slate-400">{capacityText}</span>
         </div>
         {children}
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          Berkas hanya dibaca di memori server saat impor — tidak disimpan di mana pun dan langsung dibuang
-          setelah selesai; formulir dikosongkan otomatis bila berhasil.
-        </p>
+        <p className="text-xs text-slate-500 dark:text-slate-400">{t("footnote")}</p>
       </div>
     </section>
   );

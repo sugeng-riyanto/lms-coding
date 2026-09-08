@@ -4,14 +4,19 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createCohort, enrollStudent, suspendEnrollment } from "@/features/actions";
 import type { CohortInfo } from "./page";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { COHORT } from "@/lib/ui-text/cohort";
 
 export function CohortManager({
   initialCohorts,
   courses,
+  lang,
 }: {
   initialCohorts: CohortInfo[];
   courses: { id: string; title: string }[];
+  lang: Lang;
 }) {
+  const t = mkT(COHORT, lang);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -24,7 +29,9 @@ export function CohortManager({
     setBusy(true);
     const res = await createCohort({ name, academicYear: year });
     setBusy(false);
-    setNotice(res.ok ? `Cohort dibuat: ${res.cohortId}.` : `Gagal: ${res.error}`);
+    setNotice(
+      res.ok ? fmt(t("createdOk"), { id: res.cohortId }) : fmt(t("failPrefix"), { error: res.error }),
+    );
     if (res.ok) {
       setName("");
       router.refresh();
@@ -42,22 +49,22 @@ export function CohortManager({
     e.preventDefault();
     const f = enroll[cohortId];
     if (!f?.student || !f?.course) {
-      setNotice("Isi student ID dan course.");
+      setNotice(t("fillEnroll"));
       return;
     }
     setBusy(true);
     const res = await enrollStudent({ courseId: f.course, studentId: f.student, cohortId });
     setBusy(false);
-    setNotice(res.ok ? "Murid di-enroll." : `Gagal: ${res.error} (pastikan UUID murid benar)`);
+    setNotice(res.ok ? t("enrolled") : fmt(t("enrollFailHint"), { error: res.error }));
     if (res.ok) router.refresh();
   }
 
   async function onSuspend(enrollmentId: string) {
-    if (!window.confirm("Suspend enrollment ini?")) return;
+    if (!window.confirm(t("confirmSuspend"))) return;
     setBusy(true);
     const res = await suspendEnrollment({ enrollmentId });
     setBusy(false);
-    setNotice(res.ok ? "Enrollment di-suspend." : `Gagal: ${res.error}`);
+    setNotice(res.ok ? t("suspended") : fmt(t("failPrefix"), { error: res.error }));
     if (res.ok) router.refresh();
   }
 
@@ -70,12 +77,12 @@ export function CohortManager({
       )}
       <form
         onSubmit={onCreate}
-        aria-label="Buat cohort"
+        aria-label={t("createAria")}
         className="flex flex-wrap items-end gap-2 rounded-xl border p-4"
       >
         <div>
           <label htmlFor="cohort-name" className="text-sm font-semibold">
-            Nama cohort
+            {t("nameLabel")}
           </label>
           <input
             id="cohort-name"
@@ -89,7 +96,7 @@ export function CohortManager({
         </div>
         <div>
           <label htmlFor="cohort-year" className="text-sm font-semibold">
-            Tahun ajaran
+            {t("yearLabel")}
           </label>
           <input
             id="cohort-year"
@@ -105,13 +112,13 @@ export function CohortManager({
           disabled={busy}
           className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
-          Buat
+          {t("create")}
         </button>
       </form>
 
       {initialCohorts.length === 0 && (
         <p className="rounded-xl border p-4" role="status">
-          Belum ada cohort.
+          {t("noCohorts")}
         </p>
       )}
       {initialCohorts.map((c) => (
@@ -122,10 +129,10 @@ export function CohortManager({
               href={`/api/export/cohorts/${c.id}`}
               className="ml-2 text-sm font-semibold text-blue-700 underline"
             >
-              Ekspor roster (CSV)
+              {t("exportRoster")}
             </a>
           </h2>
-          <h3 className="mt-3 text-sm font-semibold">Anggota ({c.members.length})</h3>
+          <h3 className="mt-3 text-sm font-semibold">{fmt(t("members"), { count: c.members.length })}</h3>
           <ul className="mt-1 text-sm">
             {c.members.map((m) => (
               <li key={m.studentId}>
@@ -133,7 +140,7 @@ export function CohortManager({
               </li>
             ))}
           </ul>
-          <h3 className="mt-3 text-sm font-semibold">Enrollments</h3>
+          <h3 className="mt-3 text-sm font-semibold">{t("enrollmentsTitle")}</h3>
           <ul className="mt-1 space-y-1 text-sm">
             {c.enrollments.map((e) => (
               <li key={e.id} className="flex items-center justify-between rounded border px-2 py-1">
@@ -146,7 +153,7 @@ export function CohortManager({
                     onClick={() => onSuspend(e.id)}
                     className="rounded border px-2 py-1 text-xs text-red-700"
                   >
-                    Suspend
+                    {t("suspend")}
                   </button>
                 )}
               </li>
@@ -154,12 +161,12 @@ export function CohortManager({
           </ul>
           <form
             onSubmit={(e) => onEnroll(e, c.id)}
-            aria-label={`Enroll ke ${c.name}`}
+            aria-label={fmt(t("enrollAria"), { name: c.name })}
             className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3"
           >
             <div>
               <label htmlFor={`st-${c.id}`} className="text-xs font-semibold">
-                Student ID (UUID)
+                {t("studentIdLabel")}
               </label>
               <input
                 id={`st-${c.id}`}
@@ -171,7 +178,7 @@ export function CohortManager({
             </div>
             <div>
               <label htmlFor={`co-${c.id}`} className="text-xs font-semibold">
-                Course
+                {t("courseLabel")}
               </label>
               <select
                 id={`co-${c.id}`}
@@ -180,7 +187,7 @@ export function CohortManager({
                 onChange={(e) => setEnrollField(c.id, "course", e.target.value)}
                 className="mt-1 block rounded border px-2 py-1 text-sm"
               >
-                <option value="">— pilih —</option>
+                <option value="">{t("selectPrompt")}</option>
                 {courses.map((co) => (
                   <option key={co.id} value={co.id}>
                     {co.title}
@@ -192,7 +199,7 @@ export function CohortManager({
               disabled={busy}
               className="rounded bg-blue-700 px-3 py-1 text-sm font-semibold text-white disabled:opacity-60"
             >
-              Enroll
+              {t("enroll")}
             </button>
           </form>
         </section>

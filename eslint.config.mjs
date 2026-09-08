@@ -43,6 +43,18 @@ const TRANSLATED_SURFACES = [
   "components/charts.{ts,tsx}",
   "components/dashboard.{ts,tsx}",
   "components/anchor-status.{ts,tsx}",
+  "components/bulk-card.{ts,tsx}",
+  "components/security-monitor.{ts,tsx}",
+  "components/rubric-editor.{ts,tsx}",
+  "components/rubric-grade-panel.{ts,tsx}",
+  "app/(teacher)/teacher/grading/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/cohorts/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/questions/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/admin/map/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/admin/security/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/courses/**/*.{ts,tsx}",
+  "app/(teacher)/teacher/students/**/*.{ts,tsx}",
+  "components/edit-node.{ts,tsx}",
 ];
 
 function textOf(value) {

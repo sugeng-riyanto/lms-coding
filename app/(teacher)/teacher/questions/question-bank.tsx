@@ -9,6 +9,8 @@ import { questionPackTemplateSample } from "@/lib/question-pack";
 import { QUESTION_PACK_FORMAT_GUIDE, buildQuestionPackAiPrompt } from "@/lib/question-pack-ai-prompt";
 import { RubricEditor } from "@/components/rubric-editor";
 import { loadLocalPref, saveLocalPref } from "@/lib/client-storage";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { QUESTION } from "@/lib/ui-text/question";
 
 const PACK_TOPIC_KEY = "ai:pack-topic";
 const PACK_COUNT_KEY = "ai:pack-count";
@@ -38,13 +40,17 @@ const TYPES: QuestionType[] = [
   "file_manual",
 ];
 
-export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuestion[] }) {
+export function QuestionBank({ initialQuestions, lang }: { initialQuestions: BankQuestion[]; lang: Lang }) {
+  const t = mkT(QUESTION, lang);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [type, setType] = useState<QuestionType>("single_choice");
   const [prompt, setPrompt] = useState("");
   const [optionsText, setOptionsText] = useState("");
+  // Media opsional pada butir soal (embed youtube/pdf/web/video/image/audio).
+  const [mediaType, setMediaType] = useState<string>("");
+  const [mediaUrl, setMediaUrl] = useState("");
   const [versionQ, setVersionQ] = useState("");
   const [points, setPoints] = useState("10");
   const [gradingText, setGradingText] = useState("");
@@ -57,7 +63,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
 
   // Pulihkan topik & jumlah soal AI terakhir dari perangkat (setelah hidrasi).
   useEffect(() => {
-    const t = window.setTimeout(() => {
+    const tId = window.setTimeout(() => {
       const topic = loadLocalPref<string>(PACK_TOPIC_KEY);
       if (topic && topic.trim().length > 0) setAiTopic(topic);
       const count = loadLocalPref<number>(PACK_COUNT_KEY);
@@ -65,7 +71,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
         setAiCount(Math.min(100, Math.max(1, Math.floor(count))));
       }
     }, 0);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(tId);
   }, []);
 
   async function onCreate(e: React.FormEvent) {
@@ -75,17 +81,23 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
       .map((s) => s.trim())
       .filter(Boolean);
     if (needsOptions && options.length < 2) {
-      setNotice("Gagal: soal pilihan butuh ≥2 opsi (satu per baris).");
+      setNotice(t("errOptions"));
       return;
     }
     setBusy(true);
-    const res = await createQuestion({ type, promptText: prompt, difficulty: "medium", options });
+    const media =
+      mediaType && mediaUrl.trim()
+        ? { type: mediaType as "youtube" | "pdf" | "web" | "video" | "image" | "audio", url: mediaUrl.trim() }
+        : undefined;
+    const res = await createQuestion({ type, promptText: prompt, difficulty: "medium", options, media });
     setBusy(false);
-    if (!res.ok) setNotice(`Gagal: ${res.error}`);
+    if (!res.ok) setNotice(fmt(t("failPrefix"), { error: res.error }));
     else {
       setPrompt("");
       setOptionsText("");
-      setNotice("Soal dibuat. Tambahkan versi + kunci di bawah.");
+      setMediaType("");
+      setMediaUrl("");
+      setNotice(t("created"));
       router.refresh();
     }
   }
@@ -108,14 +120,14 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
         points: Number(points),
         grading: rule as unknown as Record<string, unknown>,
       });
-      if (!res.ok) setNotice(`Gagal versi: ${res.error}`);
+      if (!res.ok) setNotice(fmt(t("versionFail"), { error: res.error }));
       else {
         setGradingText("");
-        setNotice(`Versi ${q.versions.length + 1} terbit.`);
+        setNotice(fmt(t("versionPublished"), { n: q.versions.length + 1 }));
         router.refresh();
       }
     } catch {
-      setNotice("Format grading tidak valid.");
+      setNotice(t("errGradingFormat"));
     }
     setBusy(false);
   }
@@ -151,25 +163,25 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
   async function onImportPack(e: React.FormEvent) {
     e.preventDefault();
     if (pack.trim().length === 0) {
-      setPackErrors(["Tempel dulu isi template (baris per soal)."]);
+      setPackErrors([t("packPlaceholder")]);
       return;
     }
     setBusy(true);
     const res = await bulkImportQuestionPack({ pack });
     setBusy(false);
     if (!res.ok) {
-      setPackErrors([`Import gagal: ${res.error}`, ...(res.errors ?? [])].slice(0, 8));
+      setPackErrors([fmt(t("importFailed"), { error: res.error }), ...(res.errors ?? [])].slice(0, 8));
       return;
     }
     setPackErrors(
-      [`${res.created} soal dibuat.`]
+      [fmt(t("packCreated"), { created: res.created })]
         .concat(res.errors ?? [])
-        .concat(res.created === 0 ? ["Tidak ada soal valid."] : [])
+        .concat(res.created === 0 ? [t("noValidRows")] : [])
         .slice(0, 8),
     );
     if (res.created > 0) {
       setPack("");
-      setNotice(`${res.created} soal diimpor ke bank.`);
+      setNotice(fmt(t("packImported"), { created: res.created }));
       router.refresh();
     }
   }
@@ -181,17 +193,12 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
           {notice}
         </p>
       )}
-      <form onSubmit={onImportPack} aria-label="Import bank soal (pack)" className="rounded-xl border p-4">
-        <h2 className="font-semibold">Import bank soal (pack) — MCQ/esai/kombinasi</h2>
-        <p className="mt-1 text-sm text-slate-600">
-          Satu baris = satu soal. Kolom dipisah <code>|</code>: TIPE | Prompt | OpsiA–D | Kunci | Poin |
-          Catatan. Tipe: <code>sc</code>/<code>mc</code>/<code>tf</code>/<code>essay</code>. Kunci = huruf
-          opsi (mis. <code>B</code> atau <code>A;C</code>), <code>benar</code>/<code>salah</code> untuk tf;
-          esai dinilai manual (Catatan jadi pedoman guru).
-        </p>
+      <form onSubmit={onImportPack} aria-label={t("importPackAria")} className="rounded-xl border p-4">
+        <h2 className="font-semibold">{t("packTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-600">{t("packDesc")}</p>
         <details className="mt-2">
           <summary className="cursor-pointer text-sm font-semibold text-blue-700 dark:text-blue-300">
-            Lihat contoh template (salin lalu tempel)
+            {t("packSample")}
           </summary>
           <pre className="mt-2 overflow-x-auto rounded-lg border bg-slate-50 p-3 font-mono text-xs whitespace-pre dark:bg-slate-900">
             {questionPackTemplateSample()}
@@ -199,21 +206,17 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
         </details>
         <details className="mt-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/60 px-3 py-2 dark:border-blue-800 dark:bg-blue-950/40">
           <summary className="cursor-pointer text-xs font-semibold text-blue-800 select-none dark:text-blue-300">
-            🤖 Template prompt AI + format bank soal
+            {t("aiPromptSummary")}
           </summary>{" "}
           <div className="mt-2 space-y-2">
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Salin prompt di bawah, kirim ke AI bersama materi/teks sumber. AI mengembalikan baris pack (1
-              baris = 1 soal) yang langsung diterima kolom import di atas — termasuk kunci untuk soal yang
-              kuncinya ada di sumber.
-            </p>
+            <p className="text-xs text-slate-600 dark:text-slate-300">{t("aiPromptDesc")}</p>
             <div className="grid gap-2 sm:grid-cols-2">
               <div>
                 <label
                   htmlFor="q-ai-topic"
                   className="text-xs font-semibold text-slate-600 dark:text-slate-300"
                 >
-                  Topik materi (opsional — prompt otomatis dipersonalisasi)
+                  {t("aiTopicLabel")}
                 </label>
                 <input
                   id="q-ai-topic"
@@ -226,7 +229,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
                     else saveLocalPref(PACK_TOPIC_KEY, null);
                   }}
                   maxLength={120}
-                  placeholder="Mis. Perulangan Python"
+                  placeholder={t("aiTopicPlaceholder")}
                   className="mt-1 w-full rounded-lg border px-2.5 py-1.5 text-xs"
                 />
               </div>
@@ -235,7 +238,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
                   htmlFor="q-ai-count"
                   className="text-xs font-semibold text-slate-600 dark:text-slate-300"
                 >
-                  Jumlah soal
+                  {t("aiCountLabel")}
                 </label>
                 <input
                   id="q-ai-count"
@@ -259,7 +262,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
             </pre>
             <details className="rounded-lg border px-2 py-1">
               <summary className="cursor-pointer text-[11px] font-semibold text-slate-500 select-none dark:text-slate-400">
-                Lihat ringkasan format (aturan cepat)
+                {t("aiFormatSummary")}
               </summary>
               <p className="mt-1 text-[11px] whitespace-pre-wrap text-slate-600 dark:text-slate-300">
                 {QUESTION_PACK_FORMAT_GUIDE}
@@ -270,7 +273,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
               onClick={copyPackAiPrompt}
               className="rounded-md bg-gradient-to-r from-blue-600 to-indigo-700 px-3 py-1.5 text-xs font-semibold text-white shadow-[var(--shadow-soft)] transition hover:-translate-y-px hover:shadow-[var(--shadow-lift)]"
             >
-              {aiCopied ? "Tersalin ✓" : "Salin prompt AI"}
+              {aiCopied ? t("aiCopied") : t("copyAiPrompt")}
             </button>
           </div>
         </details>
@@ -296,15 +299,15 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
           disabled={busy}
           className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
-          Import pack
+          {t("importPack")}
         </button>
       </form>
-      <form onSubmit={onCreate} aria-label="Tambah soal" className="rounded-xl border p-4">
-        <h2 className="font-semibold">+ Soal baru</h2>
+      <form onSubmit={onCreate} aria-label={t("newQuestionAria")} className="rounded-xl border p-4">
+        <h2 className="font-semibold">{t("newQuestionTitle")}</h2>
         <div className="mt-2 grid gap-2 md:grid-cols-2">
           <div>
             <label htmlFor="q-type" className="text-sm font-semibold">
-              Tipe
+              {t("typeLabel")}
             </label>
             <select
               id="q-type"
@@ -312,16 +315,16 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
               onChange={(e) => setType(e.target.value as QuestionType)}
               className="mt-1 w-full rounded-lg border px-3 py-2"
             >
-              {TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {TYPES.map((qt) => (
+                <option key={qt} value={qt}>
+                  {qt}
                 </option>
               ))}
             </select>
           </div>
           <div>
             <label htmlFor="q-prompt" className="text-sm font-semibold">
-              Prompt
+              {t("promptLabel")}
             </label>
             <input
               id="q-prompt"
@@ -337,7 +340,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
         {needsOptions && (
           <div className="mt-2">
             <label htmlFor="q-options" className="text-sm font-semibold">
-              Opsi jawaban (wajib ≥2, satu per baris — kunci versi harus sama persis dengan salah satunya)
+              {t("optionsLabel")}
             </label>
             <textarea
               id="q-options"
@@ -350,20 +353,55 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
             />
           </div>
         )}
+        {/* Media embed pada butir soal (materi/kuis): youtube, pdf, web, video, image, audio. */}
+        <div className="mt-2 grid gap-2 md:grid-cols-2">
+          <div>
+            <label htmlFor="q-media-type" className="text-sm font-semibold">
+              {t("mediaLabel")}
+            </label>
+            <select
+              id="q-media-type"
+              value={mediaType}
+              onChange={(e) => setMediaType(e.target.value)}
+              className="mt-1 w-full rounded-lg border px-3 py-2"
+            >
+              <option value="">{t("mediaNone")}</option>
+              {["youtube", "pdf", "web", "video", "image", "audio"].map((mt) => (
+                <option key={mt} value={mt}>
+                  {mt}
+                </option>
+              ))}
+            </select>
+          </div>
+          {mediaType && (
+            <div>
+              <label htmlFor="q-media-url" className="text-sm font-semibold">
+                {t("mediaUrlLabel")}
+              </label>
+              <input
+                id="q-media-url"
+                value={mediaUrl}
+                onChange={(e) => setMediaUrl(e.target.value)}
+                placeholder="https://…"
+                className="mt-1 w-full rounded-lg border px-3 py-2"
+              />
+            </div>
+          )}
+        </div>
         <button
           disabled={busy}
           className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
-          Tambah
+          {t("add")}
         </button>
       </form>
 
-      <form onSubmit={onVersion} aria-label="Terbit versi soal" className="rounded-xl border p-4">
-        <h2 className="font-semibold">Terbit versi + kunci jawaban</h2>
+      <form onSubmit={onVersion} aria-label={t("versionAria")} className="rounded-xl border p-4">
+        <h2 className="font-semibold">{t("versionTitle")}</h2>
         <div className="mt-2 grid gap-2 md:grid-cols-3">
           <div>
             <label htmlFor="v-q" className="text-sm font-semibold">
-              Soal
+              {t("questionLabel")}
             </label>
             <select
               id="v-q"
@@ -372,7 +410,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
               onChange={(e) => setVersionQ(e.target.value)}
               className="mt-1 w-full rounded-lg border px-3 py-2"
             >
-              <option value="">— pilih —</option>
+              <option value="">{t("selectPrompt")}</option>
               {initialQuestions.map((q) => (
                 <option key={q.id} value={q.id}>
                   {q.type} — {q.promptText.slice(0, 40)}
@@ -382,7 +420,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
           </div>
           <div>
             <label htmlFor="v-points" className="text-sm font-semibold">
-              Poin
+              {t("pointsLabel")}
             </label>
             <input
               id="v-points"
@@ -395,9 +433,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
           </div>
         </div>
         <label htmlFor="v-grading" className="mt-2 block text-sm font-semibold">
-          Kunci (baris key=value; mis. correct=b · corrects=a,c · expected=3.14, tolAbs=0.01 ·
-          accepted=Soekarno). Untuk soal pilihan, nilai correct/corrects harus sama persis dengan teks opsi di
-          atas, atau versi ditolak (INVALID_KEY).
+          {t("keyLabel")}
         </label>
         <textarea
           id="v-grading"
@@ -411,13 +447,13 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
           disabled={busy}
           className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
-          Terbit versi
+          {t("publish")}
         </button>
       </form>
 
-      <section aria-label="Daftar soal" className="space-y-2">
+      <section aria-label={t("listAria")} className="space-y-2">
         {initialQuestions.length === 0 && (
-          <p className="rounded-xl border p-4 text-slate-600">Bank masih kosong.</p>
+          <p className="rounded-xl border p-4 text-slate-600">{t("bankEmpty")}</p>
         )}
         {initialQuestions.map((q) => {
           const last = q.versions[q.versions.length - 1] ?? null;
@@ -428,7 +464,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
               </p>
               <p className="text-slate-500">
                 {q.versions.length === 0
-                  ? "belum ada versi"
+                  ? t("noVersions")
                   : q.versions.map((v) => `v${v.version} (${v.points}p)`).join(", ")}
               </p>
               {last && (
@@ -437,6 +473,7 @@ export function QuestionBank({ initialQuestions }: { initialQuestions: BankQuest
                   versionId={last.id}
                   versionNumber={last.version}
                   existing={last.rubric}
+                  lang={lang}
                 />
               )}
             </div>

@@ -5,23 +5,31 @@ import { useRouter } from "next/navigation";
 import { bulkImportStudentAssignments } from "@/features/actions";
 import { MAX_ASSIGNMENT_ROWS, xlsxFileError } from "@/lib/bulk-import";
 import { BulkCard } from "@/components/bulk-card";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { ADMIN_MAP } from "@/lib/ui-text/admin-map";
 
-const ERR_TEXT: Record<string, string> = {
-  FILE_MUST_BE_XLSX: "Berkas harus berformat .xlsx.",
-  FILE_EMPTY: "Berkas kosong.",
-  FILE_TOO_LARGE: "Berkas terlalu besar (maks 5 MB).",
-  FILE_MIME_REJECTED: "Tipe berkas ditolak.",
-  NO_VALID_ROWS: "Tidak ada baris valid di berkas.",
-  ROWS_OVER_CAP: "Terlalu banyak baris penugasan.",
-  FORBIDDEN: "Aksi ini hanya untuk admin org (guru pemilik course).",
-  FILE_MISSING: "Berkas tidak ditemukan.",
+const ERR_KEY: Record<string, keyof typeof ADMIN_MAP> = {
+  FILE_MUST_BE_XLSX: "bulkErrMustBeXlsx",
+  FILE_EMPTY: "bulkErrEmpty",
+  FILE_TOO_LARGE: "bulkErrTooLarge",
+  FILE_MIME_REJECTED: "bulkErrMime",
+  NO_VALID_ROWS: "bulkErrNoValidRows",
+  ROWS_OVER_CAP: "bulkErrRowsOverCap",
+  FORBIDDEN: "errForbidden",
+  FILE_MISSING: "bulkErrMissing",
 };
 
-export function AssignmentBulkImport() {
+export function AssignmentBulkImport({ lang }: { lang: Lang }) {
+  const t = mkT(ADMIN_MAP, lang);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<React.ReactNode>(null);
   const [clientErr, setClientErr] = useState("");
+
+  function errText(err: string): string {
+    const key = ERR_KEY[err];
+    return key ? t(key) : err;
+  }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -31,7 +39,7 @@ export function AssignmentBulkImport() {
     if (file instanceof File) {
       const err = xlsxFileError(file);
       if (err) {
-        setClientErr(ERR_TEXT[err] ?? err);
+        setClientErr(errText(err));
         return;
       }
     }
@@ -40,10 +48,12 @@ export function AssignmentBulkImport() {
     const res = await bulkImportStudentAssignments(fd);
     setBusy(false);
     if (res.ok) {
-      const parts = [`${res.assigned} penugasan diproses`];
-      if (res.unknownClasses.length > 0) parts.push(`${res.unknownClasses.length} kelas tak dikenal`);
-      if (res.unknownSubjects.length > 0) parts.push(`${res.unknownSubjects.length} subjek tak dikenal`);
-      if (res.notFound.length > 0) parts.push(`${res.notFound.length} email tak ditemukan`);
+      const parts = [fmt(t("assignmentsProcessed"), { count: res.assigned })];
+      if (res.unknownClasses.length > 0)
+        parts.push(fmt(t("unknownClasses"), { count: res.unknownClasses.length }));
+      if (res.unknownSubjects.length > 0)
+        parts.push(fmt(t("unknownSubjects"), { count: res.unknownSubjects.length }));
+      if (res.notFound.length > 0) parts.push(fmt(t("emailsNotFound"), { count: res.notFound.length }));
       setNotice(
         <span
           role="status"
@@ -52,12 +62,12 @@ export function AssignmentBulkImport() {
           {parts.join(" · ")}.
           {res.unknownClasses.length > 0 && (
             <span className="block text-amber-700 dark:text-amber-300">
-              Kelas: {res.unknownClasses.join(", ")}
+              {fmt(t("classList"), { list: res.unknownClasses.join(", ") })}
             </span>
           )}
           {res.unknownSubjects.length > 0 && (
             <span className="block text-amber-700 dark:text-amber-300">
-              Subjek: {res.unknownSubjects.join(", ")}
+              {fmt(t("subjectList"), { list: res.unknownSubjects.join(", ") })}
             </span>
           )}
           {res.notFound.length > 0 && (
@@ -76,7 +86,7 @@ export function AssignmentBulkImport() {
           role="status"
           className="block rounded-xl bg-red-100 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200"
         >
-          Gagal: {ERR_TEXT[res.error] ?? res.error}
+          {fmt(t("failPrefix"), { error: errText(res.error) })}
         </span>,
       );
     }
@@ -85,22 +95,17 @@ export function AssignmentBulkImport() {
 
   return (
     <BulkCard
-      title="Bulk penugasan murid → kelas & subjek (XLSX)"
-      desc={
-        <>
-          Kolom: <code>Email</code>, <code>Kelas</code> (opsional), <code>Subjek</code> (opsional) — minimal
-          satu per baris. Murid dimasukkan ke kelas (cohort) dan di-enroll ke subjek (course) di organisasi
-          ini.
-        </>
-      }
+      lang={lang}
+      title={t("assignBulkTitle")}
+      desc={t("assignBulkDesc")}
       templateKind="assignments"
-      templateLabel="Template penugasan"
-      capacityText={`Maksimal ${MAX_ASSIGNMENT_ROWS} baris per file`}
+      templateLabel={t("assignBulkTemplate")}
+      capacityText={fmt(t("assignBulkCapacity"), { max: MAX_ASSIGNMENT_ROWS })}
     >
       <form onSubmit={onSubmit} className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
         <div>
           <label htmlFor="assign-bulk-file" className="text-sm font-semibold">
-            Berkas XLSX
+            {t("fileLabel")}
           </label>
           <input
             id="assign-bulk-file"
@@ -110,9 +115,7 @@ export function AssignmentBulkImport() {
             required
             onChange={(e) => {
               const f = e.target.files?.[0];
-              setClientErr(
-                f ? (xlsxFileError(f) ? (ERR_TEXT[xlsxFileError(f) ?? "FILE_MISSING"] ?? "") : "") : "",
-              );
+              setClientErr(f ? (xlsxFileError(f) ? errText(xlsxFileError(f) ?? "FILE_MISSING") : "") : "");
             }}
             className="mt-1 block w-full text-sm"
           />
@@ -122,7 +125,7 @@ export function AssignmentBulkImport() {
           disabled={busy}
           className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white disabled:opacity-60"
         >
-          {busy ? "Memproses…" : "Upload penugasan"}
+          {busy ? t("processing") : t("uploadAssignment")}
         </button>
       </form>
       {clientErr && <p className="text-sm text-red-700">{clientErr}</p>}

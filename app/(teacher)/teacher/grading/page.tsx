@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getServerEnv } from "@/lib/env";
+import { getLang, mkT } from "@/lib/i18n";
+import { GRADING } from "@/lib/ui-text/grading";
 import { GradeQueue } from "./grade-queue";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +24,7 @@ export interface QueueRubric {
 export interface QueueItem {
   responseId: string;
   attemptId: string;
+  questionVersionId: string;
   attemptNo: number;
   attemptStatus: string;
   studentName: string;
@@ -144,6 +147,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
       out.push({
         responseId: r.id,
         attemptId: a.id,
+        questionVersionId: r.question_version_id,
         attemptNo: a.attempt_no,
         attemptStatus: a.status,
         studentName: (prof as { display_name: string } | null)?.display_name ?? "—",
@@ -193,6 +197,8 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
 }
 
 export default async function GradingPage() {
+  const lang = await getLang();
+  const t = mkT(GRADING, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub ?? "";
@@ -232,11 +238,9 @@ export default async function GradingPage() {
 
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Antrian penilaian manual</h1>
-      <p className="mt-1 text-sm text-slate-600">
-        Esai & proyek. Perubahan nilai tercatat sebagai revisi + audit.
-      </p>
-      <GradeQueue initialItems={items} aiConfig={aiConfig} />
+      <h1 className="text-3xl font-bold">{t("title")}</h1>
+      <p className="mt-1 text-sm text-slate-600">{t("subtitle")}</p>
+      <GradeQueue initialItems={items} aiConfig={aiConfig} lang={lang} />
     </main>
   );
 }

@@ -87,16 +87,20 @@ describe("migration 000010: constraint, index partial, RPC atomik", () => {
 });
 
 describe("UI reissue teacher (student detail)", () => {
-  it("halaman memuat komponen dan menampilkan aksi hanya pada cert active", () => {
+  it("halaman memuat komponen dan menampilkan aksi hanya pada cert active (bilingual via dict)", () => {
     expect(page).toMatch(/import \{ ReissueCertificateButton \} from "\.\/reissue-button"/);
     expect(page).toMatch(/c\.status === "active" && \(\s*<ReissueCertificateButton/);
-    expect(page).toMatch(/diganti/);
+    // Label "diganti"/replaced via dictionary, bukan literal inline.
+    expect(page).toMatch(/t\("replaced"\)/);
+    expect(page).toMatch(/t\("certActive"\)/);
   });
 
-  it("komponen punya dialog alasan wajib + aksesibel (label, status)", () => {
+  it("komponen punya dialog alasan wajib + aksesibel (label, status) via dictionary", () => {
     expect(button).toMatch(/showModal/);
     expect(button).toMatch(/aria-labelledby/);
-    expect(button).toMatch(/Alasan reissue/);
+    // Label alasan reissue dirutekan lewat STUDENT_DETAIL.reasonLabel.
+    expect(button).toMatch(/t\("reasonLabel"\)/);
+    expect(button).not.toMatch(/Alasan reissue/);
     expect(button).toMatch(/required/);
     expect(button).toMatch(/minLength=\{MIN_REASON\}/);
     expect(button).toMatch(/const MIN_REASON = 5;/);
