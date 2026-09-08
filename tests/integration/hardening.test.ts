@@ -19,11 +19,28 @@ const clients = ownSource.filter(({ src }) => src.includes('"use client"'));
 const students = ownSource.filter(({ f }) => f.includes("app/(student)"));
 
 describe("P11: CSP + secure headers", () => {
-  it("next.config.ts menetapkan CSP, frame-ancestors none, nosniff", () => {
-    const src = readFileSync("next.config.ts", "utf8");
-    expect(src).toMatch(/Content-Security-Policy/);
-    expect(src).toMatch(/frame-ancestors 'none'|X-Frame-Options/);
-    expect(src).toMatch(/X-Content-Type-Options/);
+  it("CSP nonce-based hidup di proxy.ts/lib/csp.ts; next.config memegang header dasar", () => {
+    // CSP TIDAK boleh statis di next.config (di-union dengan nonce policy dan
+    // memblokir semua script) — harus di proxy.ts via lib/csp.ts.
+    const cfg = readFileSync("next.config.ts", "utf8");
+    expect(cfg).not.toMatch(/Content-Security-Policy/);
+    expect(cfg).toMatch(/X-Frame-Options/);
+    expect(cfg).toMatch(/X-Content-Type-Options/);
+
+    const proxy = readFileSync("proxy.ts", "utf8");
+    expect(proxy).toMatch(/x-nonce/);
+    expect(proxy).toMatch(/cspHeaderName/);
+    expect(proxy).toMatch(/CSP_REPORT_ONLY/);
+
+    const csp = readFileSync("lib/csp.ts", "utf8");
+    expect(csp).toMatch(/nonce-/);
+    expect(csp).toMatch(/strict-dynamic/);
+    expect(csp).toMatch(/frame-ancestors 'none'/);
+    expect(csp).toMatch(/youtube-nocookie\.com/);
+    expect(csp).toMatch(/docs\.google\.com/);
+    expect(csp).toMatch(/\*\.supabase\.co/);
+    expect(csp).toMatch(/report-uri/);
+    expect(csp).toMatch(/CSP_REPORT_ENDPOINT/);
   });
 });
 

@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
 const layout = readFileSync("app/(guardian)/layout.tsx", "utf8");
 const page = readFileSync("app/(guardian)/guardian/page.tsx", "utf8");
 const hub = readFileSync("app/dashboard/page.tsx", "utf8");
-const login = readFileSync("app/(auth)/login/page.tsx", "utf8");
+// Halaman login = server component tipis; logika redirect di login-form.tsx.
+const login = readFileSync("app/(auth)/login/login-form.tsx", "utf8");
 const seed = readFileSync("supabase/seed.sql", "utf8");
 
 describe("guardian dashboard slice (Wali) — route coverage", () => {
