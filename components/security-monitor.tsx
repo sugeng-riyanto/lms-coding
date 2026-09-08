@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import type { CspAlertState } from "@/lib/csp-alerts";
 import { ColumnChart } from "@/components/charts";
 
@@ -8,11 +8,11 @@ import { ColumnChart } from "@/components/charts";
  * Panel "Security & monitoring" untuk admin (org-admin). Render state agregat
  * alerting CSP: banner spike (teks + ikon, bukan warna saja), kartu metrik
  * (rate, violations/blocked per menit, sample size, total, terakhir diperbarui),
- * tombol refresh, dan grafik riwayat 24 jam dari persisted csp_events table.
- * Tidak pernah menampilkan URI/PII.
+ * tombol refresh, dan grafik riwayat 24 jam / 7 hari dari persisted csp_events
+ * table. Tidak pernah menampilkan URI/PII.
  */
-interface DigestHour {
-  hour: string;
+interface DigestBucket {
+  bucket: string;
   violations: number;
   blocked: number;
 }
@@ -21,8 +21,9 @@ export function SecurityMonitor({ initial }: { initial: CspAlertState }) {
   const [state, setState] = useState<CspAlertState>(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [digestHours, setDigestHours] = useState<DigestHour[]>([]);
+  const [digestBuckets, setDigestBuckets] = useState<DigestBucket[]>([]);
   const [digestTotal, setDigestTotal] = useState(0);
+  const [chartDays, setChartDays] = useState<1 | 7>(1);
 
   // Format waktu hanya setelah mount agar tidak mismatch hidrasi.
   const mounted = useSyncExternalStore(
@@ -34,28 +35,43 @@ export function SecurityMonitor({ initial }: { initial: CspAlertState }) {
   const fmtTime = (ts: number | null): string =>
     ts === null || !mounted ? "\u2014" : new Date(ts).toLocaleString("id-ID");
 
+  const fetchDigest = useCallback(async (days: 1 | 7) => {
+    const res = await fetch(`/api/operator/csp-digest?days=${days}`, { cache: "no-store" });
+    if (!res.ok) return;
+    const body = (await res.json()) as {
+      data?: { buckets?: DigestBucket[]; total?: number };
+    };
+    if (body.data?.buckets) setDigestBuckets(body.data.buckets);
+    if (body.data?.total != null) setDigestTotal(body.data.total);
+  }, []);
+
   async function refresh() {
     setBusy(true);
     setError(null);
     try {
-      const [alertRes, digestRes] = await Promise.all([
+      const [alertRes] = await Promise.all([
         fetch("/api/operator/csp-alerts", { cache: "no-store" }),
-        fetch("/api/operator/csp-digest", { cache: "no-store" }),
+        fetchDigest(chartDays),
       ]);
       if (!alertRes.ok) throw new Error(`HTTP ${alertRes.status}`);
       const alertBody = (await alertRes.json()) as { data?: CspAlertState };
       if (!alertBody.data) throw new Error("Respons tidak dikenal");
       setState(alertBody.data);
-
-      if (digestRes.ok) {
-        const digestBody = (await digestRes.json()) as {
-          data?: { hours?: DigestHour[]; total24h?: number };
-        };
-        if (digestBody.data?.hours) setDigestHours(digestBody.data.hours);
-        if (digestBody.data?.total24h != null) setDigestTotal(digestBody.data.total24h);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Gagal memuat ulang.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function switchDays(days: 1 | 7) {
+    if (days === chartDays) return;
+    setChartDays(days);
+    setBusy(true);
+    try {
+      await fetchDigest(days);
+    } catch {
+      // silent — chart just stays stale
     } finally {
       setBusy(false);
     }
@@ -76,12 +92,18 @@ export function SecurityMonitor({ initial }: { initial: CspAlertState }) {
     { label: "Terakhir diperbarui", value: fmtTime(state.lastUpdated) },
   ];
 
-  // Build chart bars from digest hours (last 24h, hourly buckets).
-  const chartBars = digestHours.map((h) => ({
-    label: h.hour.slice(11, 16), // "HH:MM"
-    value: h.violations + h.blocked,
-    hint: `V:${h.violations} B:${h.blocked}`,
+  // Build chart bars from digest buckets.
+  const chartBars = digestBuckets.map((b) => ({
+    label: chartDays === 7 ? b.bucket.slice(5, 10) : b.bucket.slice(11, 16), // "MM-DD" or "HH:MM"
+    value: b.violations + b.blocked,
+    hint: `V:${b.violations} B:${b.blocked}`,
   }));
+
+  const chartLabel = chartDays === 7 ? "Riwayat 7 hari" : "Riwayat 24 jam";
+  const chartAriaLabel =
+    chartDays === 7
+      ? "CSP violations per day over the last 7 days"
+      : "CSP violations per hour over the last 24 hours";
 
   return (
     <section
@@ -153,19 +175,56 @@ export function SecurityMonitor({ initial }: { initial: CspAlertState }) {
           ))}
         </dl>
 
-        {/* 24h mini history chart — only shown when digest data is loaded. */}
+        {/* CSP history chart with 24h/7d toggle — only shown when digest data is loaded. */}
         {chartBars.length > 0 && (
           <div className="mt-6">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
-              Riwayat 24 jam
-              <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
-                Total: {digestTotal} event
-              </span>
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                {chartLabel}
+                <span className="ml-2 text-xs font-normal text-slate-500 dark:text-slate-400">
+                  Total: {digestTotal} event
+                </span>
+              </h3>
+              {/* Toggle: 24h / 7d */}
+              <div
+                className="flex overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700"
+                role="radiogroup"
+                aria-label="Rentang waktu grafik CSP"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={chartDays === 1}
+                  onClick={() => switchDays(1)}
+                  disabled={busy}
+                  className={`px-3 py-1 text-xs font-semibold transition ${
+                    chartDays === 1
+                      ? "bg-blue-600 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  24 jam
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={chartDays === 7}
+                  onClick={() => switchDays(7)}
+                  disabled={busy}
+                  className={`px-3 py-1 text-xs font-semibold transition ${
+                    chartDays === 7
+                      ? "bg-blue-600 text-white"
+                      : "bg-white text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  7 hari
+                </button>
+              </div>
+            </div>
             <div className="mt-2">
               <ColumnChart
                 bars={chartBars}
-                ariaLabel="CSP violations per hour over the last 24 hours"
+                ariaLabel={chartAriaLabel}
                 tone="amber"
                 trackHeight={80}
                 formatValue={(v) => String(v)}
@@ -177,7 +236,7 @@ export function SecurityMonitor({ initial }: { initial: CspAlertState }) {
         <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
           Nilai agregat saja — tidak ada URI, detail directive, atau PII. State persisted di Supabase table{" "}
           <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">csp_events</code> (restart-safe,
-          multi-instance). Grafik menampilkan data 24 jam terakhir dari tabel yang sama.
+          multi-instance). Toggle 24 jam / 7 hari untuk membedakan burst sesaat dari serangan berkelanjutan.
         </p>
       </div>
     </section>

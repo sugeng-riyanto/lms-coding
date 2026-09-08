@@ -1,15 +1,15 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/ratelimit";
 
 /**
- * GET /api/operator/csp-digest — 24h aggregated CSP event data for operators.
+ * GET /api/operator/csp-digest?days=1|7 — aggregated CSP event data for operators.
  * Teachers only (same role check as /api/operator/csp-alerts).
- * Returns hourly buckets by kind (violation/blocked) for the last 24 hours.
+ * Returns buckets by kind (violation/blocked). For days=1: hourly; days=7: daily.
  * No URIs, no PII — aggregate only.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
@@ -35,9 +35,14 @@ export async function GET() {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Not an operator." } }, { status: 403 });
   }
 
+  // Parse days param: 1 (default, hourly buckets) or 7 (daily buckets).
+  const daysParam = req.nextUrl.searchParams.get("days");
+  const days = daysParam === "7" ? 7 : 1;
+  const windowMs = days * 24 * 60 * 60 * 1000;
+
   // Read from the persisted csp_events table using the service client.
   const svc = createServiceClient();
-  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const since = new Date(Date.now() - windowMs).toISOString();
 
   const { data: events, error } = await svc
     .from("csp_events")
@@ -49,33 +54,37 @@ export async function GET() {
     return NextResponse.json({ error: { code: "DB_ERROR", message: error.message } }, { status: 500 });
   }
 
-  // Bucket into hourly intervals.
+  // Bucket into intervals: hourly for 1d, daily for 7d.
   const buckets = new Map<string, { violations: number; blocked: number }>();
   for (const ev of events ?? []) {
     const d = new Date(ev.recorded_at);
-    const hourKey = d.toISOString().slice(0, 13) + ":00:00Z";
-    const cur = buckets.get(hourKey) ?? { violations: 0, blocked: 0 };
+    const bucketKey =
+      days === 7
+        ? d.toISOString().slice(0, 10) // "YYYY-MM-DD"
+        : d.toISOString().slice(0, 13) + ":00:00Z"; // "YYYY-MM-DDTHH:00:00Z"
+    const cur = buckets.get(bucketKey) ?? { violations: 0, blocked: 0 };
     if (ev.kind === "violation") cur.violations += 1;
     else cur.blocked += 1;
-    buckets.set(hourKey, cur);
+    buckets.set(bucketKey, cur);
   }
 
-  const hours = Array.from(buckets.entries()).map(([hour, counts]) => ({
-    hour,
+  const bucketsArr = Array.from(buckets.entries()).map(([key, counts]) => ({
+    bucket: key,
     ...counts,
   }));
 
-  const totalViolations = hours.reduce((sum, h) => sum + h.violations, 0);
-  const totalBlocked = hours.reduce((sum, h) => sum + h.blocked, 0);
+  const totalViolations = bucketsArr.reduce((sum, b) => sum + b.violations, 0);
+  const totalBlocked = bucketsArr.reduce((sum, b) => sum + b.blocked, 0);
 
   return NextResponse.json({
     ok: true,
     data: {
-      hours,
-      total24h: totalViolations + totalBlocked,
-      totalViolations24h: totalViolations,
-      totalBlocked24h: totalBlocked,
-      windowHours: 24,
+      buckets: bucketsArr,
+      total: totalViolations + totalBlocked,
+      totalViolations,
+      totalBlocked,
+      windowDays: days,
+      bucketGranularity: days === 7 ? "day" : "hour",
     },
   });
 }
