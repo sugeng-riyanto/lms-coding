@@ -13,6 +13,8 @@
  * Untuk multi-instance: pindahkan ke Redis (DEPLOYMENT.md §7).
  */
 
+import { createServiceClient } from "@/lib/supabase/service";
+
 export interface CspAlertEvent {
   kind: "violation" | "blocked";
   at: number;
@@ -52,6 +54,15 @@ function thresholdPerMin(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_THRESHOLD_PER_MIN;
 }
 
+/** Check if Supabase env vars are available (server-side only). */
+function hasSupabaseEnv(): boolean {
+  return (
+    typeof window === "undefined" &&
+    !!process.env.NEXT_PUBLIC_SUPABASE_URL &&
+    !!process.env.SUPABASE_SECRET_KEY
+  );
+}
+
 // ---- In-memory fallback (single instance, dev/local) ----
 let memEvents: CspAlertEvent[] = [];
 let memTotal = 0;
@@ -59,19 +70,21 @@ let memBlockedTotal = 0;
 
 /** Insert event into Supabase table (service client, bypasses RLS). */
 async function insertEvent(kind: CspAlertEvent["kind"]): Promise<void> {
+  if (!hasSupabaseEnv()) return;
   try {
-    // Dynamic import to avoid circular deps and to allow tree-shaking in client bundles.
-    const { createServiceClient } = await import("@/lib/supabase/service");
     const svc = createServiceClient();
-    await svc.from("csp_events").insert({ kind });
-  } catch {
-    // Supabase unavailable — fall back to in-memory (no throw).
+    const { error } = await svc.from("csp_events").insert({ kind });
+    if (error) {
+      console.error("[csp-alerts] insert error:", error.message, error.code);
+    }
+  } catch (err) {
+    console.error("[csp-alerts] insert failed:", err instanceof Error ? err.message : String(err));
   }
 }
 
 /** Read rolling window events from Supabase (service client). */
 async function readWindowEvents(
-  windowMs: number,
+  winMs: number,
   now: number,
 ): Promise<{
   violations: number;
@@ -79,26 +92,25 @@ async function readWindowEvents(
   total: number;
   blockedTotal: number;
   lastViolationAt: number | null;
-}> {
+} | null> {
+  if (!hasSupabaseEnv()) return null;
   try {
-    const { createServiceClient } = await import("@/lib/supabase/service");
     const svc = createServiceClient();
-    const since = new Date(now - windowMs).toISOString();
+    const since = new Date(now - winMs).toISOString();
     const { data, error } = await svc
       .from("csp_events")
       .select("kind, recorded_at")
       .gte("recorded_at", since)
       .order("recorded_at", { ascending: false });
-    if (error || !data) throw error;
-    const violations = data.filter((r: { kind: string }) => r.kind === "violation").length;
-    const blocked = data.filter((r: { kind: string }) => r.kind === "blocked").length;
-    // Total counts: all events in table.
+    if (error || !data) return null;
+    const violations = data.filter((r) => r.kind === "violation").length;
+    const blocked = data.filter((r) => r.kind === "blocked").length;
     const { count: totalCount } = await svc.from("csp_events").select("id", { count: "exact", head: true });
     const { count: blockedCount } = await svc
       .from("csp_events")
       .select("id", { count: "exact", head: true })
       .eq("kind", "blocked");
-    const lastViolation = data.find((r: { kind: string }) => r.kind === "violation");
+    const lastViolation = data.find((r) => r.kind === "violation");
     return {
       violations,
       blocked,
@@ -107,14 +119,7 @@ async function readWindowEvents(
       lastViolationAt: lastViolation ? new Date(lastViolation.recorded_at).getTime() : null,
     };
   } catch {
-    // Supabase unavailable — caller falls back to in-memory.
-    return null as unknown as {
-      violations: number;
-      blocked: number;
-      total: number;
-      blockedTotal: number;
-      lastViolationAt: number | null;
-    };
+    return null;
   }
 }
 
@@ -122,14 +127,13 @@ async function readWindowEvents(
 
 /** Rekam satu event — Supabase primary, in-memory fallback. */
 export function recordCspEvent(kind: CspAlertEvent["kind"], now = Date.now()): void {
-  // Always record in-memory as fallback.
   memEvents.push({ kind, at: now });
   if (memEvents.length > MAX_EVENTS) {
     memEvents = memEvents.slice(memEvents.length - MAX_EVENTS);
   }
   if (kind === "blocked") memBlockedTotal += 1;
   memTotal += 1;
-  // Async insert into Supabase — fire-and-forget, errors swallowed.
+  // Async insert into Supabase — fire-and-forget, errors logged not thrown.
   insertEvent(kind).catch(() => {});
 }
 
@@ -151,8 +155,8 @@ export async function cspAlertState(now = Date.now()): Promise<CspAlertState> {
 
   // Try Supabase first.
   const db = await readWindowEvents(win, now);
-  if (db && !("kind" in (db as Record<string, unknown>))) {
-    // Successfully read from Supabase (not the fallback null).
+  if (db !== null) {
+    // Successfully read from Supabase.
     const scale = 60_000 / win;
     return {
       alertActive: db.violations + db.blocked >= thr,
