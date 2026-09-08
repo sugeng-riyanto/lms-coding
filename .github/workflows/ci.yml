@@ -20,6 +20,8 @@ jobs:
       - run: npm run test
       - run: npm run build
       - run: npm run db:typecheck
+      - name: Release gate — credential audit
+        run: bash scripts/release-gate.sh
 
   live-denial:
     runs-on: ubuntu-latest

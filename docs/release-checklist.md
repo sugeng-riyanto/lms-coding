@@ -60,12 +60,13 @@ Legenda: ✅ Ready · ⚠️ Ready with limitation · ⛔ Blocked eksternal · �
 | Loading/empty/offline/forbidden/error | ✅ | empty/empty/offline states per halaman + `error.tsx` + `unauthorized` + `account-inactive` |
 | Lint/typecheck/tests/build/security | ✅ | lokal hijau: format, lint, typecheck, 406 tests, build, advisor (38t/2v), live-denial 95/95, hardening tests |
 | README/runbooks akurat | ✅ | `docs/runbooks.md` + `docs/release-checklist.md` (file ini) + kredensial demo RBAC di `README.md` |
+| Release gate (credential audit) | ✅ | `bash scripts/release-gate.sh` — 6 gates pass: no hardcoded password in app code, no demo.local in server actions, seed.sql local-only guard, no e2e fallback, no CI env defaults, no demo.local in page components. Wired into CI (`ci.yml` verify job). |
+| Password rotation (hosted) | ✅ | 2026-09-08: all 5 demo accounts rotated from `DemoPass-2026!` to `Demo-Rot8-exJmoqO5Aph!`; old password rejected (400), new password issues JWT (200). See PROGRESS.md. |
 
 ## Rekomendasi: GO untuk uji kelas percontohan (data demo)
 
 Study loop penuh terbukti live melawan hosted (murid jawab+submit = 100 via RPC
 tersanitasi 000023; guru melihat submitted + skor; wali melihat ringkasan).
-Sebelum data murid nyata: rotasi kredensial demo (`DemoPass-2026!`), set
-`BLOCKCHAIN_ANCHOR_ENABLED=false` di production, dan jalankan audit keamanan
-Prompt Audit (2 org, 2 guru, wali linked/unlinked, anonymous). Rollback:
-`git revert` per commit atomik.
+Password demo sudah di-rotasi (2026-09-08). Set `BLOCKCHAIN_ANCHOR_ENABLED=false`
+di production, dan jalankan audit keamanan Prompt Audit (2 org, 2 guru, wali
+linked/unlinked, anonymous). Rollback: `git revert` per commit atomik.
