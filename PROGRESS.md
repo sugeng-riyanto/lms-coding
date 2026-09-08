@@ -1397,3 +1397,87 @@ semua dijalankan terhadap instalasi nyata):
 
 Gates sesi: eslint 0 · tsc 0 (tidak ada perubahan kode TS selain konfigurasi
 e2e).
+
+## Smoke script pilot loop (§5.5 DEPLOYMENT) — .freebuff/smoke-pilot-loop.mjs
+
+Runnable end-to-end smoke yang me-replay loop rilis percontohan terhadap
+HOSTED (lihat DEPLOYMENT.md §5.5/§8 butir 5) dan **GREEN 27/27, idempotent
+(re-run 26/26 reuse, tanpa pertumbuhan baris)**:
+
+1. Sign-in guru/murid01/wali via GoTrue hosted; 2. konten terbit + katalog
+   murid RLS; 3. authoring guru (RLS) soal single_choice + versi + assessment
+   rantai bukti append-only id-uji `9f9f…`; 4. loop belajar murid01:
+   `get_attempt_questions` (bukti kunci jawaban TIDAK terkirim), simpan
+   jawaban, leg scoring server (auto_score/raw_score persis `submitAttempt`),
+   `finalize_attempt` → submitted **raw_score 100**; 5. guru melihat submitted
+   + 100; 6. wali lihat ringkasan anak tertaut saja, 0 baris
+   learning_events/attempts (min disclosure); 7. artefak sertifikat aktif
+   (`b452443196874056bd527530b4cf3138`): record JSON anon (payloadHash cocok,
+   contentPercent 100, tanpa email/score/student_id), verifier anon, PDF 2
+   halaman A4 via cookie @supabase/ssr (anon → 401); 8. `/api/health` ready.
+
+Cara pakai: `SMOKE_APP_URL=<app> node .freebuff/smoke-pilot-loop.mjs`
+(default NEXT_PUBLIC_APP_URL; `SMOKE_ALLOW_NO_APP=1` → leg app jadi SKIP).
+Temuan selama validasi yang menegaskan arsitektur: `finalize_attempt` hanya
+mengubah status — scoring dilakukan leg server action `submitAttempt`
+(auto_score/raw_score), jadi smoke me-replay leg itu (bukan browser/forging).
+Script memakai rantai id tetap append-only dan aman di-run ulang.
+
+## Nonce-based strict CSP + rollout report-only (hardening §4.7)
+
+Mengganti `script-src 'unsafe-inline' 'unsafe-eval'` statis (next.config.ts)
+dengan kebijakan nonce per-request sesuai docs resmi Next.js 16
+(`node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md`):
+
+- **`lib/csp.ts`** (single source): `buildCspPolicy` — `script-src 'self'
+  'nonce-…' 'strict-dynamic'` (tanpa unsafe-inline/eval di produksi),
+  `style-src 'self' 'unsafe-inline'` (tradeoff: style attr dinamis chart;
+  tak bisa eksekusi kode), frame-src per-host (youtube-nocookie, docs.google,
+  *.supabase.co), media-src https:, object-src/base-uri/form-action,
+  report-uri + report-to; `upgrade-insecure-requests` sengaja tidak dipakai
+  (dev Supabase lokal http://127.0.0.1).
+- **`proxy.ts`**: nonce baru per request → header `x-nonce` + CSP (request &
+  response), Refresh-Endpoints; matcher menambah pengecualian prefetch.
+  Mode: dev SELALU report-only; `CSP_REPORT_ONLY !== "false"` = report-only
+  (rollout default); `CSP_REPORT_ONLY=false` = enforce.
+- **`app/layout.tsx`**: script tema dark-mode membaca `x-nonce` eksplisit
+  (dangerouslySetInnerHTML tidak di-nonce otomatis oleh Next).
+- **5 halaman shell jadi dynamic** (`dynamic = "force-dynamic"`): `/`,
+  `/login` (dipecah page server + `login-form.tsx` client), `/account-inactive`,
+  `/unauthorized`, `/_not-found` — nonce hanya di-inject saat dynamic render.
+- **`app/api/csp-report/route.ts`**: penerima laporan CSP3 — validasi
+  content-type, body ≤ 64 KB, rate-limit 60/menit/IP, redaksi URI (query/hash
+  dibuang, `script-sample` TIDAK pernah diekstrak), log JSON 1 baris, 204.
+- **Env baru**: `CSP_REPORT_ONLY` (lib/env.ts + .env.example + DEPLOYMENT.md
+  §2.1/§4.7).
+
+**Bukti live (dev 50496 & prod build):** dev → header
+`Content-Security-Policy-Report-Only` + nonce FRESH tiap request + nonce
+ter-inject ke HTML (match header↔script); prod `CSP_REPORT_ONLY=false` →
+header enforce (tanpa unsafe-eval), **13/13 script tag ber-nonce, 0 tanpa**
+(setelah fix tema); konsol browser bersih (0 violation). Endpoint: valid
+report 204 · JSON buruk 400 · content-type asing 415 · >64 KB 413 · log
+ter-redaksi (query string hilang, tanpa script-sample).
+Gates: prettier · lint 0 · tsc 0 · **533 passed / 1 skipped** (+13 unit CSP)
+· build 0. Belum di-commit.
+
+### Spec e2e CSP ter-serve (terhubung CI otomatis)
+
+`tests/e2e/csp.spec.ts` (hermetic — tanpa backend/session):
+
+- Header REAL dari halaman shell (`/`, `/login`, `/unauthorized`,
+  `/account-inactive`): `x-nonce` ada; CSP (enforce ATAU report-only)
+  mengandung `'nonce-…'`, `'strict-dynamic'`, **frame-src allowlist per-host**
+  (youtube-nocookie, docs.google, *.supabase.co), pengarah hardening
+  (object-src none, base-uri, form-action, frame-ancestors, media-src,
+  report-uri/report-to), dan script-src TANPA unsafe-inline.
+- Nonce respons ter-inject ke HTML (match header↔script pada request sama)
+  dan **SEMUA script tag ber-nonce (0 tanpa)** — dev 19/19, prod 13/13.
+- Nonce segar tiap request (dua GET → nonce berbeda).
+- Mode enforce (bila header enforce aktif) bebas unsafe-eval/unsafe-inline.
+- Endpoint `/api/csp-report`: valid 204 · JSON buruk 400 (Buffer mentah —
+  string di-serialize Playwright jadi JSON valid) · content-type asing 415 ·
+  body >64 KB 413.
+
+Jalan otomatis di CI (job `e2e` hermetic — `npm run e2e` memuat semua spec
+tests/e2e). Lokal penuh: **25 passed / 34 skipped / 0 failed** (+7 spec ini).
