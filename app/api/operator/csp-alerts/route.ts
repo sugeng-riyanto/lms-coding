@@ -36,5 +36,5 @@ export async function GET() {
     return NextResponse.json({ error: { code: "FORBIDDEN", message: "Bukan operator." } }, { status: 403 });
   }
 
-  return NextResponse.json({ ok: true, data: cspAlertState() });
+  return NextResponse.json({ ok: true, data: await cspAlertState() });
 }

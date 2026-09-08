@@ -42,7 +42,7 @@ export default async function AdminSecurityPage() {
         untuk ambang batas serta tindakan.
       </p>
       <div className="mt-6">
-        <SecurityMonitor initial={cspAlertState()} />
+        <SecurityMonitor initial={await cspAlertState()} />
       </div>
     </main>
   );

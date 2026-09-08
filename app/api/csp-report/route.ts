@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { parseCspReport } from "@/lib/csp-report";
 import { cspAlertState, recordCspBlocked, recordCspViolation } from "@/lib/csp-alerts";
+import { notifyCspSpike } from "@/lib/csp-notify";
 
 /**
  * Endpoint laporan CSP (report-uri / report-to). Menerima body `csp-report`
@@ -10,7 +11,8 @@ import { cspAlertState, recordCspBlocked, recordCspViolation } from "@/lib/csp-a
  * Keamanan: rate-limit per IP, batas ukuran body, content-type diverifikasi,
  * log TIDAK memuat data murid (runbooks §7.2), dan event di-agregasi ke
  * lib/csp-alerts untuk alerting spike (baris `csp-alert` ACTIVE/CLEARED).
- * State transisi in-memory per proses (single instance — catatan di §7).
+ * State dibaca dari Supabase table csp_events (restart-safe, multi-instance).
+ * Webhook alerting: CSP_ALERT_WEBHOOK_URL (env-gated, no new infra).
  */
 const MAX_BODY_BYTES = 64 * 1024;
 const WINDOW_MS = 60_000;
@@ -19,13 +21,24 @@ const hits = new Map<string, { count: number; resetAt: number }>();
 
 let alertWasActive = false;
 
-/** Catat transisi spike (ACTIVE saat naik, CLEARED saat turun) — satu baris. */
-function logAlertTransition(now = Date.now()): void {
-  const state = cspAlertState(now);
-  if (state.alertActive && !alertWasActive) {
-    console.error(JSON.stringify({ type: "csp-alert", event: "ACTIVE", ...state }));
-  } else if (!state.alertActive && alertWasActive) {
-    console.error(JSON.stringify({ type: "csp-alert", event: "CLEARED", ...state }));
+/** Catat transisi spike (ACTIVE saat naik, CLEARED saat turun) — satu baris + webhook. */
+async function logAlertTransition(now = Date.now()): Promise<void> {
+  const state = await cspAlertState(now);
+  const event =
+    state.alertActive && !alertWasActive ? "ACTIVE" : !state.alertActive && alertWasActive ? "CLEARED" : null;
+  if (event) {
+    console.error(JSON.stringify({ type: "csp-alert", event, ...state }));
+    // Fire webhook notification (env-gated, fire-and-forget).
+    notifyCspSpike({
+      event,
+      ratePerMin: state.ratePerMin,
+      thresholdPerMin: state.thresholdPerMin,
+      violationsPerMin: state.violationsPerMin,
+      blockedPerMin: state.blockedPerMin,
+      sampleSize: state.sampleSize,
+      total: state.total,
+      timestamp: new Date(now).toISOString(),
+    }).catch(() => {});
   }
   alertWasActive = state.alertActive;
 }
@@ -51,7 +64,7 @@ export async function POST(req: NextRequest) {
   if (rateLimited(clientIp(req))) {
     // Attempt yang di-block tetap dihitung — bom laporan juga tanda serangan.
     recordCspBlocked();
-    logAlertTransition();
+    await logAlertTransition();
     return new NextResponse(null, { status: 429 });
   }
 
@@ -78,6 +91,6 @@ export async function POST(req: NextRequest) {
   // Log terstruktur, ter-redaksi. Satu baris JSON agar mudah diparsing.
   console.error(JSON.stringify({ type: "csp-violation", ...report }));
   recordCspViolation();
-  logAlertTransition();
+  await logAlertTransition();
   return new NextResponse(null, { status: 204 });
 }
