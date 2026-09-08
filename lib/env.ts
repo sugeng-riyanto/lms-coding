@@ -42,6 +42,9 @@ const serverEnvSchema = z.object({
   AI_PROVIDER: z.string().optional(),
   AI_PROVIDER_BASE_URL: z.string().optional(),
   AI_PROVIDER_API_KEY: z.string().optional(),
+  // Webhook alerting CSP spike (lib/csp-notify): URL yang menerima POST saat
+  // transisi ACTIVE/CLEARED. Kosong = silent no-op (tidak ada infra baru).
+  CSP_ALERT_WEBHOOK_URL: z.string().url().optional(),
   // Code runner multi-bahasa: NONAKTIF default (fail-closed). Eksekusi di
   // sandbox EKSTERNAL (provider Piston-compatible), bukan server LMS.
   CODE_RUNNER_ENABLED: z
@@ -79,6 +82,7 @@ export function getServerEnv(): ServerEnv {
     CODE_RUNNER_ENABLED: process.env.CODE_RUNNER_ENABLED,
     CODE_RUNNER_PROVIDER: process.env.CODE_RUNNER_PROVIDER,
     CODE_RUNNER_BASE_URL: process.env.CODE_RUNNER_BASE_URL,
+    CSP_ALERT_WEBHOOK_URL: process.env.CSP_ALERT_WEBHOOK_URL,
     CODE_RUNNER_API_KEY: process.env.CODE_RUNNER_API_KEY,
   });
   if (!parsed.success) {
