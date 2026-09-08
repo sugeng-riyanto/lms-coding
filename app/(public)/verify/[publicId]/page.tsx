@@ -153,9 +153,9 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
   } catch {
     return (
       <main id="main" className="mx-auto max-w-xl px-4 py-16">
-        <h1 className="text-2xl font-bold">Verifikasi tidak tersedia</h1>
+        <h1 className="text-2xl font-bold">Verification unavailable</h1>
         <p role="alert" className="mt-2">
-          Coba lagi nanti. Tidak ada data pribadi yang ditampilkan.
+          Please try again later. No personal data is shown.
         </p>
       </main>
     );
@@ -167,12 +167,12 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
   const digitalRecord = valid && authorizedForPdf ? await fetchDigitalRecord(publicId) : null;
   return (
     <main id="main" className="mx-auto max-w-xl px-4 py-16">
-      <p className="text-sm font-semibold text-slate-500">Verifikasi sertifikat</p>
-      <h1 className="mt-1 text-3xl font-bold">{valid ? "Sertifikat valid ✓" : `Status: ${data.status}`}</h1>
+      <p className="text-sm font-semibold text-slate-500">Certificate verification</p>
+      <h1 className="mt-1 text-3xl font-bold">{valid ? "Valid certificate ✓" : `Status: ${data.status}`}</h1>
       <dl className="mt-6 space-y-2 rounded-xl border p-5">
         {data.displayName && (
           <div className="flex justify-between">
-            <dt className="text-slate-500">Penerima</dt>
+            <dt className="text-slate-500">Recipient</dt>
             <dd className="font-semibold">{data.displayName}</dd>
           </div>
         )}
@@ -190,7 +190,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
         )}
         {data.issuedAt && (
           <div className="flex justify-between">
-            <dt className="text-slate-500">Terbit</dt>
+            <dt className="text-slate-500">Issued</dt>
             <dd className="font-semibold">{data.issuedAt}</dd>
           </div>
         )}
@@ -203,7 +203,7 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
         {data.fingerprint && (
           <div className="flex justify-between">
             <dt className="text-slate-500">Payload hash</dt>
-            <dd className="font-mono">cocok ({data.fingerprint})</dd>
+            <dd className="font-mono">matches ({data.fingerprint})</dd>
           </div>
         )}
         <div className="flex justify-between">
@@ -215,27 +215,27 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
           <dd className="font-semibold">
             {data.chainAnchor?.status === "final" ? (
               <span className="text-emerald-700 dark:text-emerald-300">
-                terverifikasi di blockchain (anchor final)
+                verified on the blockchain (anchor final)
               </span>
             ) : data.chainAnchor?.status === "pending" ? (
               <span className="text-amber-700 dark:text-amber-300">
-                anchor pending — belum final; tidak diklaim terverifikasi blockchain
+                anchor pending — not final; not claimed as blockchain-verified
               </span>
             ) : data.chainAnchor?.status === "failed" ? (
-              <span className="text-red-700 dark:text-red-300">anchor gagal — hubungi penerbit</span>
+              <span className="text-red-700 dark:text-red-300">anchor failed — contact the issuer</span>
             ) : (
-              "tidak di-anchor (verifikasi tetap kriptografis)"
+              "not anchored (verification remains cryptographic)"
             )}
           </dd>
         </div>
       </dl>
       <div className="mt-5 flex flex-wrap items-center gap-3">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:ring-emerald-800">
-          ✓ PDF 2 halaman (A4)
+          ✓ 2-page PDF (A4)
         </span>
         <span className="text-xs text-slate-500">
-          Halaman 2 berisi informasi umum &amp; statistik ringkas kelengkapan (tabel + grafik), dengan QR dan
-          kode unik yang sama dengan halaman 1. Rincian per modul ada di rekam digital web, bukan di kertas.
+          Page 2 holds brief general information &amp; a compact completeness summary (table + chart), with
+          the same QR and unique code as page 1. Per-module details live in the web record, not on paper.
         </span>
       </div>
       {valid && authorizedForPdf && (
@@ -244,21 +244,21 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
             href={`/api/certificates/${encodeURIComponent(publicId)}/pdf`}
             className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
           >
-            Buka PDF sertifikat (2 halaman)
+            Open certificate PDF (2 pages)
             <span aria-hidden>↓</span>
           </a>
         </div>
       )}
       {valid && !authorizedForPdf && (
         <p className="mt-4 text-xs text-slate-500">
-          PDF hanya dapat dibuka oleh penerima sertifikat atau guru kelas setelah masuk — demi privasi,
-          halaman publik ini tidak memuat dokumen tersebut.
+          The PDF is only available to the certificate recipient or the class teacher after signing in — for
+          privacy, this public page does not include the document.
         </p>
       )}
       {digitalRecord && (
         <section className="mt-6 rounded-xl border p-5" aria-labelledby="digital-record-heading">
           <h2 id="digital-record-heading" className="text-sm font-bold text-slate-800 dark:text-slate-200">
-            Rekam digital &amp; keaslian
+            Digital record &amp; authenticity
           </h2>
           <dl className="mt-2 space-y-1.5 text-sm">
             <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
@@ -266,16 +266,16 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
               <dd className="break-all font-mono text-xs">{digitalRecord.payloadHash}</dd>
             </div>
             <div className="flex flex-wrap justify-between gap-x-4 gap-y-1">
-              <dt className="text-slate-500">Cara pengecekan keaslian</dt>
+              <dt className="text-slate-500">How authenticity is checked</dt>
               <dd className="max-w-xs text-xs text-slate-600 dark:text-slate-300">
-                Hash dikunci saat sertifikat terbit; verifier menghitung ulang dari catatan — perubahan data
-                apa pun membuat pemeriksaan gagal (payload hash tidak cocok).
+                The hash is locked when the certificate is issued; the verifier recomputes it from the record
+                — any change makes the check fail (payload hash mismatch).
               </dd>
             </div>
           </dl>
           <p className="mt-4 text-xs text-slate-500">
-            Rincian lengkap per modul tidak dicetak di sertifikat (PDF halaman 2 hanya memuat ringkasan
-            agregat agar dokumen selalu 2 halaman) — halaman ini selalu menampilkan semua modul.
+            Full per-module details are not printed on the certificate (PDF page 2 only carries an aggregate
+            summary so the document always stays 2 pages) — this page always shows every module.
           </p>
           <div className="mt-2 overflow-x-auto">
             <table className="w-full min-w-[520px] text-left text-sm">
@@ -312,13 +312,13 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
             </table>
           </div>
           <p className="mt-3 text-sm">
-            <span className="text-slate-500">Konten level selesai: </span>
+            <span className="text-slate-500">Level content completed: </span>
             <span className="font-semibold">{digitalRecord.contentPct}%</span>
           </p>
         </section>
       )}
       <p className="mt-4 text-sm text-slate-500">
-        Halaman publik ini tidak menampilkan email, tanggal lahir, jawaban, nilai detail, atau storage path.
+        This public page does not show email, date of birth, answers, detailed scores, or storage paths.
       </p>
     </main>
   );

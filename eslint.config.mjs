@@ -1,4 +1,5 @@
 import flatConfig from "eslint-config-next/core-web-vitals";
+import { noIndonesianShellText } from "./tools/eslint-rules/no-indonesian-shell-text.mjs";
 
 /**
  * Rule lokal: larang hex hardcoded (#rrggbb) di dalam nilai className
@@ -8,6 +9,20 @@ import flatConfig from "eslint-config-next/core-web-vitals";
  * docs/design-system.md.
  */
 const HEX_RE = /#[0-9a-fA-F]{3,8}\b/;
+
+// Path shell yang wajib English (lihat docs/language-policy.md).
+const SHELL_FILES = [
+  "app/(auth)/**/*.{ts,tsx}",
+  "app/(public)/**/*.{ts,tsx}",
+  "app/error.{ts,tsx}",
+  "app/not-found.{ts,tsx}",
+  "app/layout.{ts,tsx}",
+  "app/page.{ts,tsx}",
+  "app/health/**/*.{ts,tsx}",
+  "app/unauthorized/**/*.{ts,tsx}",
+  "app/account-inactive/**/*.{ts,tsx}",
+  "components/theme-toggle.{ts,tsx}",
+];
 
 function textOf(value) {
   if (!value) return null;
@@ -60,9 +75,18 @@ const config = [
   ...flatConfig,
   {
     plugins: {
-      lms: { rules: { "no-hardcoded-elevation-hex": noHardcodedElevationHex } },
+      lms: {
+        rules: {
+          "no-hardcoded-elevation-hex": noHardcodedElevationHex,
+          "no-indonesian-shell-text": noIndonesianShellText,
+        },
+      },
     },
     rules: { "lms/no-hardcoded-elevation-hex": "warn" },
+  },
+  {
+    files: SHELL_FILES,
+    rules: { "lms/no-indonesian-shell-text": "warn" },
   },
   {
     ignores: ["node_modules/**", ".next/**", "playwright-report/**", "test-results/**"],

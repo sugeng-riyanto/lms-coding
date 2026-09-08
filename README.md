@@ -63,6 +63,8 @@ Jika ada konflik, dokumen dengan urutan lebih tinggi menang. Jangan menebak atur
 - `docs/design-system.md` — token elevasi, `.card-lift`, aturan gradien, pemetaan dark mode, dan kebijakan reduced-motion. **Baca sebelum memberi style pada komponen baru** agar konsisten.
 - `docs/runbooks.md` — prosedur operasional (migration, seed, live-denial, backup/restore).
 - `docs/release-checklist.md` — daftar rilis dan smoke test.
+- `docs/pilot-deployment.md` — playbook dry-run pilot: env set, urutan db push + smoke, prosedur restore (rehearsal 9/9).
+- `docs/language-policy.md` — kebijakan bahasa UI: shell publik WAJIB English, dashboard peran Bahasa Indonesia. **Baca sebelum menambah teks pada halaman shell** (ditegakkan `lms/no-indonesian-shell-text`).
 - `PROGRESS.md` — status fase, bukti gate, dan pekerjaan yang belum selesai.
 
 ## MVP selesai ketika
