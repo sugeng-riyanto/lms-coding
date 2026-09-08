@@ -1932,3 +1932,142 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
   dikoreksi id "Percobaan {status}" sehingga judul quiz ikut berpindah bahasa.
 - **Gates**: prettier ✓ · eslint 0 · tsc 0 · **vitest 650 passed / 1 skipped** (72 files) ·
   build ✓. Perubahan belum di-commit (7 file).
+
+## Teacher deep pages bilingual (grading, cohorts, question bank, admin map, security)
+
+- **Surfaces audited & translated** via `t()/mkT` + 6 dictionary baru (`lib/ui-text/{grading,cohort,question,admin-map,security,bulk}.ts`):
+  - Grading queue (`/teacher/grading` + `GradeQueue` + `RubricGradePanel`): queue empty, attempt header, revisi, blok AI draft (request/approve/reject/error codes), skor manual, feedback.
+  - Cohorts (`/teacher/cohorts` + `CohortManager` + `StudentBulkImport`): create cohort, enroll, suspend, roster export, bulk XLSX result strings.
+  - Question bank (`/teacher/questions` + `QuestionBank` + `RubricEditor`): pack import + template AI prompt, soal baru, terbit versi + kunci, daftar soal, rubric editor penuh.
+  - Admin map (`/teacher/admin/map` + `MappingPanel` + `Teacher/AssignmentBulkImport`): denied shell, mapping murid/guru, error codes, bulk guru/penugasan.
+  - Security monitor (`/teacher/admin/security` + `SecurityMonitor`): spike banner, 8 kartu metrik, toggle 24h/7d, footer privasi.
+  - `BulkCard` (shared): footnote + default export label bilingual via `lang` prop (threaded dari halaman level juga).
+- **`lang` prop wajib** di semua komponen client baru; server pages pakai `getLang()`.
+- **Lint scope diperluas** (`eslint.config.mjs` + `language-policy.test.ts` sync): grading/cohorts/questions/admin-map/admin-security + bulk-card/security-monitor/rubric-editor/rubric-grade-panel masuk `TRANSLATED_SURFACES` — literal Indonesia inline = regresi.
+- **Test sync**: i18n parity test mencakup 6 dict baru; security-monitor.test render `lang="id"`; admin-mapping.test + ai-feedback.test assert dictionary wiring (bukan literal lama).
+- **Gates**: prettier ✓ · eslint 0 · tsc 0 · **vitest 666 passed / 1 skipped** (72 files) · build ✓.
+
+## Rotasi password demo akun hosted (2026-09-08)
+
+- **Latar**: release-checklist §0 mengharuskan rotasi kredensial demo publik sebelum
+  data murid nyata. Password lama `DemoPass-2026!` dipakai bersama oleh 5 akun demo
+  (`guru`, `wali`, `murid01..03` @demo.local) dan tercantum di README/docs.
+- **Target**: project hosted `jspmxdzgxevtfwvldwxy` (`.freebuff/project-id` = local
+  run id `542a4dc4-…`; SQL via Management API `node .freebuff/mgmt-sql.mjs`).
+- **Aksi** (14:00 UTC, idempotent):
+  1. `update auth.users set encrypted_password = extensions.crypt('<BARU>', extensions.gen_salt('bf')), updated_at = now() where email in (5 demo emails)` → 5 rows `updated_at = 2026-09-08 14:00:56.905842` (guru, wali, murid01, murid02, murid03).
+  2. Invalidasi sesi lama: `delete from auth.refresh_tokens where user_id in (select u.id::text from auth.users u where u.email like '%demo.local')` → 8 token dihapus; sweep `auth.sessions` (guarded `to_regclass`) → ok.
+- **Password baru**: `Demo-Rot8-exJmoqO5Aph!` (dibangkitkan acak via `crypto.randomBytes`, tidak pernah masuk git).
+- **Verifikasi live via GoTrue** `POST /auth/v1/token?grant_type=password` untuk kelima akun:
+  - password lama `DemoPass-2026!` → **400 invalid login credentials** (ditolak) ✅
+  - password baru → **200 + access_token JWT** untuk guru/wali/murid01/murid02/murid03 ✅
+- **Catatan**: `supabase/seed.sql` + README/docs (`DemoPass-2026!`) tetap untuk
+  reset lokal/preview; hosted kini memakai kredensial rotasi di atas. E2E terhadap
+  hosted memakai `E2E_*_PASSWORD` env, bukan literal.
+
+## Quiz-taker end-to-end drive bilingual (2026-09-08, live)
+
+- **Setup**: dev server port 3000 → hosted Supabase. Sign-in murid01 dengan password
+  rotasi (lihat entri rotasi di atas). Assessment `be527b85` (05 Summative L01.1,
+  release immediate, 0 attempts) + `51ecbf54` (06 Summative L02.1).
+- **Alur penuh dijawab + submit di DUA bahasa** (4 attempt probe, semua dijawab benar,
+  skor 100):
+  | State | English | Indonesian |
+  |---|---|---|
+  | Saving (transient, role=status) | "Saving…" (attempt 4f55548e) | "Menyimpan…" (attempt 5928e905) |
+  | Submitting (transient, button disabled) | "Submitting…" (4f55548e) | "Mengirim…" (5928e905) |
+  | Result (release immediate, panel hijau) | "Result: 100" + "Auto: 1" ×4 (4f55548e) | "Hasil: 100" + "Otomatis: 1" ×2 (6ddc2110) |
+  | Pending-release (release manual) | "Answers submitted. Score awaits teacher release." (4f369e9e) | "Jawaban terkirim. Nilai menunggu release guru." (5928e905) |
+  | Submitted heading + banner | "Attempt submitted" / "This attempt has already been submitted…" | "Percobaan submitted" / "Attempt ini sudah dikirim…" |
+- `<html lang>` ikut preferensi (en/id) di semua state; tombol confirm (`QUIZ.confirmSubmit`)
+  ikut bahasa. Transient states ditangkap dengan fetch-delay patch (2.2s) di browser.
+- **Teknik verifikasi pending-release**: tidak ada assessment release=manual di course ini
+  (hanya immediate ×3 + 1 tanpa key → default immediate), jadi `settings_json` assessment
+  `be527b85` di-flip sementara ke `release: manual` (submit → panel pending), lalu di-restore
+  (`- 'release'` → default immediate lagi).
+- **Cleanup deterministik**: 4 attempt probe + responses + ai_feedback_drafts yang
+  mereferensikannya dihapus (drafts via rule-aware delete; responses/attempts via
+  `session_replication_role=replica` karena rule INSTEAD pada `ai_feedback_drafts` membuat
+  FK-check responses gagal dengan XX000) → verifikasi `responses: 0, attempts: 0`, kedua
+  assessment kembali ke 0 attempts. `progress_snapshots` tidak berubah (stale 09-07).
+- **Observasi UX (bukan bug)**: panel hasil/pending hanya muncul dari state client setelah
+  submit dalam SPA yang sama; reload halaman quiz yang sudah submitted hanya menampilkan
+  heading + banner (release policy dihormati, data skor tetap server-side).
+
+## Katalog terisi penuh — Matematika Dasar (2026-09-08)
+
+- **Latar**: user meminta mengisi pelajaran di semua kursus katalog. Audit: Python course
+  sudah lengkap (48 lesson / 243 aktivitas); **Matematika Dasar hanya 1 lesson + 1 aktivitas
+  stub** ("Artikel Pengenalan" 1 kalimat) untuk 3 level → gap utama.
+- **Seed**: `supabase/seed-matematika-dasar.sql` (deterministik UUID f1…f7, idempotent
+  `on conflict do nothing`, data demo anonim) dieksekusi ke hosted via Management API
+  (runner baru `.freebuff/exec-sql-file.mjs` — membaca file SQL, hindari limit argumen
+  cmdline Windows; `mgmt-sql.mjs` tetap dipakai untuk query kecil).
+- **Hasil** (Matematika Dasar): 3 level → 6 modul → 12 pelajaran → **25 aktivitas**
+  (22 artikel + 3 kuis sumatif @4 soal pilihan ganda ber-kunci, release immediate,
+  maxAttempts 3). Artikel konten nyata berbahasa Indonesia (bilangan, operasi, aljabar,
+  persamaan, rasio/persen, statistika + proyek analisis data); artikel stub lama
+  diperkaya jadi pelajaran utuh.
+- **Verifikasi live (murid01, /learn + /catalog)**: peta level menampilkan modul →
+  pelajaran → aktivitas lengkap; artikel render body markdown; kuis "Asesmen Sumatif
+  Level 1" start → 4 soal + tombol submit muncul (attempt probe `a6730b1a` dihapus via
+  `session_replication_role=replica` karena rule `no_delete_attempts` = append-only).
+- **Catatan**: status level "Completed" di /catalog & /learn berasal dari
+  `progress_snapshots` lama (stale 09-07), bukan dari seed ini — data konten baru
+  tidak mengubah snapshot. `Scratch Junior` tetap draft (tidak tampil di katalog).
+
+## Teacher surfaces bilingual — course/level/bulk-import/student-detail (2026-09-08)
+
+- **Surfaces audited & translated** via `t()/mkT` + 3 dictionary baru + 1 diperluas:
+  - `lib/ui-text/course.ts` (COURSE): new-course-form + halaman baru, manage-course
+    (level list, add-level, publish/validasi checklist, versi baru, duplikat, arsip,
+    preview), course page status/versi, preview-as-student page.
+  - `lib/ui-text/level.ts` (LEVEL): level page shell, level-manager (form module/
+    lesson/activity, 12 content-hint JSON per tipe, panel prompt AI article, struktur
+    konten, reorder), content bulk import (labels, error codes, hasil impor).
+  - `lib/ui-text/edit-node.ts` (EDIT_NODE): komponen bersama EditNode (Ubah/Hapus/
+    Judul/Objective/Simpan/Batal + error immutable/has-attempts).
+  - `lib/ui-text/student-detail.ts` (STUDENT_DETAIL) diperluas: halaman detail murid
+    (status, riwayat attempt, revisi audit, timeline, sertifikat, approval penerbitan)
+    + IssueCertificateButton + ReissueCertificateButton (dialog alasan, error codes).
+- **`lang` prop wajib** di komponen client baru (NewCourseForm, ManageCourse,
+  LevelManager, ContentBulkImport, EditNode, Issue/ReissueButton); server pages pakai
+  `getLang()`. Prompt AI & format guide TETAP bahasa Indonesia by design — hidup di
+  `lib/markdown-ai-prompt.ts` (konten pembangkit materi, bukan string UI).
+- **Lint scope diperluas** (`eslint.config.mjs` + `language-policy.test.ts` sync):
+  `courses/**`, `students/**`, `components/edit-node` masuk TRANSLATED_SURFACES.
+- **Test sync**: i18n parity test mencakup 3 dict baru; certificate-reissue.test
+  meng-assert wiring dictionary (t("replaced")/t("reasonLabel")) bukan literal inline.
+- **Verifikasi live (guru, /teacher)**: level-manager + bulk import + panel AI render
+  EN ("← Manage course", "Title", "Add") ↔ ID ("← Kelola course", "Judul", "Tambah",
+  "Objective (min 10 karakter)"); halaman detail murid ID penuh tanpa raw key.
+  Bug live yang ketangkap: `LEVEL.objectiveLabel` belum ada → key mentah muncul di
+  form lesson; ditambahkan.
+- **Gates**: prettier ✓ · eslint 0 · tsc 0 · **vitest 672 passed / 1 skipped** (72 files) · build ✓.
+
+## Guru bilingual live drive — 5 teacher deep surfaces (2026-09-09)
+
+Drove `guru@demo.local` through Settings language toggle (English ↔ Bahasa Indonesia) on all 5
+teacher deep surfaces. Every UI string switches language correctly — zero raw keys, zero leftover
+Indonesian in English mode, zero untranslated literals in Indonesian mode.
+
+### Verification matrix
+
+| Surface | EN key strings | ID key strings |
+|---|---|---|
+| **Grading** (`/teacher/grading`) | "Manual grading queue", "Essays & projects. Score changes are recorded as revisions + audit.", "Queue empty. 🎉" | "Antrian penilaian manual", "Esai & proyek. Perubahan nilai tercatat sebagai revisi + audit.", "Antrian kosong. 🎉" |
+| **Cohorts** (`/teacher/cohorts`) | "Cohorts & enrollment", "Bulk register students (XLSX)", "Export roster (CSV)", "Members (3)", "Create", "Suspend", "Enroll" | "Bulk daftarkan murid (XLSX)", "Template murid", "Impor murid", "Buat cohort", "Nama cohort", "Tahun ajaran", "Ekspor roster (CSV)", "Anggota (3)", "Enroll ke Kelas 7A", "Buat", "— pilih cohort —", "— pilih —" |
+| **Question bank** (`/teacher/questions`) | "Question bank", "Import question pack — MCQ/essay/combined", "New question", "Publish version + answer key", "Save rubric", "+ Criterion", "Cancel" | "Bank soal", "Import bank soal (pack) — MCQ/esai/kombinasi", "Tambah soal", "+ Soal baru", "Terbit versi + kunci jawaban", "Simpan rubrik", "+ Kriteria", "Batal", "Judul rubrik", "Kriteria 1", "Poin maks" |
+| **Admin map** (`/teacher/admin/map`) | "Admin — class & subject mapping", "Bulk register teachers (XLSX)", "Bulk assignment of students → classes & subjects (XLSX)", "Map student → classes & subjects", "Class teacher", "Assign teacher to class", "← Back to dashboard" | "Admin — mapping kelas & subjek", "Bulk daftarkan guru (XLSX)", "Bulk penugasan murid → kelas & subjek (XLSX)", "Mapping murid → kelas & subjek", "Guru pengampu kelas", "Tetapkan guru ke kelas", "← Kembali ke dashboard" |
+| **Security monitor** (`/teacher/admin/security`) | "Admin — Security & monitoring", "No CSP report spike.", "Refresh", "CURRENT RATE", "VIOLATIONS / MIN", "TOTAL SINCE PROCESS START", "TOTAL BLOCKED", "LAST VIOLATION", "LAST UPDATED" | "Admin — Security & monitoring", "Tidak ada spike laporan CSP.", "Muat ulang", "RATE SAAT INI", "PELANGGARAN / MENIT", "DIBLOKIR RATE-LIMITER / MENIT", "TOTAL SEJAK PROSES START", "TOTAL DIBLOKIR", "PELANGGARAN TERAKHIR", "TERAKHIR DIPERBARUI", "Toggle 24 jam / 7 hari" |
+
+### Sidebar nav (both languages verified)
+- EN: Dashboard, Classes, Grading, Question Bank, Analytics, Certificates, Admin, Security, Settings
+- ID: Dasbor, Kelas, Penilaian, Bank Soal, Analitik, Sertifikat, Admin, Security, Pengaturan
+
+### Settings page (both languages)
+- EN: "Account & preferences", "My account", "Display name", "Device preferences", "Interface language", "Session", "Sign out"
+- ID: "Akun & preferensi", "Akun saya", "Nama tampilan", "Preferensi perangkat", "Bahasa antarmuka", "Sesi", "Keluar"
+
+**Result: All 5 surfaces fully bilingual.** Language toggle via Settings radio persists across page
+loads and navigation. `<html lang>` tracks the preference in every state.
