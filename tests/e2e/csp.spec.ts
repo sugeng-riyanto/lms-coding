@@ -66,12 +66,15 @@ test.describe("CSP nonce-based (served headers)", () => {
     expect(first.nonce).not.toBe(second.nonce);
   });
 
-  test("mode enforce (bila aktif) tidak memuat 'unsafe-eval'", async ({ request }) => {
+  test("mode enforce (bila aktif) bebas unsafe-eval/unsafe-inline di script-src", async ({ request }) => {
     const res = await request.get("/");
     const enforced = res.headers()["content-security-policy"];
     if (enforced) {
-      expect(enforced).not.toContain("'unsafe-eval'");
-      expect(enforced).not.toContain("'unsafe-inline'");
+      // 'unsafe-inline' SAH di style-src (tradeoff terdokumentasi) — periksa
+      // hanya segmen script-src.
+      const scriptSrc = enforced.split(";").find((d) => d.trim().startsWith("script-src")) ?? "";
+      expect(scriptSrc).not.toContain("'unsafe-eval'");
+      expect(scriptSrc).not.toContain("'unsafe-inline'");
     }
     // Dev/rollout memakai Report-Only + 'unsafe-eval' (React dev) — sah, tidak diuji di sini.
   });
