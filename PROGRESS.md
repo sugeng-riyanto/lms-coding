@@ -1590,3 +1590,135 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
 - Release-readiness: dokumen menilai **GO untuk pilot (data demo)**. Sebelum data murid nyata:
   rotasi password demo (`DemoPass-2026!`), `BLOCKCHAIN_ANCHOR_ENABLED=false`, provider nyata
   (code-runner/AI), domain+HTTPS, `supabase db push` ke project pilot, restore rehearsal, e2e di CI.
+
+## Kebijakan bahasa UI + lint shell English (08 Sep 2026)
+
+- Audit seluruh app: dashboard peran (teacher/student/guardian/profile/settings)
+  sengaja Bahasa Indonesia; shell publik sudah English bertahap. Shell yang masih
+  campuran: public verifier (`app/(public)/verify/[publicId]`) + `app/health` →
+  **diterjemahkan penuh ke English** (Recipient/Issued/matches/not anchored,
+  Service status, dst). Metadata root layout description juga di-English-kan.
+- **docs/language-policy.md** (baru): tabel permukaan→bahasa + scope rule; di-link
+  dari README.
+- **Rule ESLint `lms/no-indonesian-shell-text`** (baru, warn; CI `--max-warnings=0`):
+  `tools/eslint-rules/no-indonesian-shell-text.mjs` (+ `.d.mts`), aktif hanya di
+  path shell (auth, public, error/not-found/layout/page, health, unauthorized,
+  account-inactive, theme-toggle). 55 kata Indonesia tidak ambigu; word-boundary,
+  case-insensitive; JSXText + Literal + TemplateLiteral (tanpa ekspresi).
+- Test: `tests/unit/language-policy.test.ts` (8) — Linter flat-config memverifikasi
+  flag JSX/aria-label/alt, bebas false-positive pada near-homograph Inggris;
+  invariants daftar kata. Gates: prettier · eslint 0 · tsc 0 · **561 passed /
+  1 skipped** · build 0. Verifier + health terverifikasi live di preview (English,
+  data nyata).
+
+## Pilot deployment dry-run + restore rehearsal (08 Sep 2026)
+
+- **docs/pilot-deployment.md** (baru): playbook dry-run pilot — env set template
+  + `scripts/pilot-env-render.mjs` (render .env.pilot dari input, tanpa secret
+  hardcoded; diverifikasi `check-env`), urutan EXACT db push → deploy → smoke
+  utk project Supabase BARU (link → db push → seed demo → Site URL → deploy →
+  `smoke-pilot-loop.mjs` → CSP review → rotasi akun demo), prosedur restore
+  terpetakan (PITR/pg_dump → restore isolated → verify → swap). Di-link dari
+  DEPLOYMENT.md §8 dan README.
+- **Restore rehearsal DIEKSEKUSI lokal (isolated, tanpa menyentuh hosted):**
+  `scripts/restore-rehearsal/run.sh` → **PASS=9 FAIL=0** (artefak
+  `.freebuff/restore-rehearsal/backup-20260908-132728.sql`); live-denial
+  **95/95** ikut hijau.
+- **Defect ditemukan rehearsal & diperbaiki:** migration 000001 csp_events
+  memakai role `service_role` di policy RLS, tapi shim plain-Postgres
+  (`scripts/live-denial/00_shim.sql`) tidak membuat role tsb → rehearsal gagal
+  di migration itu. Fix: shim kini create `service_role nologin`. Tanpa
+  rehearsal, db push pertama ke project pilot baru gagal dengan cara yang sama
+  hanya di produksi.
+- Test baru: `tests/unit/pilot-env-render.test.ts` (5) — placeholder resolve,
+  flag produksi OFF, secret tak bocor ke NEXT_PUBLIC, tak ada token placeholder.
+  Gates: prettier · eslint 0 · tsc 0 · **566 passed / 1 skipped** · build 0.
+
+## Walkthrough guru end-to-end + perbaikan analitik (08 Sep 2026)
+
+- Semua menu guru diverifikasi live (preview, guru@demo.local) — isi nyata dari
+  hosted: Dasbor (matriks cohort 3 murid + sinyal risiko + export CSV), Kelas
+  (cohort 7A, 3 anggota, 4 enrollment, bulk XLSX + suspend), Bank Soal (12 soal
+  berversi + rubrik + import pack + AI prompt), Sertifikat (2 active, chip
+  blockchain final/pending, anchor batch), Admin mapping (bulk guru, penugasan
+  murid→kelas→subjek, mapping manual), Security (spike monitor), student detail
+  (attempt history, revisi nilai, timeline, penerbitan 15 level).
+- **Antrian penilaian di-seed**: assessment + attempt + respons esai
+  (deterministik, idempotent) → queue menampilkan jawaban Murid 01 → dinilai 85
+  + feedback → grade_revisions tercatat (previous null → 85, actor guru).
+- **Course authoring diuji via UI nyata**: buat "Scratch Junior: Computational
+  Thinking" (draft) → tambah level via form server-action → manage + level
+  authoring (module/lesson/activity 12 tipe + bulk XLSX) render penuh.
+- **BUG DITEMUKAN & DIPERBAIKI — analitik guru kosong (n=0) walau data ada:**
+  `/teacher/analytics` memakai embed `enrollments(profiles(display_name))`
+  padahal TIDAK ada FK enrollments→profiles → PGRST200 membatalkan seluruh
+  batch → semua grafik empty. Fix: query `profiles` terpisah (pola yang sama
+  dengan /teacher/certificates). Setelah fix: distribusi kemajuan n=4,
+  skor asesmen n=4 (avg 88%), item analysis 6 soal, peta miskonsepsi 2 cluster,
+  digest mingguan, filter assessment. Guard test baru:
+  `tests/unit/analytics-embed-guard.test.ts` (larang embed tsb muncul lagi).
+- Gates: eslint 0 · tsc 0 · **568 passed / 1 skipped** · build 0.
+
+## Per-user language preference (full EN / full ID, semua RBAC) — live verified
+
+- **Migration `20260908000002_user_language_preference.sql`** pushed ke hosted: `profiles.language`
+  text NOT NULL default 'id' CHECK (id/en); self-service via policy own-row yang sudah ada (tanpa
+  policy UPDATE baru). Diverifikasi live: anon ditolak, guru bisa update kolom sendiri.
+- **Infrastruktur**: `lib/i18n.ts` (dictionary NAV/EYEBROW/COMMON + `getLang()` server via cookie
+  lms-lang + `pick`/`t`), server action `setLanguage` (Zod `setLanguageSchema`, update profile +
+  mirror cookie maxAge 1y), `components/language-toggle.tsx` (radiogroup di Settings).
+- **Chrome bilingual**: role-nav + eyebrow + drawer (3 layout), settings page/panel, login form,
+  unauthorized/inactive/error/not-found, theme-toggle, skip-link. Page-specific string pakai `t()`.
+- **Fix hydration mismatch**: ThemeToggle/MobileDrawer kini menerima `lang` prop dari server
+  (SSR tidak bisa baca document.cookie → sebelumnya server render "id" vs client "en"). Lazy
+  initializer hanya untuk shell tanpa prop channel (error.tsx).
+- **Tests**: `tests/unit/i18n.test.ts` 15 kasus (parity id/en semua key, helper, migration RLS
+  tanpa policy baru, validasi action) + sync 2 integration test.
+- **Live bukti** (preview, guru@demo.local): Settings → pilih "Bahasa Indonesia" → cookie
+  `lms-lang=id` → seluruh chrome (skip-link, eyebrow, 9 nav label, theme toggle) berubah ke ID
+  konsisten tanpa hydration error; sebelum migration di-push, action gagal (UPDATE_FAILED,
+  kolom belum ada) — root cause ditemukan & diperbaiki dengan `supabase db push`.
+- **Gates**: eslint 0 · tsc 0 · vitest 583/1 · build 0.
+
+## Deep page content bilingual via t() — dictionary-per-page (id/en) untuk 4 permukaan
+
+- **Keputusan**: per-user language (profiles.language / cookie lms-lang) kini berlaku juga
+  untuk isi halaman terdalam, bukan hanya chrome. Pola dictionary-per-page mengikuti
+  lib/i18n.ts: `TextPair {id,en}`, factory `mkT(dict, lang)` yang type-safe per halaman,
+  plus `fmt()` untuk placeholder `{x}` dan `localeFor()` untuk format tanggal.
+- **Dictionary baru** (parity diuji di tests/unit/i18n.test.ts, semua key punya id+en):
+  lib/ui-text/dash.ts (dashboard guru + AlertControls), cert.ts (sertifikat + tombol
+  anchor + chip status), analytics.ts (analitik guru + filter), learn.ts (/learn +
+  /learn/[id] + form target mingguan). Component-level: STATE_TEXT (StateBadge) &
+  CHART_TEXT (ChartPanel/ColumnChart) di components/dashboard.tsx & charts.tsx.
+- **Halaman & komponen kini menarik bahasa**: /teacher, /teacher/certificates,
+  /teacher/analytics, /student/learn, /student/learn/[id] — semua server component
+  memanggil `getLang()` lalu `mkT(dict, lang)`; client children (AlertControls,
+  AnalyticsFilters, WeeklyGoalForm, AnchorBatchButton, AnchorRefreshButton,
+  AnchorStatusChip) menerima `lang` sebagai prop (tanpa baca cookie di client —
+  pola SSR-safe yang sudah dipakai ThemeToggle).
+- **Pesan yang di-generate lib ikut bilingual** (default id agar API lama tak berubah):
+  detectRisk & nextBestAction (lib/progress.ts) menerima `lang` opsional; buildTeacherDigest
+  (lib/analytics-teacher.ts) menerima `lang` — dipanggil halaman dengan bahasa aktif.
+- **Bukti**: eslint 0 · tsc 0 · vitest **597 passed / 1 skipped** · `npm run build` 0.
+  Integration tests disinkronkan (dashboard-modern, student-charts, analytics-teacher,
+  teacher-certificates) agar menguji dictionary id/en + struktur, bukan literal lama.
+- **Catatan jujur**: konten data (judul course/activity, nama murid, message alert yang
+  tersimpan di DB, objective dari content) adalah data pengguna, bukan UI chrome —
+  tetap ditampilkan apa adanya di kedua bahasa; yang diterjemahkan adalah seluruh
+  label/status/empty/aria/deskripsi statis dari halaman.
+
+## Deep page i18n — penyempurnaan pasca verifikasi live (font scale, logout, satuan waktu)
+
+- **FontScaleControl** (`app/(student)/font-scale.tsx`) menerima prop `lang` (aria-label
+  Text size / Decrease / Increase), dikirim dari student layout — sebelumnya hanya bahasa
+  Indonesia di UI Inggris.
+- **LogoutButton** (`app/profile/logout-button.tsx`) + ikon Settings di `AppShell` memakai
+  `COMMON.signOut/signOutBusy/settingsAria` (bilingual), dikirim dari server shell.
+- **lib/progress-planning.ts**: `formatActiveMinutes(mins, lang)` → "2 h 5 m" (en) vs
+  "2 j 5 m" (id), `weekActiveMinutesByDay(..., lang)` memilih label hari Sen/Mon dst;
+  default id sehingga API & unit test lama tak berubah.
+- Verifikasi live (preview, cookie lms-lang=en): /teacher, /teacher/certificates,
+  /teacher/analytics, /learn, /learn/[id] semua menampilkan English konsisten (label,
+  tabel, empty states, aria, digest, chip anchor, grafik).
+- Gates akhir tetap hijau: prettier ✓ · eslint 0 · tsc 0 · vitest 597/1 · build 0.

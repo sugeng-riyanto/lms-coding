@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { getLang } from "@/lib/i18n";
 
 // Nonce CSP (lib/csp.ts) hanya di-inject pada halaman yang di-render dinamis
 // (docs resmi Next.js: nonces memerlukan dynamic rendering). Landing page
@@ -80,7 +81,8 @@ const ROLES = [
   },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
+  const lang = await getLang();
   return (
     <main id="main" className="mx-auto max-w-5xl px-4 py-10">
       {/* Header */}
@@ -97,7 +99,7 @@ export default function HomePage() {
             <p className="text-xs text-slate-500 dark:text-slate-400">From first program to agentic AI</p>
           </div>
         </div>
-        <ThemeToggle />
+        <ThemeToggle lang={lang} />
       </header>
 
       {/* Hero */}
