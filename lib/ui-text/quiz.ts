@@ -3,7 +3,7 @@ import type { TextDict } from "@/lib/i18n";
 /** Halaman Kuis murid (app/(student)/quiz/[attemptId]) — server + client. */
 export const QUIZ: TextDict = {
   loadFailed: { id: "Kuis tidak dapat dimuat.", en: "Quiz could not be loaded." },
-  attemptStatus: { id: "Attempt {status}", en: "Attempt {status}" },
+  attemptStatus: { id: "Percobaan {status}", en: "Attempt {status}" },
   alreadySubmitted: {
     id: "Attempt ini sudah dikirim. Lihat hasil sesuai release policy guru.",
     en: "This attempt has already been submitted. See results according to your teacher's release policy.",

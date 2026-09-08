@@ -164,7 +164,7 @@ export function ActivityView({
           </details>
         ) : null}
         <div className="mt-3">
-          <CodeRunner starterCode={code} starterLanguage={language} />
+          <CodeRunner starterCode={code} starterLanguage={language} lang={lang} />
         </div>
         {completeBtn}
       </div>

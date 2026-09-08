@@ -1911,3 +1911,24 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
   build ✓ Compiled successfully.
 - Test update: `dashboard-modern.test.ts` (wali) kini menegaskan dict key `noProgress`;
   `reflection-box.test.tsx` render dengan `lang="id"`.
+
+## Live toggle verification (murid01 + wali) + CodeRunner i18n gap — 08 Sep 2026
+
+- **Drive live** (dev server :52611, hosted Supabase): murid01 → review/activities/quiz,
+  wali → guardian, each flipped id↔en via Settings.
+  - Review id: "Ulasan terjadwal / Jatuh tempo hari ini / Tidak paham→Sangat paham";
+    en: "Scheduled review / Due today / Not understood→Very confident".
+  - Activity (code_board) id: "Praktek coding / Salin kode / ▶ Jalankan / Dieksekusi
+    di browser Anda"; en: "Coding practice / Copy code / ▶ Run / Executed in your browser".
+  - Guardian id: "Portal Orang Tua / Wali, Ringkasan Perkembangan Anak, Tertaut aktif,
+    Sertifikat terbit otomatis, Unduh PDF resmi"; en: full English + <html lang> ikut.
+  - Quiz (in_progress via Start quiz → attempt 7d3aadfd…): id "Kuis / Soal 1 (1 poin) /
+    Kirim jawaban (status: in_progress)"; en "Quiz / Question 1 (1 points) / Submit answers".
+- **Gap yang ditemukan & diperbaiki**: CodeRunner (components/code-runner.tsx) masih
+  hardcoded Indonesian — dibuat bilingual via `lib/ui-text/code-runner.ts` (CODE),
+  `lang` prop wajib, direct dict lookup di handler (pola yang sama dengan upload-box
+  karena react-hooks/purity); lint scope + i18n parity test + code-runner.test diperbarui.
+- **Bug tambahan**: `attemptStatus` dictionary id/en identik ("Attempt {status}") —
+  dikoreksi id "Percobaan {status}" sehingga judul quiz ikut berpindah bahasa.
+- **Gates**: prettier ✓ · eslint 0 · tsc 0 · **vitest 650 passed / 1 skipped** (72 files) ·
+  build ✓. Perubahan belum di-commit (7 file).

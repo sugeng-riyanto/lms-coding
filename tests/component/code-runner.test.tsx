@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { CodeRunner } from "@/components/code-runner";
 
+const renderRunner = (props: { starterCode: string; starterLanguage: string }) =>
+  render(<CodeRunner {...props} lang="id" />);
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -10,7 +13,7 @@ afterEach(() => {
 
 describe("CodeRunner", () => {
   it("merender kontrol: bahasa, kode, stdin, tombol jalankan, prompt AI", () => {
-    render(<CodeRunner starterCode={'print("halo")\n'} starterLanguage="python" />);
+    renderRunner({ starterCode: 'print("halo")\n', starterLanguage: "python" });
     expect(screen.getByLabelText(/Bahasa/)).toBeDefined();
     expect(screen.getByLabelText(/Kode \(Python\)/)).toBeDefined();
     expect(screen.getByLabelText(/Input \(stdin/)).toBeDefined();
@@ -33,7 +36,7 @@ describe("CodeRunner", () => {
           ),
       ),
     );
-    render(<CodeRunner starterCode={'print("halo")\n'} starterLanguage="python" />);
+    renderRunner({ starterCode: 'print("halo")\n', starterLanguage: "python" });
     fireEvent.click(screen.getByRole("button", { name: /Jalankan/ }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("CODE_RUNNER_DISABLED");
@@ -51,7 +54,7 @@ describe("CodeRunner", () => {
       });
     });
     vi.stubGlobal("fetch", fetchMock);
-    render(<CodeRunner starterCode={"print('x')\n"} starterLanguage="python" />);
+    renderRunner({ starterCode: "print('x')\n", starterLanguage: "python" });
     fireEvent.change(screen.getByLabelText(/Input \(stdin/), { target: { value: "5" } });
     fireEvent.click(screen.getByRole("button", { name: /Jalankan/ }));
     const output = await screen.findByText((content, el) => el?.tagName === "PRE" && content === "5");

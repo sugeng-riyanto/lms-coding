@@ -39,6 +39,7 @@ const TRANSLATED_SURFACES = [
   "app/(guardian)/**/*.{ts,tsx}",
   "app/profile/**/*.{ts,tsx}",
   "components/upload-box.{ts,tsx}",
+  "components/code-runner.{ts,tsx}",
   "components/charts.{ts,tsx}",
   "components/dashboard.{ts,tsx}",
   "components/anchor-status.{ts,tsx}",

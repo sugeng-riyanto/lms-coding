@@ -14,6 +14,7 @@ import { ACTIVITY } from "@/lib/ui-text/activity";
 import { GUARDIAN } from "@/lib/ui-text/guardian";
 import { PROFILE } from "@/lib/ui-text/profile";
 import { UPLOAD } from "@/lib/ui-text/upload";
+import { CODE } from "@/lib/ui-text/code-runner";
 
 /** Flatten a nested dictionary ({ id, en } pairs) into the set of pairs. */
 function pairs(dict: Record<string, unknown>): Array<{ id: string; en: string }> {
@@ -82,6 +83,7 @@ describe("page dictionaries (lib/ui-text + kit) parity — 100% UI strings dua b
     ["GUARDIAN", GUARDIAN],
     ["PROFILE", PROFILE],
     ["UPLOAD", UPLOAD],
+    ["CODE", CODE],
   ] as const;
 
   for (const [name, dict] of pageDicts) {
@@ -113,6 +115,7 @@ describe("page dictionaries (lib/ui-text + kit) parity — 100% UI strings dua b
         "anchor pending",
         "Admin: mapping",
         "Spaced review",
+        "⚡ in-browser (WASM)",
       ]);
       for (const p of pairs(dict as unknown as Record<string, unknown>)) {
         if (p.id.includes("{")) continue; // placeholder fragments stay language-neutral
