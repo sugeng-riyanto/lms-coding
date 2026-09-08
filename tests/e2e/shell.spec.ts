@@ -8,6 +8,15 @@ import { test, expect, type Page } from "@playwright/test";
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? "";
 
+const STUDENT_PASSWORD = process.env.E2E_STUDENT_PASSWORD;
+if (!STUDENT_PASSWORD) {
+  throw new Error(
+    "E2E_STUDENT_PASSWORD is not set. " +
+    "Export it or add it to .env.local before running e2e specs that need authentication. " +
+    "The old fallback (DemoPass-2026!) has been removed after the password rotation."
+  );
+}
+
 async function isBackendReady(page: Page): Promise<boolean> {
   try {
     const res = await page.request.get("/api/health");
@@ -27,7 +36,7 @@ async function isBackendReady(page: Page): Promise<boolean> {
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("DemoPass-2026!");
+  await page.getByLabel("Password").fill(STUDENT_PASSWORD!);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 20_000 });
 }

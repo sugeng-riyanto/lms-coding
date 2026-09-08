@@ -13,7 +13,22 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 const STUDENT_EMAIL = process.env.E2E_STUDENT_EMAIL ?? "murid01@demo.local";
-const STUDENT_PASSWORD = process.env.E2E_STUDENT_PASSWORD ?? "DemoPass-2026!";
+
+/**
+ * Lazy getter — throws only when a test actually needs the password,
+ * so public-only smoke tests can still run without credentials.
+ */
+function requireStudentPassword(): string {
+  const pw = process.env.E2E_STUDENT_PASSWORD;
+  if (!pw) {
+    throw new Error(
+      "E2E_STUDENT_PASSWORD is not set. " +
+      "Export it or add it to .env.local before running e2e specs that need authentication. " +
+      "The old fallback (DemoPass-2026!) has been removed after the password rotation."
+    );
+  }
+  return pw;
+}
 
 /** URL Supabase (sama dengan .env.example) — dipakai untuk cek koneksi nyata. */
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
@@ -70,7 +85,7 @@ test("student login → dashboard /learn (butuh Supabase lokal + seed)", async (
 
   await page.goto("/login");
   await page.getByLabel("Email").fill(STUDENT_EMAIL);
-  await page.getByLabel("Password").fill(STUDENT_PASSWORD);
+  await page.getByLabel("Password").fill(requireStudentPassword());
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
 
   // Login sukses → redirect /learn; dashboard murid merender judul kursus + hero rekomendasi.
