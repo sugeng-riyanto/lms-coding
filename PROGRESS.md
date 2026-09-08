@@ -1571,3 +1571,22 @@ Perbaikan kecil spec e2e (script-src scoping) belum di-commit.
 - **lib/env.ts** + `.env.example`: `CSP_ALERT_WEBHOOK_URL` added (optional URL).
 - **app/api/csp-report/route.ts**: `logAlertTransition` now also fires webhook on state change.
 - **Tests**: 550 passed / 1 skipped (9 csp-alerts + 4 csp-notify new). Build 0.
+
+## English UX shell unification + release readiness (08 Sep 2026)
+
+- Landing page sudah English; shell otentikasi masih Indonesia → diseragamkan ke English:
+  `app/(auth)/login/login-form.tsx` (Sign in / Password / "Use the account provided by your school"),
+  `app/unauthorized` (No access), `app/account-inactive` (Account inactive),
+  `app/error.tsx` (Something went wrong), `app/not-found.tsx` (Page not found),
+  `app/layout.tsx` (Skip to main content + demo banner), `components/theme-toggle.tsx` (Toggle light/dark theme).
+- E2E selector test disinkronkan: `tests/e2e/critical.spec.ts`, `shell.spec.ts`,
+  `responsive-authed.spec.ts` (Password / Sign in / Skip to main content),
+  `tests/integration/hardening.test.ts` (not-found regex).
+- Verified live di preview (localhost:3000): landing English; murid01 → /learn (target mingguan,
+  menit aktif chart, skor kuis chart, peta level — data nyata); /teacher saat murid → /unauthorized
+  (guard OK); guru → /teacher (matriks cohort 3 murid, sinyal risiko, alat guru, export CSV).
+- Gates: prettier · eslint 0 · tsc 0 · **553 passed / 1 skipped** · (mobile drawer sudah fix portal
+  sebelumnya; responsive-authed 8 route × 3 viewport 28/28 live).
+- Release-readiness: dokumen menilai **GO untuk pilot (data demo)**. Sebelum data murid nyata:
+  rotasi password demo (`DemoPass-2026!`), `BLOCKCHAIN_ANCHOR_ENABLED=false`, provider nyata
+  (code-runner/AI), domain+HTTPS, `supabase db push` ke project pilot, restore rehearsal, e2e di CI.

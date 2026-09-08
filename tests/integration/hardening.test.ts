@@ -49,7 +49,7 @@ describe("P11: error boundaries dasar", () => {
     const err = readFileSync("app/error.tsx", "utf8");
     expect(err).toMatch(/reset/);
     expect(err).not.toMatch(/error\.stack/);
-    expect(readFileSync("app/not-found.tsx", "utf8")).toMatch(/tidak ditemukan/i);
+    expect(readFileSync("app/not-found.tsx", "utf8")).toMatch(/not found/i);
   });
 });
 

@@ -22,12 +22,12 @@ export function LoginForm() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       setStatus("done");
-      // Hub peran (/dashboard) mengarahkan sesuai membership server-side:
-      // guru → /teacher, wali → /guardian, murid → /learn.
+      // The role hub (/dashboard) redirects according to server-side membership:
+      // teacher → /teacher, guardian → /guardian, student → /learn.
       router.push("/dashboard");
     } catch (err) {
       setStatus("error");
-      setMessage(err instanceof Error ? err.message : "Login gagal. Coba lagi.");
+      setMessage(err instanceof Error ? err.message : "Sign in failed. Please try again.");
     }
   }
 
@@ -42,14 +42,12 @@ export function LoginForm() {
             >
               CS
             </span>
-            <h1 className="text-3xl font-extrabold tracking-tight">Masuk</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight">Sign in</h1>
           </div>
           <ThemeToggle />
         </div>
-        <p className="mt-3 text-slate-600 dark:text-slate-300">
-          Gunakan akun sekolah yang diberikan oleh institusi Anda.
-        </p>
-        <form onSubmit={onSubmit} className="mt-6 space-y-4" aria-label="Form login">
+        <p className="mt-3 text-slate-600 dark:text-slate-300">Use the account provided by your school.</p>
+        <form onSubmit={onSubmit} className="mt-6 space-y-4" aria-label="Sign in form">
           <div>
             <label htmlFor="email" className="font-semibold">
               Email
@@ -66,7 +64,7 @@ export function LoginForm() {
           </div>
           <div>
             <label htmlFor="password" className="font-semibold">
-              Kata sandi
+              Password
             </label>
             <input
               id="password"
@@ -85,7 +83,7 @@ export function LoginForm() {
           )}
           {status === "done" && (
             <p role="status" className="rounded-lg bg-green-50 p-3 text-green-800">
-              Berhasil — mengalihkan…
+              Signed in — redirecting…
             </p>
           )}
           <button
@@ -93,16 +91,16 @@ export function LoginForm() {
             disabled={status === "loading"}
             className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3 font-semibold text-white shadow-[var(--glow-btn)] transition hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60"
           >
-            {status === "loading" ? "Memeriksa…" : "Masuk"}
+            {status === "loading" ? "Checking…" : "Sign in"}
           </button>
         </form>
         {isDemoBackend() ? (
           <p className="mt-4 text-sm text-slate-500">
-            Mode demo: gunakan akun contoh dari <code>supabase/seed.sql</code>.
+            Demo mode: use a sample account from <code>supabase/seed.sql</code>.
           </p>
         ) : (
           <p className="mt-4 text-sm text-slate-500">
-            Terhubung ke server sekolah. Gunakan akun yang diberikan institusi Anda.
+            Connected to the school server. Use the account your institution provided.
           </p>
         )}
       </div>

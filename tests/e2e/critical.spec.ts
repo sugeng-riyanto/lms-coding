@@ -53,13 +53,13 @@ test("landing → login shell (public, tanpa backend)", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /Learn to code at your own pace/i })).toBeVisible();
   await page.getByRole("link", { name: "Sign in" }).first().click();
-  await expect(page.getByRole("heading", { name: "Masuk" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 });
 
 test("keyboard-only: Tab memunculkan skip-link dalam fokus", async ({ page }) => {
   await page.goto("/");
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("link", { name: "Lewati ke konten utama" })).toBeFocused();
+  await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
 });
 
 test("student login → dashboard /learn (butuh Supabase lokal + seed)", async ({ page }) => {
@@ -70,8 +70,8 @@ test("student login → dashboard /learn (butuh Supabase lokal + seed)", async (
 
   await page.goto("/login");
   await page.getByLabel("Email").fill(STUDENT_EMAIL);
-  await page.getByLabel("Kata sandi").fill(STUDENT_PASSWORD);
-  await page.getByRole("button", { name: "Masuk", exact: true }).click();
+  await page.getByLabel("Password").fill(STUDENT_PASSWORD);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
 
   // Login sukses → redirect /learn; dashboard murid merender judul kursus + hero rekomendasi.
   await expect(page).toHaveURL(/\/learn/, { timeout: 15_000 });

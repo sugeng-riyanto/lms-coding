@@ -42,8 +42,8 @@ async function isBackendReady(page: Page): Promise<boolean> {
 async function login(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Kata sandi").fill("DemoPass-2026!");
-  await page.getByRole("button", { name: "Masuk", exact: true }).click();
+  await page.getByLabel("Password").fill("DemoPass-2026!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).not.toHaveURL(/\/login(\?|$)/, { timeout: 20_000 });
 }
 

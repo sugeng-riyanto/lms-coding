@@ -22,8 +22,8 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      aria-label="Ganti tema terang/gelap"
-      title="Ganti tema terang/gelap"
+      aria-label="Toggle light/dark theme"
+      title="Toggle light/dark theme"
       className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
     >
       {/* Mode gelap aktif → ikon matahari (klik = ke terang). */}

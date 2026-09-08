@@ -29,12 +29,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             role="status"
             className="border-b border-amber-300 bg-amber-100 px-4 py-2 text-center text-sm font-semibold text-amber-900"
           >
-            Mode demo (dev) — Supabase lokal tidak terdeteksi. Halaman menampilkan state kosong tanpa data
-            nyata; login &amp; penyimpanan nonaktif.
+            Demo mode (dev) — local Supabase not detected. Pages show empty states without real data; sign in
+            &amp; storage are disabled.
           </p>
         )}
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:p-2 focus:bg-yellow-200">
-          Lewati ke konten utama
+          Skip to main content
         </a>
         {children}
       </body>
