@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { parseCspReport } from "@/lib/csp-report";
+import { cspAlertState, recordCspBlocked, recordCspViolation } from "@/lib/csp-alerts";
 
 /**
  * Endpoint laporan CSP (report-uri / report-to). Menerima body `csp-report`
@@ -7,12 +8,27 @@ import { parseCspReport } from "@/lib/csp-report";
  * string/PII/script-sample), lalu 204. Tidak pernah meng-echo body.
  *
  * Keamanan: rate-limit per IP, batas ukuran body, content-type diverifikasi,
- * dan log TIDAK memuat data murid (runbooks §7.2).
+ * log TIDAK memuat data murid (runbooks §7.2), dan event di-agregasi ke
+ * lib/csp-alerts untuk alerting spike (baris `csp-alert` ACTIVE/CLEARED).
+ * State transisi in-memory per proses (single instance — catatan di §7).
  */
 const MAX_BODY_BYTES = 64 * 1024;
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 60;
 const hits = new Map<string, { count: number; resetAt: number }>();
+
+let alertWasActive = false;
+
+/** Catat transisi spike (ACTIVE saat naik, CLEARED saat turun) — satu baris. */
+function logAlertTransition(now = Date.now()): void {
+  const state = cspAlertState(now);
+  if (state.alertActive && !alertWasActive) {
+    console.error(JSON.stringify({ type: "csp-alert", event: "ACTIVE", ...state }));
+  } else if (!state.alertActive && alertWasActive) {
+    console.error(JSON.stringify({ type: "csp-alert", event: "CLEARED", ...state }));
+  }
+  alertWasActive = state.alertActive;
+}
 
 function clientIp(req: NextRequest): string {
   const fwd = req.headers.get("x-forwarded-for");
@@ -33,6 +49,9 @@ function rateLimited(ip: string): boolean {
 
 export async function POST(req: NextRequest) {
   if (rateLimited(clientIp(req))) {
+    // Attempt yang di-block tetap dihitung — bom laporan juga tanda serangan.
+    recordCspBlocked();
+    logAlertTransition();
     return new NextResponse(null, { status: 429 });
   }
 
@@ -58,5 +77,7 @@ export async function POST(req: NextRequest) {
 
   // Log terstruktur, ter-redaksi. Satu baris JSON agar mudah diparsing.
   console.error(JSON.stringify({ type: "csp-violation", ...report }));
+  recordCspViolation();
+  logAlertTransition();
   return new NextResponse(null, { status: 204 });
 }

@@ -9,6 +9,16 @@ const serverEnvSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((v) => v === "true"),
+  // Alerting spike laporan CSP (lib/csp-alerts): rate per menit (window 60 s)
+  // yang memicu baris log `csp-alert ACTIVE` (kemungkinan injection attempt).
+  CSP_ALERT_THRESHOLD_PER_MIN: z
+    .string()
+    .optional()
+    .default("20")
+    .transform((v) => {
+      const n = Number.parseInt(v, 10);
+      return Number.isFinite(n) && n > 0 ? n : 20;
+    }),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url(),
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: z.string().min(10),
   SUPABASE_SECRET_KEY: z.string().min(10).optional(),
@@ -52,6 +62,7 @@ export function getServerEnv(): ServerEnv {
   const parsed = serverEnvSchema.safeParse({
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     CSP_REPORT_ONLY: process.env.CSP_REPORT_ONLY,
+    CSP_ALERT_THRESHOLD_PER_MIN: process.env.CSP_ALERT_THRESHOLD_PER_MIN,
     NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
