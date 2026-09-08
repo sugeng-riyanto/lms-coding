@@ -12,6 +12,8 @@ import {
   reorderSiblings,
 } from "@/features/actions";
 import { EditNode } from "@/components/edit-node";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { COURSE } from "@/lib/ui-text/course";
 import type { PublishIssue } from "@/lib/publish-validation";
 
 export interface ManageLevel {
@@ -25,12 +27,15 @@ export function ManageCourse({
   courseId,
   versionId,
   initialLevels,
+  lang,
 }: {
   courseId: string;
   versionId: string;
   initialLevels: ManageLevel[];
+  lang: Lang;
 }) {
   const router = useRouter();
+  const t = mkT(COURSE, lang);
   const [levels, setLevels] = useState<ManageLevel[]>(initialLevels);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -49,11 +54,11 @@ export function ManageCourse({
     });
     setBusy(null);
     if (!res.ok) {
-      setNotice({ kind: "err", text: `Gagal tambah level: ${res.error}` });
+      setNotice({ kind: "err", text: fmt(t("addLevelFailed"), { error: res.error }) });
     } else {
       setLevelTitle("");
       setLevelObjective("");
-      setNotice({ kind: "ok", text: "Level ditambahkan." });
+      setNotice({ kind: "ok", text: t("levelAdded") });
       router.refresh();
     }
   }
@@ -78,7 +83,7 @@ export function ManageCourse({
     setBusy(null);
     if (!res.ok) {
       setLevels(initialLevels);
-      setNotice({ kind: "err", text: `Gagal menyusun ulang: ${res.error}` });
+      setNotice({ kind: "err", text: fmt(t("reorderFailed"), { error: res.error }) });
     } else {
       router.refresh();
     }
@@ -90,13 +95,13 @@ export function ManageCourse({
     const res = await publishCourseVersion({ courseId });
     setBusy(null);
     if (res.ok) {
-      setNotice({ kind: "ok", text: `Terbit versi ${res.version}.` });
+      setNotice({ kind: "ok", text: fmt(t("versionPublished"), { version: res.version }) });
       router.refresh();
     } else if (res.error === "VALIDATION_FAILED") {
       setIssues("issues" in res && Array.isArray(res.issues) ? res.issues : []);
-      setNotice({ kind: "err", text: "Validasi gagal — perbaiki daftar di bawah." });
+      setNotice({ kind: "err", text: t("validationFailed") });
     } else {
-      setNotice({ kind: "err", text: `Gagal publish: ${res.error}` });
+      setNotice({ kind: "err", text: fmt(t("publishFailed"), { error: res.error }) });
     }
   }
 
@@ -106,19 +111,21 @@ export function ManageCourse({
     const res = await duplicateCourse({ courseId, slug });
     setBusy(null);
     if (res.ok) {
-      setNotice({ kind: "ok", text: `Salinan dibuat: ${res.courseId}.` });
+      setNotice({ kind: "ok", text: fmt(t("duplicateDone"), { courseId: res.courseId }) });
     } else {
-      setNotice({ kind: "err", text: `Gagal duplikat: ${res.error}` });
+      setNotice({ kind: "err", text: fmt(t("duplicateFailed"), { error: res.error }) });
     }
   }
 
   async function onArchive() {
-    if (!window.confirm("Arsipkan course ini? Murid tidak akan melihatnya lagi.")) return;
+    if (!window.confirm(t("archiveConfirm"))) return;
     setBusy("archive");
     const res = await archiveCourse({ courseId });
     setBusy(null);
     setNotice(
-      res.ok ? { kind: "ok", text: "Course diarsipkan." } : { kind: "err", text: `Gagal: ${res.error}` },
+      res.ok
+        ? { kind: "ok", text: t("archived") }
+        : { kind: "err", text: fmt(t("failedGeneric"), { error: res.error }) },
     );
     if (res.ok) router.refresh();
   }
@@ -131,9 +138,9 @@ export function ManageCourse({
       res.ok
         ? {
             kind: "ok" as const,
-            text: `Versi ${res.version} dibuat sebagai draft (struktur disalin). Versi published tak tersentuh.`,
+            text: fmt(t("newVersionDone"), { version: res.version }),
           }
-        : { kind: "err" as const, text: `Gagal: ${res.error}` },
+        : { kind: "err" as const, text: fmt(t("failedGeneric"), { error: res.error }) },
     );
     if (res.ok) router.refresh();
   }
@@ -149,16 +156,16 @@ export function ManageCourse({
         </p>
       )}
 
-      <section aria-label="Susunan level" className="rounded-xl border p-5">
-        <h2 className="font-semibold">Susunan level</h2>
+      <section aria-label={t("levelSection")} className="rounded-xl border p-5">
+        <h2 className="font-semibold">{t("levelSection")}</h2>
         <form
           onSubmit={onAddLevel}
-          aria-label="Tambah level"
+          aria-label={t("addLevelForm")}
           className="mt-3 flex flex-wrap items-end gap-2 rounded-lg bg-slate-50 p-3"
         >
           <div>
             <label htmlFor="lv-title" className="text-sm font-semibold">
-              Judul level
+              {t("levelTitleLabel")}
             </label>
             <input
               id="lv-title"
@@ -172,7 +179,7 @@ export function ManageCourse({
           </div>
           <div className="min-w-52 flex-1">
             <label htmlFor="lv-obj" className="text-sm font-semibold">
-              Objective (min 10 karakter)
+              {t("objectiveLabel")}
             </label>
             <input
               id="lv-obj"
@@ -188,11 +195,11 @@ export function ManageCourse({
             disabled={busy !== null}
             className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
           >
-            + Level
+            {t("addLevelButton")}
           </button>
         </form>
         {levels.length === 0 ? (
-          <p className="mt-2 text-slate-600">Belum ada level. Tambahkan via database/authoring lanjutan.</p>
+          <p className="mt-2 text-slate-600">{t("noLevels")}</p>
         ) : (
           <ol className="mt-3 space-y-2">
             {levels.map((l, i) => (
@@ -205,7 +212,7 @@ export function ManageCourse({
                     href={`/teacher/courses/${courseId}/levels/${l.id}`}
                     className="rounded border px-2 py-1 text-sm text-blue-700 underline"
                   >
-                    Kelola isi
+                    {t("manageContent")}
                   </Link>
                   <EditNode
                     table="levels"
@@ -213,11 +220,12 @@ export function ManageCourse({
                     initialTitle={l.title}
                     initialObjective={l.objective}
                     showObjective
+                    lang={lang}
                   />
                   <button
                     disabled={busy !== null || i === 0}
                     onClick={() => move(i, -1)}
-                    aria-label={`Naikkan ${l.title}`}
+                    aria-label={fmt(t("moveUp"), { title: l.title })}
                     className="rounded border px-2 py-1 disabled:opacity-40"
                   >
                     ↑
@@ -225,7 +233,7 @@ export function ManageCourse({
                   <button
                     disabled={busy !== null || i === levels.length - 1}
                     onClick={() => move(i, 1)}
-                    aria-label={`Turunkan ${l.title}`}
+                    aria-label={fmt(t("moveDown"), { title: l.title })}
                     className="rounded border px-2 py-1 disabled:opacity-40"
                   >
                     ↓
@@ -238,8 +246,8 @@ export function ManageCourse({
       </section>
 
       {issues.length > 0 && (
-        <section aria-label="Hasil validasi publish" className="rounded-xl border border-red-200 p-5">
-          <h2 className="font-semibold text-red-800">Checklist sebelum publish</h2>
+        <section aria-label={t("issuesSection")} className="rounded-xl border border-red-200 p-5">
+          <h2 className="font-semibold text-red-800">{t("checklistHeading")}</h2>
           <ul className="mt-2 list-disc pl-5 text-sm">
             {issues.map((iss, i) => (
               <li key={i}>
@@ -251,41 +259,41 @@ export function ManageCourse({
         </section>
       )}
 
-      <section aria-label="Aksi course" className="flex flex-wrap gap-2">
+      <section className="flex flex-wrap gap-2">
         <button
           onClick={onPublish}
           disabled={busy !== null}
           className="rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
         >
-          {busy === "publish" ? "Memvalidasi…" : "Validasi & publish"}
+          {busy === "publish" ? t("validating") : t("validatePublish")}
         </button>
         <button
           onClick={onNewVersion}
           disabled={busy !== null}
           className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60"
         >
-          {busy === "new-version" ? "Menyalin…" : "Buat versi baru (ADR-003)"}
+          {busy === "new-version" ? t("copying") : t("newVersionButton")}
         </button>
         <button
           onClick={onArchive}
           disabled={busy !== null}
           className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60"
         >
-          Arsipkan
+          {t("archiveButton")}
         </button>
         <a href="preview" className="rounded-lg border px-4 py-2 font-semibold hover:bg-slate-50">
-          Preview sebagai murid
+          {t("previewButton")}
         </a>
       </section>
 
       <form
         onSubmit={onDuplicate}
-        aria-label="Form duplikat course"
+        aria-label={t("duplicateForm")}
         className="flex flex-wrap items-end gap-2 rounded-xl border p-5"
       >
         <div>
           <label htmlFor="dup-slug" className="font-semibold">
-            Slug salinan
+            {t("duplicateSlugLabel")}
           </label>
           <input
             id="dup-slug"
@@ -304,7 +312,7 @@ export function ManageCourse({
           disabled={busy !== null}
           className="rounded-lg border px-4 py-2 font-semibold disabled:opacity-60"
         >
-          {busy === "duplicate" ? "Menyalin…" : "Duplikat course"}
+          {busy === "duplicate" ? t("copying") : t("duplicateButton")}
         </button>
       </form>
     </div>

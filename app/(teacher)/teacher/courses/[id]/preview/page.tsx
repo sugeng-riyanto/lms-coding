@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { fmt, getLang, mkT } from "@/lib/i18n";
+import { COURSE } from "@/lib/ui-text/course";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +76,8 @@ async function getPreview(courseId: string): Promise<{ title: string; levels: Pr
 }
 
 export default async function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
+  const lang = await getLang();
+  const t = mkT(COURSE, lang);
   const { id } = await params;
   let data: Awaited<ReturnType<typeof getPreview>>;
   try {
@@ -81,7 +85,7 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
   } catch {
     return (
       <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-        <p role="alert">Preview tidak dapat dimuat.</p>
+        <p role="alert">{t("previewLoadFailed")}</p>
       </main>
     );
   }
@@ -90,29 +94,27 @@ export default async function PreviewPage({ params }: { params: Promise<{ id: st
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
       <Link href={`/teacher/courses/${id}`} className="text-sm text-blue-700 underline">
-        ← Kelola course
+        {t("backToManageCourse")}
       </Link>
       <p className="mt-2 inline-block rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-900">
-        Preview sebagai murid — tanpa nilai & kunci jawaban
+        {t("previewBadge")}
       </p>
       <h1 className="mt-2 text-3xl font-bold">{data.title}</h1>
       {data.levels.length === 0 ? (
-        <p className="mt-6 rounded-xl border p-5">Belum ada konten pada versi ini.</p>
+        <p className="mt-6 rounded-xl border p-5">{t("previewNoContent")}</p>
       ) : (
         <ol className="mt-6 space-y-4">
           {data.levels.map((lv, li) => (
             <li key={lv.id} className="rounded-xl border p-4">
-              <h2 className="font-bold">
-                Level {li + 1}: {lv.title}
-              </h2>
+              <h2 className="font-bold">{fmt(t("previewLevel"), { n: li + 1, title: lv.title })}</h2>
               {lv.lessons.length === 0 ? (
-                <p className="mt-1 text-sm text-slate-500">Belum ada lesson.</p>
+                <p className="mt-1 text-sm text-slate-500">{t("previewNoLessons")}</p>
               ) : (
                 <ol className="mt-2 space-y-2 pl-4">
                   {lv.lessons.map((le, lej) => (
                     <li key={le.id} className="rounded-lg bg-slate-50 p-3">
                       <h3 className="font-semibold">
-                        Lesson {lej + 1}: {le.title}
+                        {fmt(t("previewLesson"), { n: lej + 1, title: le.title })}
                       </h3>
                       <ul className="mt-1 list-disc pl-5 text-sm text-slate-700">
                         {le.activities.map((a) => (

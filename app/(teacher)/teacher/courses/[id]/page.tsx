@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { fmt, getLang, mkT } from "@/lib/i18n";
+import { COURSE } from "@/lib/ui-text/course";
 import { ManageCourse } from "./manage-course";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +44,8 @@ async function getManageData(courseId: string) {
 }
 
 export default async function ManageCoursePage({ params }: { params: Promise<{ id: string }> }) {
+  const lang = await getLang();
+  const t = mkT(COURSE, lang);
   const { id } = await params;
   let data: Awaited<ReturnType<typeof getManageData>>;
   try {
@@ -49,7 +53,7 @@ export default async function ManageCoursePage({ params }: { params: Promise<{ i
   } catch {
     return (
       <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-        <p role="alert">Data course tidak dapat dimuat.</p>
+        <p role="alert">{t("loadFailed")}</p>
       </main>
     );
   }
@@ -58,27 +62,36 @@ export default async function ManageCoursePage({ params }: { params: Promise<{ i
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
       <Link href="/teacher" className="text-sm text-blue-700 underline">
-        ← Dashboard guru
+        {t("backToDashboard")}
       </Link>
       <h1 className="mt-2 text-3xl font-bold">{data.course.title}</h1>
       <p className="mt-1 text-slate-600">
-        Status: <strong>{data.course.status}</strong>
+        {t("statusColon")}
+        <strong>{data.course.status}</strong>
         {data.version ? (
           <>
-            {" "}
-            · Versi {data.version.version} ·{" "}
-            {data.version.published_at ? `terbit ${data.version.published_at}` : "draft (belum terbit)"}
+            {fmt(t("versionLine"), {
+              version: data.version.version,
+              state: data.version.published_at
+                ? fmt(t("publishedAt"), { at: data.version.published_at })
+                : t("draftNotPublished"),
+            })}
           </>
         ) : (
-          " · tanpa versi"
+          t("noVersion")
         )}
       </p>
       {data.version ? (
         <div data-version-id={data.version.id}>
-          <ManageCourse courseId={data.course.id} versionId={data.version.id} initialLevels={data.levels} />
+          <ManageCourse
+            courseId={data.course.id}
+            versionId={data.version.id}
+            initialLevels={data.levels}
+            lang={lang}
+          />
         </div>
       ) : (
-        <p className="mt-6 rounded-xl border p-5">Belum ada versi course.</p>
+        <p className="mt-6 rounded-xl border p-5">{t("noVersionMsg")}</p>
       )}
     </main>
   );

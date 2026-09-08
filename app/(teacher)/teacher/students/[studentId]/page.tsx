@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { IssueCertificateButton } from "./issue-button";
 import { ReissueCertificateButton } from "./reissue-button";
 import { AnchorStatusChip } from "@/components/anchor-status";
-import { getLang, mkT } from "@/lib/i18n";
+import { fmt, getLang, mkT } from "@/lib/i18n";
 import { STUDENT_DETAIL } from "@/lib/ui-text/student-detail";
 import { buildMasteryEvidence, type MasteryEvidenceInput } from "@/lib/mastery-evidence";
 
@@ -298,7 +298,7 @@ export default async function StudentDetailPage({
   } catch {
     return (
       <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-        <p role="alert">Detail murid tidak dapat dimuat.</p>
+        <p role="alert">{t("loadFailed")}</p>
       </main>
     );
   }
@@ -313,11 +313,11 @@ export default async function StudentDetailPage({
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <Link href="/teacher" className="text-sm text-blue-700 underline">
-        ← Dashboard
+        {t("backToDashboard")}
       </Link>
       <h1 className="mt-2 text-3xl font-bold">{data.profile.display_name}</h1>
       <p className="text-sm text-slate-500">
-        Status: {data.profile.status} · {data.courses.join(", ")}
+        {fmt(t("statusLine"), { status: data.profile.status, courses: data.courses.join(", ") })}
       </p>
 
       <h2 className="mt-6 text-xl font-semibold">{t("masteryEvidence")}</h2>
@@ -400,48 +400,53 @@ export default async function StudentDetailPage({
         </div>
       )}
 
-      <h2 className="mt-6 text-xl font-semibold">Attempt history</h2>
+      <h2 className="mt-6 text-xl font-semibold">{t("attemptHistory")}</h2>
       {data.attempts.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">Belum ada attempt.</p>
+        <p className="mt-2 text-sm text-slate-500">{t("noAttempts")}</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
           {data.attempts.map((a) => (
             <li key={a.id} className="rounded border px-3 py-2">
-              #{a.no} · {a.status} · skor {a.score ?? "—"} · {a.at}
+              {fmt(t("attemptLine"), { no: a.no, status: a.status, score: a.score ?? "—", at: a.at })}
             </li>
           ))}
         </ul>
       )}
 
-      <h2 className="mt-6 text-xl font-semibold">Revisi nilai (audit)</h2>
+      <h2 className="mt-6 text-xl font-semibold">{t("revisionsHeading")}</h2>
       {data.revisions.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">Tidak ada revisi.</p>
+        <p className="mt-2 text-sm text-slate-500">{t("noRevisions")}</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
           {data.revisions.map((r, i) => (
             <li key={i} className="rounded border px-3 py-2">
-              {r.attempt}: {r.prev ?? "—"} → {r.next ?? "—"} · {r.reason}
+              {fmt(t("revisionLine"), {
+                attempt: r.attempt,
+                prev: r.prev ?? "—",
+                next: r.next ?? "—",
+                reason: r.reason,
+              })}
             </li>
           ))}
         </ul>
       )}
 
-      <h2 className="mt-6 text-xl font-semibold">Timeline belajar</h2>
+      <h2 className="mt-6 text-xl font-semibold">{t("timelineHeading")}</h2>
       {data.events.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">Belum ada event.</p>
+        <p className="mt-2 text-sm text-slate-500">{t("noEvents")}</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
           {data.events.map((e, i) => (
             <li key={i} className="rounded border px-3 py-2">
-              {e.type} · {e.at}
+              {fmt(t("eventLine"), { type: e.type, at: e.at })}
             </li>
           ))}
         </ul>
       )}
 
-      <h2 className="mt-6 text-xl font-semibold">Sertifikat</h2>
+      <h2 className="mt-6 text-xl font-semibold">{t("certificatesHeading")}</h2>
       {data.certs.length === 0 && data.issuable.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">Belum ada sertifikat.</p>
+        <p className="mt-2 text-sm text-slate-500">{t("noCertificates")}</p>
       ) : (
         <ul className="mt-2 space-y-1 text-sm">
           {data.certs.map((c) => {
@@ -454,12 +459,14 @@ export default async function StudentDetailPage({
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-mono">{c.serial_no}</span>
                   {c.status === "active" ? (
-                    <span className="font-semibold text-green-800">active</span>
+                    <span className="font-semibold text-green-800">{t("certActive")}</span>
                   ) : (
-                    <span className="font-semibold text-red-700">revoked</span>
+                    <span className="font-semibold text-red-700">{t("certRevoked")}</span>
                   )}
                   {replaced && (
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">diganti</span>
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600">
+                      {t("replaced")}
+                    </span>
                   )}{" "}
                   · {c.issued_at}
                   <AnchorStatusChip
@@ -468,7 +475,7 @@ export default async function StudentDetailPage({
                   />
                 </span>
                 {c.status === "active" && (
-                  <ReissueCertificateButton certificateId={c.id} serialNo={c.serial_no} />
+                  <ReissueCertificateButton certificateId={c.id} serialNo={c.serial_no} lang={lang} />
                 )}
               </li>
             );
@@ -476,10 +483,8 @@ export default async function StudentDetailPage({
         </ul>
       )}
 
-      <h2 className="mt-6 text-xl font-semibold">Penerbitan (approval guru)</h2>
-      <p className="text-sm text-slate-500">
-        Eligibility dievaluasi server; alasan penolakan ditampilkan bila belum layak.
-      </p>
+      <h2 className="mt-6 text-xl font-semibold">{t("issuanceHeading")}</h2>
+      <p className="text-sm text-slate-500">{t("issuanceBody")}</p>
       <ul className="mt-2 space-y-2">
         {data.issuable.map((it) => (
           <li
@@ -488,10 +493,10 @@ export default async function StudentDetailPage({
           >
             <span>
               {it.courseTitle} · {it.levelTitle} ·{" "}
-              {it.certStatus ? `sertifikat ${it.certStatus}` : "belum terbit"}
+              {it.certStatus ? fmt(t("certStatusLabel"), { status: it.certStatus }) : t("notIssued")}
             </span>
             {it.certStatus !== "active" && (
-              <IssueCertificateButton enrollmentId={it.enrollmentId} levelId={it.levelId} />
+              <IssueCertificateButton enrollmentId={it.enrollmentId} levelId={it.levelId} lang={lang} />
             )}
           </li>
         ))}

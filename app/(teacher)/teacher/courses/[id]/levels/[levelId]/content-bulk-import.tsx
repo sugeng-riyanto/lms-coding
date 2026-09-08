@@ -3,6 +3,8 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { bulkImportContent } from "@/features/actions";
 import { MAX_CONTENT_ROWS, xlsxFileError } from "@/lib/bulk-import";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { LEVEL } from "@/lib/ui-text/level";
 import { BulkCard } from "@/components/bulk-card";
 
 interface ImportResult {
@@ -15,25 +17,33 @@ interface ImportResult {
   errors?: string[];
 }
 
-const ERROR_TEXT: Record<string, string> = {
-  FILE_MUST_BE_XLSX: "Berkas harus berformat .xlsx.",
-  FILE_EMPTY: "Berkas kosong (0 byte).",
-  FILE_TOO_LARGE: "Berkas melebihi batas ukuran 5 MB.",
-  FILE_MIME_REJECTED: "Jenis berkas tidak dikenali sebagai spreadsheet.",
-};
-
-function errorText(err: string | undefined, cap?: number): string {
+function errorText(t: (k: keyof typeof LEVEL) => string, err: string | undefined, cap?: number): string {
   if (!err) return "";
-  if (err === "ROWS_OVER_CAP")
-    return `File melebihi batas ${cap ?? MAX_CONTENT_ROWS} baris valid. Pecah menjadi beberapa file.`;
-  return ERROR_TEXT[err] ?? err;
+  if (err === "ROWS_OVER_CAP") return fmt(t("rowsOverCap"), { cap: cap ?? MAX_CONTENT_ROWS });
+  const map: Record<string, keyof typeof LEVEL> = {
+    FILE_MUST_BE_XLSX: "fileMustBeXlsx",
+    FILE_EMPTY: "fileEmpty",
+    FILE_TOO_LARGE: "fileTooLarge",
+    FILE_MIME_REJECTED: "fileMimeRejected",
+  };
+  const key = map[err];
+  return key ? t(key) : err;
 }
 
 async function run(_prev: ImportResult | null, formData: FormData): Promise<ImportResult> {
   return (await bulkImportContent(formData)) as ImportResult;
 }
 
-export function ContentBulkImport({ courseId, levelId }: { courseId: string; levelId: string }) {
+export function ContentBulkImport({
+  courseId,
+  levelId,
+  lang,
+}: {
+  courseId: string;
+  levelId: string;
+  lang: Lang;
+}) {
+  const t = mkT(LEVEL, lang);
   const [result, formAction, pending] = useActionState(run, null);
   const [clientErr, setClientErr] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -45,19 +55,14 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
 
   return (
     <BulkCard
-      title="Bulk impor materi (XLSX)"
-      desc={
-        <>
-          Kolom: <code>Module</code>, <code>Lesson</code>, <code>Objective</code> (opsional),{" "}
-          <code>Activity Type</code>, <code>Activity Title</code>, <code>Content JSON</code> (opsional).
-          Materi masuk ke level ini sebagai draf.
-        </>
-      }
+      lang={lang}
+      title={t("bulkTitle")}
+      desc={t("bulkDesc")}
       templateKind="content"
-      templateLabel="Template materi"
+      templateLabel={t("templateLabel")}
       exportHref={`/api/export/courses/${courseId}/xlsx`}
-      exportLabel="Unduh materi kursus (XLSX)"
-      capacityText={`Maksimal ${MAX_CONTENT_ROWS} baris per file`}
+      exportLabel={t("exportLabel")}
+      capacityText={fmt(t("capacityText"), { n: MAX_CONTENT_ROWS })}
     >
       <form
         ref={formRef}
@@ -69,7 +74,7 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
         <input type="hidden" name="levelId" value={levelId} />
         <div>
           <label htmlFor="content-bulk-file" className="text-sm font-semibold">
-            Berkas XLSX
+            {t("fileLabel")}
           </label>
           <input
             id="content-bulk-file"
@@ -80,7 +85,9 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
             className="mt-1 block w-full text-sm"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              setClientErr(f ? (xlsxFileError(f) ? errorText(xlsxFileError(f) ?? undefined) : null) : null);
+              setClientErr(
+                f ? (xlsxFileError(f) ? errorText(t, xlsxFileError(f) ?? undefined) : null) : null,
+              );
             }}
           />
         </div>
@@ -88,7 +95,7 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
           disabled={pending}
           className="rounded-xl bg-blue-700 px-5 py-2 font-semibold text-white disabled:opacity-60"
         >
-          {pending ? "Memproses…" : "Impor materi"}
+          {pending ? t("processing") : t("importButton")}
         </button>
       </form>
       {clientErr && <p className="text-sm font-medium text-red-700">{clientErr}</p>}
@@ -104,8 +111,11 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
           {result.ok ? (
             <>
               <p>
-                Selesai: <strong>{result.modules}</strong> module, <strong>{result.lessons}</strong> lesson,{" "}
-                <strong>{result.activities}</strong> aktivitas.
+                {fmt(t("importDone"), {
+                  modules: result.modules ?? 0,
+                  lessons: result.lessons ?? 0,
+                  activities: result.activities ?? 0,
+                })}
               </p>
               {result.errors && result.errors.length > 0 && (
                 <p className="mt-1 text-xs">{result.errors.slice(0, 5).join("; ")}</p>
@@ -113,7 +123,7 @@ export function ContentBulkImport({ courseId, levelId }: { courseId: string; lev
             </>
           ) : (
             <p>
-              Gagal: {errorText(result.error, result.cap)}
+              {fmt(t("importFailed"), { error: errorText(t, result.error, result.cap) })}
               {result.errors && result.errors.length > 0 ? ` — ${result.errors.slice(0, 3).join("; ")}` : ""}
             </p>
           )}

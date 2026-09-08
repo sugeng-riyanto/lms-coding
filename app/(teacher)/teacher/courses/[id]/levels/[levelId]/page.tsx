@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getLang, mkT } from "@/lib/i18n";
+import { LEVEL } from "@/lib/ui-text/level";
 import { LevelManager, type ManagerModule } from "./level-manager";
 import { ContentBulkImport } from "./content-bulk-import";
 
@@ -57,6 +59,8 @@ async function getLevelTree(levelId: string) {
 }
 
 export default async function LevelPage({ params }: { params: Promise<{ id: string; levelId: string }> }) {
+  const lang = await getLang();
+  const t = mkT(LEVEL, lang);
   const { id, levelId } = await params;
   let data: Awaited<ReturnType<typeof getLevelTree>>;
   try {
@@ -64,7 +68,7 @@ export default async function LevelPage({ params }: { params: Promise<{ id: stri
   } catch {
     return (
       <main id="main" className="mx-auto max-w-4xl px-4 py-10">
-        <p role="alert">Data level tidak dapat dimuat.</p>
+        <p role="alert">{t("loadFailed")}</p>
       </main>
     );
   }
@@ -74,16 +78,16 @@ export default async function LevelPage({ params }: { params: Promise<{ id: stri
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <Link href={`/teacher/courses/${data.courseId}`} className="text-sm text-blue-700 underline">
-        ← Kelola course
+        {t("backToManageCourse")}
       </Link>
       <h1 className="mt-2 text-3xl font-bold">{data.level.title}</h1>
       <p className="mt-1 text-slate-600">
-        Objective:{" "}
-        {data.level.objective || <em className="text-red-700">kosong — wajib diisi sebelum publish</em>}
+        {t("objectivePrefix")}
+        {data.level.objective || <em className="text-red-700">{t("objectiveEmpty")}</em>}
       </p>
-      <LevelManager levelId={data.level.id} initialModules={data.modules} />
+      <LevelManager levelId={data.level.id} initialModules={data.modules} lang={lang} />
       <div className="mt-4">
-        <ContentBulkImport courseId={data.courseId} levelId={data.level.id} />
+        <ContentBulkImport courseId={data.courseId} levelId={data.level.id} lang={lang} />
       </div>
     </main>
   );

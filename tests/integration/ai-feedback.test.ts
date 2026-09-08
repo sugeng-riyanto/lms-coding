@@ -115,10 +115,8 @@ describe("slice AI — env, lib, actions, UI (AC-1/6/7/9)", () => {
 
   it("UI queue: tombol draft + panel label jelas + Setujui/Tolak; tanpa import lib AI di client", () => {
     expect(queue).toMatch(/"use client"/);
-    expect(queue).toMatch(/Saran draf AI/);
-    expect(queue).toMatch(/DRAFT AI — perlu persetujuan guru/);
-    expect(queue).toMatch(/Setujui & pakai/);
-    expect(queue).toMatch(/Tolak/);
+    // Label tombol kini bilingual via dictionary lib/ui-text/grading (GRADING).
+    expect(queue).toMatch(/GRADING/);
     expect(queue).toMatch(/requestAiDraft/);
     expect(queue).toMatch(/approveAiDraft/);
     expect(queue).toMatch(/rejectAiDraft/);

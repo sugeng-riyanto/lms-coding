@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { createCourse } from "@/features/actions";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { COURSE } from "@/lib/ui-text/course";
 
-export function NewCourseForm() {
+export function NewCourseForm({ lang }: { lang: Lang }) {
+  const t = mkT(COURSE, lang);
   const [slug, setSlug] = useState("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -17,13 +20,11 @@ export function NewCourseForm() {
     const res = await createCourse({ slug, title, description });
     if (res.ok) {
       setStatus("done");
-      setMessage(
-        `Draft dibuat (course ${res.courseId}, versi 1). Tambahkan level via database/authoring lanjutan, lalu publish.`,
-      );
+      setMessage(fmt(t("draftCreated"), { courseId: res.courseId }));
     } else {
       setStatus("error");
       setMessage(
-        res.error === "FORBIDDEN" ? "Hanya guru aktif yang bisa membuat course." : `Gagal: ${res.error}`,
+        res.error === "FORBIDDEN" ? t("onlyActiveTeacher") : fmt(t("failedWithError"), { error: res.error }),
       );
     }
   }
@@ -31,12 +32,12 @@ export function NewCourseForm() {
   return (
     <form
       onSubmit={onSubmit}
-      aria-label="Form course baru"
+      aria-label={t("formLabel")}
       className="mt-6 max-w-xl space-y-4 rounded-xl border p-5"
     >
       <div>
         <label htmlFor="slug" className="font-semibold">
-          Slug (huruf kecil, angka, strip)
+          {t("slugLabel")}
         </label>
         <input
           id="slug"
@@ -52,7 +53,7 @@ export function NewCourseForm() {
       </div>
       <div>
         <label htmlFor="title" className="font-semibold">
-          Judul
+          {t("titleLabel")}
         </label>
         <input
           id="title"
@@ -66,7 +67,7 @@ export function NewCourseForm() {
       </div>
       <div>
         <label htmlFor="desc" className="font-semibold">
-          Deskripsi
+          {t("descriptionLabel")}
         </label>
         <textarea
           id="desc"
@@ -92,7 +93,7 @@ export function NewCourseForm() {
         disabled={status === "loading"}
         className="rounded-lg bg-blue-700 px-5 py-2 font-semibold text-white disabled:opacity-60"
       >
-        {status === "loading" ? "Menyimpan…" : "Buat draft"}
+        {status === "loading" ? t("saving") : t("createDraft")}
       </button>
     </form>
   );

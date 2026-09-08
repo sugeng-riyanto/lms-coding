@@ -3,6 +3,8 @@
 import { useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { reissueCertificate } from "@/features/actions";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { STUDENT_DETAIL } from "@/lib/ui-text/student-detail";
 
 const MIN_REASON = 5;
 
@@ -15,15 +17,18 @@ const MIN_REASON = 5;
 export function ReissueCertificateButton({
   certificateId,
   serialNo,
+  lang,
 }: {
   certificateId: string;
   serialNo: string;
+  lang: Lang;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const headingId = useId();
   const reasonId = useId();
   const noticeId = useId();
   const router = useRouter();
+  const t = mkT(STUDENT_DETAIL, lang);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [reasons, setReasons] = useState<string[]>([]);
@@ -33,7 +38,7 @@ export function ReissueCertificateButton({
     if (busy) return;
     const trimmed = reason.trim();
     if (trimmed.length < MIN_REASON) {
-      setNotice(`Alasan minimal ${MIN_REASON} karakter.`);
+      setNotice(fmt(t("reasonTooShort"), { n: MIN_REASON }));
       return;
     }
     setBusy(true);
@@ -47,15 +52,15 @@ export function ReissueCertificateButton({
       setNotice("");
       router.refresh();
     } else if (res.error === "NOT_ELIGIBLE" && "reasons" in res) {
-      setNotice("Belum eligible — sertifikat lama tidak diubah:");
+      setNotice(t("reissueNotEligible"));
       setReasons(Array.isArray(res.reasons) ? (res.reasons as string[]) : []);
     } else {
       const messages: Record<string, string> = {
-        NOT_ACTIVE: "Sertifikat tidak lagi aktif. Muat ulang halaman.",
-        NOT_FOUND_OR_FORBIDDEN: "Sertifikat tidak ditemukan atau di luar cohort Anda.",
-        REISSUE_FAILED: "Reissue gagal. Silakan coba lagi.",
+        NOT_ACTIVE: t("notActive"),
+        NOT_FOUND_OR_FORBIDDEN: t("notFoundForbidden"),
+        REISSUE_FAILED: t("reissueFailed"),
       };
-      setNotice(messages[res.error] ?? `Gagal: ${res.error}`);
+      setNotice(messages[res.error] ?? fmt(t("failed"), { error: res.error }));
     }
   }
 
@@ -66,7 +71,7 @@ export function ReissueCertificateButton({
         onClick={() => dialogRef.current?.showModal()}
         className="rounded border border-amber-700 px-3 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50"
       >
-        Reissue
+        {t("reissueButton")}
       </button>
       <dialog
         ref={dialogRef}
@@ -75,15 +80,12 @@ export function ReissueCertificateButton({
         onClose={() => setNotice("")}
       >
         <h3 id={headingId} className="text-lg font-semibold">
-          Reissue sertifikat {serialNo}
+          {fmt(t("reissueTitle"), { serialNo })}
         </h3>
-        <p className="mt-1 text-sm text-slate-600">
-          Sertifikat lama akan di-revoke dan sertifikat baru diterbitkan dalam satu transaksi. Eligibility
-          dicek ulang server-side; alasan dicatat di audit log.
-        </p>
+        <p className="mt-1 text-sm text-slate-600">{t("reissueBody")}</p>
         <div className="mt-4">
           <label htmlFor={reasonId} className="block text-sm font-medium">
-            Alasan reissue <span className="text-red-700">(wajib)</span>
+            {t("reasonLabel")} <span className="text-red-700">{t("required")}</span>
           </label>
           <textarea
             id={reasonId}
@@ -116,7 +118,7 @@ export function ReissueCertificateButton({
             disabled={busy}
             className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700 disabled:opacity-60"
           >
-            Batal
+            {t("cancel")}
           </button>
           <button
             type="button"
@@ -125,7 +127,7 @@ export function ReissueCertificateButton({
             aria-busy={busy}
             className="rounded bg-amber-700 px-3 py-1 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {busy ? "Memproses…" : "Reissue"}
+            {busy ? t("processing") : t("reissueButton")}
           </button>
         </div>
       </dialog>
