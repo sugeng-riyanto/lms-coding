@@ -281,6 +281,35 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
      Eksekusi (HttpChainAdapter + env `BLOCKCHAIN_*` + e2e chain tests) baru saat
      syarat itu terpenuhi. Implementasi TETAP mock-only sampai saat itu.
 
+## ADR-019 — Cakupan dashboard Wali: summary-only untuk pilot
+
+- Status: accepted
+- Context: audit `view_linked_child_summary` terhadap dashboard Wali. Kontrak
+  kapabilitas (RBAC.md) memang "ringkasan anak tertaut" — bukan detail. RLS
+  wali hari ini mencakup profiles/enrollments/progress_snapshots/certificates
+  (via `guardian_links` aktif + `certs_guardian_select`); attempts/responses/
+  grade_revisions/study_sessions TIDAK punya policy wali. Dashboard wali sudah
+  menampilkan sertifikat + unduh PDF + verifikasi.
+- Decision:
+  1. **Sertifikat (unduh PDF + verifikasi): TETAP** — data publik/record,
+     PII minimal, sudah berfungsi; konsisten dengan rilis otomatis ke wali
+     (migration `20260907110000`).
+  2. **Nilai quiz/ujian terperinci: TIDAK untuk pilot.** Ringkasan agregat
+     (progress %, mastery %, level tuntas, terakhir aktif) sudah menjawab
+     pertanyaan wali "anak saya on track?" tanpa membocorkan item/jawaban;
+     detail nilai menciptakan tekanan nilai & risiko privasi.
+  3. **Absensi: TIDAK untuk pilot.** LMS asinkron tanpa roll-call; proksi
+     engagement = menit aktif (`study_sessions`). Wali cukup melihat
+     "terakhir aktif".
+- Alternatives: (a) menampilkan rata-rata skor quiz per kursus ke wali;
+  (b) menit aktif mingguan via `guardian_child_engagement` RPC; keduanya
+  ditangguhkan menunggu feedback pilot tertulis.
+- Consequences: bila feedback pilot meminta engagement/nilai agregat, jalur
+  implementasinya WAJIB: RPC security-definer di schema private + policy
+  sempit + denial test live — bukan widening policy SELECT. Dashboard wali
+  juga tercatat masih hardcoded Indonesian (belum bilingual) — masuk backlog
+  terjemahan, bukan blocker cakupan ini.
+
 ## Template
 
 ```text
