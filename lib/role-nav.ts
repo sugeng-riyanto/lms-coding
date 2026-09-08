@@ -1,4 +1,5 @@
 import type { Role } from "@/lib/permissions";
+import { NAV, type Lang } from "@/lib/i18n";
 
 export interface NavItem {
   href: string;
@@ -8,47 +9,53 @@ export interface NavItem {
 
 /**
  * Navigasi sidebar per peran (sumber tunggal untuk AppShell + tests).
+ * Label & deskripsi mengikuti preferensi bahasa pengguna (lib/i18n).
  * HANYA route yang memang boleh diakses peran itu (RBAC.md): murid belajar,
  * guru mengelola cohort-nya, wali ringkasan anak tertaut. Pengaturan + keluar
  * tersedia di SEMUA peran.
  */
-export function navForRole(role: Role, isOrgAdmin: boolean): NavItem[] {
-  const settings: NavItem = { href: "/settings", label: "Pengaturan", desc: "Akun & preferensi" };
+export function navForRole(role: Role, isOrgAdmin: boolean, lang: Lang = "id"): NavItem[] {
+  const p = (key: keyof typeof NAV) => ({ id: NAV[key].id, en: NAV[key].en })[lang];
+  const settings: NavItem = { href: "/settings", label: p("settings"), desc: p("settingsDesc") };
   switch (role) {
     case "student":
       return [
-        { href: "/learn", label: "Belajar", desc: "Target & jalur level" },
-        { href: "/catalog", label: "Katalog", desc: "Semua kursusku" },
-        { href: "/review", label: "Review", desc: "Ulasan terjadwal" },
-        { href: "/certificates", label: "Sertifikat", desc: "Sertifikatku" },
+        { href: "/learn", label: p("studentLearn"), desc: p("studentLearnDesc") },
+        { href: "/catalog", label: p("studentCatalog"), desc: p("studentCatalogDesc") },
+        { href: "/review", label: p("studentReview"), desc: p("studentReviewDesc") },
+        { href: "/certificates", label: p("studentCertificates"), desc: p("studentCertificatesDesc") },
         settings,
       ];
     case "teacher":
       return [
-        { href: "/teacher", label: "Dasbor", desc: "Ringkasan kelas" },
-        { href: "/teacher/cohorts", label: "Kelas", desc: "Cohort & enrollment" },
-        { href: "/teacher/grading", label: "Penilaian", desc: "Antrian nilai manual" },
-        { href: "/teacher/questions", label: "Bank Soal", desc: "Soal berversi" },
-        { href: "/teacher/analytics", label: "Analitik", desc: "Insight kelas" },
-        { href: "/teacher/certificates", label: "Sertifikat", desc: "Terbit & anchor" },
+        { href: "/teacher", label: p("teacherDashboard"), desc: p("teacherDashboardDesc") },
+        { href: "/teacher/cohorts", label: p("teacherClasses"), desc: p("teacherClassesDesc") },
+        { href: "/teacher/grading", label: p("teacherGrading"), desc: p("teacherGradingDesc") },
+        { href: "/teacher/questions", label: p("teacherQuestions"), desc: p("teacherQuestionsDesc") },
+        { href: "/teacher/analytics", label: p("teacherAnalytics"), desc: p("teacherAnalyticsDesc") },
+        {
+          href: "/teacher/certificates",
+          label: p("teacherCertificates"),
+          desc: p("teacherCertificatesDesc"),
+        },
         // Facet Owner (ADR-008): hanya guru pemilik course yang melihat tautan admin.
         ...(isOrgAdmin
           ? [
               {
                 href: "/teacher/admin/map",
-                label: "Admin",
-                desc: "Mapping kelas & subjek",
+                label: p("adminMap"),
+                desc: p("adminMapDesc"),
               } satisfies NavItem,
               {
                 href: "/teacher/admin/security",
-                label: "Security",
-                desc: "Monitoring CSP",
+                label: p("adminSecurity"),
+                desc: p("adminSecurityDesc"),
               } satisfies NavItem,
             ]
           : []),
         settings,
       ];
     case "guardian":
-      return [{ href: "/guardian", label: "Ringkasan", desc: "Perkembangan anak" }, settings];
+      return [{ href: "/guardian", label: p("guardianSummary"), desc: p("guardianSummaryDesc") }, settings];
   }
 }

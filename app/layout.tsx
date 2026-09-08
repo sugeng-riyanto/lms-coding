@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import { isDemoBackend } from "@/lib/supabase/demo";
+import { COMMON, getLang } from "@/lib/i18n";
 
 export const metadata: Metadata = {
   title: {
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
     template: "%s · Coding School LMS",
   },
   description:
-    "Platform pembelajaran coding sekolah: jalur belajar terstruktur, coding board, materi ter-embed, kuis, penilaian, dan sertifikat terverifikasi.",
+    "School coding platform: structured learning paths, code boards, embedded media, quizzes, assessment, and verifiable certificates.",
 };
 
 /** Inisialisasi tema tanpa FOUC: localStorage dulu, fallback preferensi sistem. */
@@ -34,7 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </p>
         )}
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:p-2 focus:bg-yellow-200">
-          Skip to main content
+          {(await getLang()) === "id" ? COMMON.skipToContent.id : COMMON.skipToContent.en}
         </a>
         {children}
       </body>

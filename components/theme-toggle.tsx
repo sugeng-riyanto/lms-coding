@@ -1,12 +1,27 @@
 "use client";
 
+import { COMMON, LANG_COOKIE, isLang, type Lang } from "@/lib/i18n";
+
 /**
  * Toggle tema terang/gelap. Kelas `dark` dipasang di <html>; inisialisasi tanpa
  * FOUC dilakukan inline script di root layout (localStorage → prefers-color-scheme).
  * Ikon di-switch lewat CSS (`.dark` variant) sehingga aman hydration — tanpa
- * state yang disinkronkan dari DOM di dalam effect.
+ * state yang disinkronkan dari DOM di dalam effect. Label aksesibilitas mengikuti
+ * preferensi bahasa (cookie lms-lang, di-mirror dari profiles.language).
  */
-export function ThemeToggle() {
+export function ThemeToggle({ lang: propLang }: { lang?: Lang } = {}) {
+  // Prefer the server-provided lang (avoids SSR/client mismatch on the label);
+  // fall back to the cookie for contexts rendered purely on the client.
+  let lang: Lang = propLang ?? "id";
+  if (!propLang && typeof document !== "undefined") {
+    const v = document.cookie
+      .split("; ")
+      .find((c) => c.startsWith(`${LANG_COOKIE}=`))
+      ?.split("=")[1];
+    if (isLang(v)) lang = v;
+  }
+  const label = COMMON.toggleTheme[lang];
+
   function toggle() {
     const root = document.documentElement;
     const next = !root.classList.contains("dark");
@@ -22,8 +37,8 @@ export function ThemeToggle() {
     <button
       type="button"
       onClick={toggle}
-      aria-label="Toggle light/dark theme"
-      title="Toggle light/dark theme"
+      aria-label={label}
+      title={label}
       className="inline-flex size-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
     >
       {/* Mode gelap aktif → ikon matahari (klik = ke terang). */}

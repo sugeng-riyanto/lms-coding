@@ -1,6 +1,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { LANG_COOKIE, type Lang } from "@/lib/i18n";
 // Jalur WRITE: strict — env hilang → throw (tidak pernah sukses diam-diam di demo mode).
 import { createStrictClient as createClient } from "@/lib/supabase/server";
 import { getServerEnv } from "@/lib/env";
@@ -60,6 +61,7 @@ import {
   uuidSchema,
   saveStudentMappingSchema,
   assignTeacherToClassSchema,
+  setLanguageSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
 import { sanitizeContentBlocks } from "@/lib/content-blocks";
@@ -87,6 +89,26 @@ import {
 import { read as xlsxRead, utils as xlsxUtils } from "xlsx";
 import { ANCHOR_BATCH_LIMIT, isAnchorEligible, runAnchorBatch, type AnchorCandidate } from "@/lib/anchor-job";
 import { getChainAdapter, isChainEnabled, NoopChainAdapter } from "@/lib/chain";
+
+// ---------- Preferences: UI language (per-user, all RBAC) ----------
+export async function setLanguage(input: unknown) {
+  const parsed = setLanguageSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const lang = parsed.data.lang;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { error } = await supabase.from("profiles").update({ language: lang }).eq("id", user.id);
+  if (error) return { ok: false as const, error: "UPDATE_FAILED" };
+  // Mirror the preference into a cookie so client-only shells (login, error
+  // boundaries, drawers) render in the same language.
+  const { cookies } = await import("next/headers");
+  const store = await cookies();
+  store.set(LANG_COOKIE, lang, { maxAge: 60 * 60 * 24 * 365, path: "/", sameSite: "lax" });
+  return { ok: true as const, lang: lang as Lang };
+}
 
 // ---------- Course authoring: create draft ----------
 export async function createCourse(input: unknown) {

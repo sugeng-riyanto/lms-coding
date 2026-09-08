@@ -42,7 +42,7 @@ describe("NavLinks — tautan peran + status aktif", () => {
 
 describe("MobileDrawer — hamburger membuka/menutup", () => {
   it("tertutup default; terbuka via hamburger; tertutup via Escape dan tautan", () => {
-    render(<MobileDrawer eyebrow="Area Belajar Murid" items={navForRole("student", false)} />);
+    render(<MobileDrawer eyebrow="Area Belajar Murid" items={navForRole("student", false)} lang="id" />);
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Buka navigasi" }));
     expect(screen.getByRole("dialog", { name: /Navigasi/ })).toBeDefined();
@@ -55,7 +55,7 @@ describe("MobileDrawer — hamburger membuka/menutup", () => {
   });
 
   it("drawer memuat tombol Keluar (logout semua peran)", () => {
-    render(<MobileDrawer eyebrow="Dasbor Kelas" items={navForRole("teacher", false)} />);
+    render(<MobileDrawer eyebrow="Dasbor Kelas" items={navForRole("teacher", false)} lang="id" />);
     fireEvent.click(screen.getByRole("button", { name: "Buka navigasi" }));
     expect(screen.getByRole("button", { name: "Keluar" })).toBeDefined();
   });

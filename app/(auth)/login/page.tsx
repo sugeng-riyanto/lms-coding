@@ -4,7 +4,9 @@
 export const dynamic = "force-dynamic";
 
 import { LoginForm } from "./login-form";
+import { getLang } from "@/lib/i18n";
 
-export default function LoginPage() {
-  return <LoginForm />;
+export default async function LoginPage() {
+  const lang = await getLang();
+  return <LoginForm lang={lang} />;
 }

@@ -69,10 +69,11 @@ describe("route /settings — semua peran", () => {
     expect(page).toMatch(/requireActiveMembership\(\["student", "teacher", "guardian"\]\)/);
     expect(page).toMatch(/<AppShell/);
     expect(page).toMatch(/<SettingsPanel/);
-    expect(panel).toMatch(/aria-label="Akun saya"/);
-    expect(panel).toMatch(/aria-label="Preferensi tampilan"/);
-    expect(panel).toMatch(/aria-label="Sesi"/);
+    // Per-user language: panel sections use COMMON keys (both langs available)
+    expect(panel).toMatch(/aria-label=\{COMMON\.myAccount\[l\]\}/);
+    expect(panel).toMatch(/aria-label=\{l === "id" \? "Preferensi tampilan" : "Display preferences"\}/);
+    expect(panel).toMatch(/aria-label=\{l === "id" \? "Sesi" : "Session"\}/);
     expect(panel).toMatch(/<LogoutButton/);
-    expect(panel).toMatch(/Peran \(server\)/);
+    expect(panel).toMatch(/\{COMMON\.roles\[l\]\} \(server\)/);
   });
 });

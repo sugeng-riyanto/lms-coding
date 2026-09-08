@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { LogoutButton } from "@/app/profile/logout-button";
 import type { NavItem } from "@/lib/role-nav";
+import { COMMON, type Lang } from "@/lib/i18n";
 
 /** Daftar tautan sidebar dengan status aktif (aria-current) berbasis pathname. */
 export function NavLinks({ items, onNavigate }: { items: NavItem[]; onNavigate?: () => void }) {
@@ -40,7 +41,7 @@ export function NavLinks({ items, onNavigate }: { items: NavItem[]; onNavigate?:
  * Drawer navigasi mobile: tombol hamburger di topbar → panel slide-over.
  * Fokus: Escape menutup, klik overlay/tautan menutup, aria-expanded sinkron.
  */
-export function MobileDrawer({ eyebrow, items }: { eyebrow: string; items: NavItem[] }) {
+export function MobileDrawer({ eyebrow, items, lang }: { eyebrow: string; items: NavItem[]; lang: Lang }) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export function MobileDrawer({ eyebrow, items }: { eyebrow: string; items: NavIt
         onClick={() => setOpen(true)}
         aria-expanded={open}
         aria-controls="app-drawer"
-        aria-label="Buka navigasi"
+        aria-label={COMMON.openNav[lang]}
         className="rounded-lg border px-3 py-1.5 font-bold md:hidden"
       >
         ☰
@@ -77,7 +78,7 @@ export function MobileDrawer({ eyebrow, items }: { eyebrow: string; items: NavIt
               id="app-drawer"
               role="dialog"
               aria-modal="true"
-              aria-label={`Navigasi ${eyebrow}`}
+              aria-label={`${lang === "id" ? "Navigasi" : "Navigation"} ${eyebrow}`}
               className="absolute top-0 left-0 flex h-full w-72 max-w-[85vw] flex-col bg-gradient-to-b from-white to-slate-100/90 shadow-[var(--shadow-lift)] dark:from-[var(--surface-grad-from)] dark:to-[var(--surface-grad-to)]"
             >
               <div className="flex items-center justify-between gap-2 border-b p-4">
@@ -93,7 +94,7 @@ export function MobileDrawer({ eyebrow, items }: { eyebrow: string; items: NavIt
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  aria-label="Tutup navigasi"
+                  aria-label={COMMON.closeNav[lang]}
                   className="rounded-lg border px-3 py-1.5 font-bold"
                 >
                   ✕
