@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
 import { isDemoBackend } from "@/lib/supabase/demo";
+import { persistLoginLanguage } from "@/features/actions";
 import { COMMON, LANG_COOKIE, type Lang } from "@/lib/i18n";
 
 export function LoginForm({ lang: initialLang }: { lang?: Lang }) {
@@ -18,7 +19,7 @@ export function LoginForm({ lang: initialLang }: { lang?: Lang }) {
             ?.split("=")[1]
         : undefined) as Lang | undefined) ||
       initialLang ||
-      "id",
+      "en",
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,6 +35,15 @@ export function LoginForm({ lang: initialLang }: { lang?: Lang }) {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
       setStatus("done");
+      // Persist the visitor's pre-auth language choice into the profile on the
+      // first sign-in (idempotent; respects an already-saved preference). If
+      // the write races the session cookie the action is a no-op — the next
+      // login or Settings toggle re-applies it.
+      try {
+        await persistLoginLanguage({ lang });
+      } catch {
+        // Best-effort only: auth already succeeded.
+      }
       // The role hub (/dashboard) redirects according to server-side membership:
       // teacher → /teacher, guardian → /guardian, student → /learn.
       router.push("/dashboard");

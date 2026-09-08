@@ -62,6 +62,7 @@ import {
   saveStudentMappingSchema,
   assignTeacherToClassSchema,
   setLanguageSchema,
+  persistLoginLanguageSchema,
 } from "@/lib/validation";
 import { sanitizeQuestionForAttempt, canShowScore, type SanitizedQuestion } from "@/lib/attempt";
 import { sanitizeContentBlocks } from "@/lib/content-blocks";
@@ -108,6 +109,52 @@ export async function setLanguage(input: unknown) {
   const store = await cookies();
   store.set(LANG_COOKIE, lang, { maxAge: 60 * 60 * 24 * 365, path: "/", sameSite: "lax" });
   return { ok: true as const, lang: lang as Lang };
+}
+
+// ---------- Preferences: persist pre-sign-in (visitor) language choice ----------
+// The login screen lets an anonymous visitor pick a language before auth. On
+// first sign-in that choice is persisted into profiles.language so subsequent
+// sessions (and other devices) open in the same language.
+//
+// Distinction that matters: `id` is the column DEFAULT, so a profile still at
+// 'id' means "never chose a language" (fresh account) — the visitor's choice is
+// persisted. Only a NON-default stored language (explicit 'en', or 'id' that a
+// user explicitly picked via Settings — indistinguishable at this layer, so we
+// treat non-default as authoritative) wins over the pre-auth cookie. Idempotent:
+// when the stored language already matches, no write happens.
+export async function persistLoginLanguage(input: unknown) {
+  const parsed = persistLoginLanguageSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const lang = parsed.data.lang;
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const userId = (claims.claims as { sub?: string }).sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data: current, error: readErr } = await supabase
+    .from("profiles")
+    .select("language")
+    .eq("id", userId)
+    .maybeSingle();
+  const existing = (current as { language?: string } | null)?.language;
+  if (readErr && !current) return { ok: false as const, error: "READ_FAILED" };
+  if (existing === lang) {
+    // Profile already in sync — nothing to write (idempotent).
+    return { ok: true as const, lang };
+  }
+  if (existing === "en") {
+    // A language was explicitly chosen before (non-default). Keep it
+    // authoritative: a stale visitor cookie must not silently override it.
+    const { cookies } = await import("next/headers");
+    const store = await cookies();
+    store.set(LANG_COOKIE, existing as Lang, { maxAge: 60 * 60 * 24 * 365, path: "/", sameSite: "lax" });
+    return { ok: true as const, lang: existing as Lang };
+  }
+  // Fresh account (language still the column default 'id'): persist the
+  // visitor's pre-auth choice as their profile preference.
+  const { error } = await supabase.from("profiles").update({ language: lang }).eq("id", userId);
+  if (error) return { ok: false as const, error: "UPDATE_FAILED" };
+  return { ok: true as const, lang };
 }
 
 // ---------- Course authoring: create draft ----------

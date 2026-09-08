@@ -6,8 +6,7 @@ import { DASH } from "@/lib/ui-text/dash";
 import { CERT } from "@/lib/ui-text/cert";
 import { ANALYTICS } from "@/lib/ui-text/analytics";
 import { LEARN } from "@/lib/ui-text/learn";
-import { CHART_TEXT } from "@/components/charts";
-import { STATE_TEXT } from "@/components/dashboard";
+import { CHART_TEXT, STATE_TEXT } from "@/lib/ui-text/chart-kit";
 
 /** Flatten a nested dictionary ({ id, en } pairs) into the set of pairs. */
 function pairs(dict: Record<string, unknown>): Array<{ id: string; en: string }> {
@@ -124,8 +123,8 @@ describe("i18n helpers", () => {
     expect(pick({ id: "Masuk", en: "Sign in" }, "en")).toBe("Sign in");
   });
 
-  it("default language is Indonesian (backwards compatible)", () => {
-    expect(DEFAULT_LANG).toBe("id");
+  it("default UI language is English (English-first pilot; users opt into Indonesian)", () => {
+    expect(DEFAULT_LANG).toBe("en");
   });
 });
 
@@ -159,5 +158,48 @@ describe("setLanguage server action validation", () => {
     expect(setLanguageSchema.safeParse({}).success).toBe(false);
     expect(setLanguageSchema.safeParse({ lang: "EN" }).success).toBe(false);
     expect(setLanguageSchema.safeParse(null).success).toBe(false);
+  });
+});
+
+describe("login-screen language persistence (pre-auth choice → profile)", () => {
+  const loginPage = readFileSync("app/(auth)/login/page.tsx", "utf8");
+  const loginForm = readFileSync("app/(auth)/login/login-form.tsx", "utf8");
+  const actions = readFileSync("features/actions.ts", "utf8");
+  const validation = readFileSync("lib/validation.ts", "utf8");
+
+  it("persistLoginLanguage accepts only id/en (reuses the language enum)", () => {
+    expect(validation).toMatch(
+      /persistLoginLanguageSchema = z\.object\(\{\s*lang: z\.enum\(\["id", "en"\]\)/,
+    );
+  });
+
+  it("login page resolves the profile language when a session exists, else the visitor cookie", () => {
+    // profile wins for signed-in visitors: profiles.language is read per user id
+    expect(loginPage).toMatch(/from\("profiles"\)\.select\("language"\)\.eq\("id", userId\)/);
+    // cookie is only the anonymous fallback
+    expect(loginPage).toMatch(/store\.get\(LANG_COOKIE\)/);
+    // default is English when neither a profile value nor a cookie exists
+    expect(loginPage).toMatch(/DEFAULT_LOGIN_LANG/);
+  });
+
+  it("login form persists the chosen language after a successful sign-in (best-effort)", () => {
+    expect(loginForm).toMatch(/signInWithPassword/);
+    expect(loginForm).toMatch(/persistLoginLanguage\(\{ lang \}\)/);
+    // The visitor can pick before submitting (toggle writes the cookie).
+    expect(loginForm).toMatch(/LANG_COOKIE}=/);
+  });
+
+  it("the action validates, is idempotent, and only lets a NON-default stored preference win", () => {
+    const fn = actions.slice(actions.indexOf("export async function persistLoginLanguage"));
+    const body = fn.slice(0, fn.indexOf("\n// ---------- Course authoring"));
+    expect(body).toContain("persistLoginLanguageSchema.safeParse");
+    expect(body).toContain('"UNAUTHENTICATED"');
+    // Same language stored → no write (idempotent).
+    expect(body).toContain("existing === lang");
+    // Explicit non-default (en) is authoritative over the visitor cookie.
+    expect(body).toContain('existing === "en"');
+    expect(body).toContain("store.set(LANG_COOKIE, existing");
+    // Fresh account (default 'id') persists the visitor's choice.
+    expect(body).toContain('from("profiles").update({ language: lang }).eq("id", userId)');
   });
 });

@@ -21,8 +21,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Next hanya memberi nonce otomatis ke script generasinya sendiri — script
   // buatan (dangerouslySetInnerHTML) wajib nonce manual agar lolos enforce.
   const nonce = (await headers()).get("x-nonce") ?? undefined;
+  // Lang atribut mengikuti preferensi bahasa (profiles.language → cookie) agar
+  // screen reader mengumumkan konten dengan locale yang benar (a11y).
+  const lang = await getLang();
   return (
-    <html lang="id" suppressHydrationWarning>
+    <html lang={lang} suppressHydrationWarning>
       <body className="min-h-screen bg-white text-slate-900 antialiased">
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         {isDemoBackend() && (
@@ -35,7 +38,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           </p>
         )}
         <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:p-2 focus:bg-yellow-200">
-          {(await getLang()) === "id" ? COMMON.skipToContent.id : COMMON.skipToContent.en}
+          {lang === "id" ? COMMON.skipToContent.id : COMMON.skipToContent.en}
         </a>
         {children}
       </body>

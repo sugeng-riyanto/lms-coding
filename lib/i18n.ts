@@ -19,7 +19,14 @@ export function isLang(v: unknown): v is Lang {
   return v === "id" || v === "en";
 }
 
-export const DEFAULT_LANG: Lang = "id";
+/**
+ * Default UI language for accounts that have not made an explicit choice
+ * (no cookie, no saved profile value). The school pilot is English-first:
+ * everything renders in English until a user picks otherwise. The DB column
+ * default stays 'id' deliberately — that stored value is the "never chose"
+ * sentinel for persistLoginLanguage, not a UI default.
+ */
+export const DEFAULT_LANG: Lang = "en";
 
 // ---------- Shared chrome dictionary -----------------------------------------
 
