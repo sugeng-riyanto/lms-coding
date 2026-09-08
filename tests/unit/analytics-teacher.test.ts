@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  bottleneckAnalysis,
-  buildTeacherDigest,
-  percentDistribution,
-} from "@/lib/analytics-teacher";
+import { bottleneckAnalysis, buildTeacherDigest, percentDistribution } from "@/lib/analytics-teacher";
 
 describe("bottleneckAnalysis — hambatan jalur belajar", () => {
   const lessons = [

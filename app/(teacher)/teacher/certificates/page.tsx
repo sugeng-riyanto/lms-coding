@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isChainEnabled } from "@/lib/chain";
+import { fmt, getLang, mkT } from "@/lib/i18n";
+import { CERT } from "@/lib/ui-text/cert";
 import { AnchorStatusChip } from "@/components/anchor-status";
 import { AnchorBatchButton } from "./anchor-batch-button";
 import { AnchorRefreshButton } from "./anchor-refresh-button";
@@ -68,6 +70,8 @@ async function loadCerts(userId: string): Promise<{ certs: CertRow[]; empty: boo
 }
 
 export default async function CertificatesPage() {
+  const lang = await getLang();
+  const t = mkT(CERT, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub ?? "";
@@ -81,36 +85,31 @@ export default async function CertificatesPage() {
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold">Sertifikat &amp; anchoring</h1>
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {certs.length} sertifikat ({activeCount} active) · {pendingCount} anchor pending
+            {fmt(t("summary"), { n: certs.length, active: activeCount, pending: pendingCount })}
           </p>
         </div>
       </div>
 
-      <section aria-label="Anchor batch" className="mt-4 rounded-xl border p-4">
-        <h2 className="text-lg font-semibold">Anchoring blockchain (opsional)</h2>
-        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-          Batch payload hash sertifikat menjadi satu Merkle root lalu anchor via adapter (ADR-018). Hanya
-          hash/root + transaksi yang disimpan — tanpa data pribadi.
-        </p>
+      <section aria-label={t("batchAria")} className="mt-4 rounded-xl border p-4">
+        <h2 className="text-lg font-semibold">{t("sectionTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("sectionBody")}</p>
         {chainEnabled ? (
           <div className="flex flex-wrap items-center gap-2">
-            <AnchorBatchButton enabled />
-            <AnchorRefreshButton enabled />
+            <AnchorBatchButton enabled lang={lang} />
+            <AnchorRefreshButton enabled lang={lang} />
           </div>
         ) : (
           <p className="mt-2 text-sm text-slate-500" role="status">
-            Anchoring nonaktif (BLOCKCHAIN_ANCHOR_ENABLED=false). Aktifkan + set BLOCKCHAIN_PROVIDER=mock
-            (atau algorand-mock untuk jalur finality deterministik tanpa jaringan), atau pilih provider nyata
-            setelah ADR-018 diputuskan.
+            {t("disabledNote")}
           </p>
         )}
       </section>
 
       {empty ? (
         <p className="mt-6 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900" role="status">
-          Belum ada sertifikat di kelas yang Anda ampu.
+          {t("empty")}
         </p>
       ) : (
         <>
@@ -127,14 +126,15 @@ export default async function CertificatesPage() {
                   <AnchorStatusChip
                     status={c.chain_anchors?.status ?? null}
                     reference={c.chain_anchors?.transaction_ref}
+                    lang={lang}
                   />
                 </div>
                 <dl className="grid grid-cols-2 gap-x-4 gap-y-1 p-4 text-sm">
-                  <dt className="text-slate-500">Murid</dt>
+                  <dt className="text-slate-500">{t("student")}</dt>
                   <dd className="font-semibold">{c.student_name ?? "—"}</dd>
-                  <dt className="text-slate-500">Status</dt>
+                  <dt className="text-slate-500">{t("status")}</dt>
                   <dd className="font-semibold">{c.status}</dd>
-                  <dt className="text-slate-500">Terbit</dt>
+                  <dt className="text-slate-500">{t("issued")}</dt>
                   <dd>{c.issued_at.slice(0, 10)}</dd>
                 </dl>
               </li>
@@ -144,11 +144,11 @@ export default async function CertificatesPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-slate-50 dark:bg-slate-800">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Sertifikat</th>
-                  <th className="px-3 py-2 font-semibold">Murid</th>
-                  <th className="px-3 py-2 font-semibold">Status</th>
-                  <th className="px-3 py-2 font-semibold">Terbit</th>
-                  <th className="px-3 py-2 font-semibold">Blockchain</th>
+                  <th className="px-3 py-2 font-semibold">{t("colCert")}</th>
+                  <th className="px-3 py-2 font-semibold">{t("student")}</th>
+                  <th className="px-3 py-2 font-semibold">{t("status")}</th>
+                  <th className="px-3 py-2 font-semibold">{t("issued")}</th>
+                  <th className="px-3 py-2 font-semibold">{t("colBlockchain")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,6 +162,7 @@ export default async function CertificatesPage() {
                       <AnchorStatusChip
                         status={c.chain_anchors?.status ?? null}
                         reference={c.chain_anchors?.transaction_ref}
+                        lang={lang}
                       />
                     </td>
                   </tr>
@@ -171,10 +172,7 @@ export default async function CertificatesPage() {
           </div>
         </>
       )}
-      <p className="mt-4 text-xs text-slate-500">
-        Verifikasi publik: /verify/{"{public_id}"}. Anchor pending belum final dan tidak diklaim
-        terverifikasi.
-      </p>
+      <p className="mt-4 text-xs text-slate-500">{fmt(t("verifyFootnote"), { public_id: "{public_id}" })}</p>
     </main>
   );
 }

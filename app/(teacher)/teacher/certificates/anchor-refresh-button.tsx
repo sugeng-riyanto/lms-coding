@@ -3,20 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { refreshAnchorStatus } from "@/features/actions";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { CERT } from "@/lib/ui-text/cert";
 
-function errText(code: string): string {
+function errText(code: string, t: (k: keyof typeof CERT) => string): string {
   const map: Record<string, string> = {
-    BLOCKCHAIN_DISABLED: "Anchoring blockchain nonaktif (BLOCKCHAIN_ANCHOR_ENABLED=false).",
-    BLOCKCHAIN_PROVIDER_PENDING: "Provider belum dipilih (ADR-018) — hanya mode mock aktif.",
-    UNAUTHENTICATED: "Sesi tidak valid.",
-    FORBIDDEN: "Aksi ini hanya untuk guru aktif.",
+    BLOCKCHAIN_DISABLED: t("errBlockchainDisabled"),
+    BLOCKCHAIN_PROVIDER_PENDING: t("errProviderPending"),
+    UNAUTHENTICATED: t("errUnauthenticated"),
+    FORBIDDEN: t("errForbidden"),
   };
   return map[code] ?? code;
 }
 
 /** Menanyakan status anchor yang pending ke adapter dan menaikkan ke final bila
  * sudah final (mock-algorand: deterministik tanpa jaringan). */
-export function AnchorRefreshButton({ enabled }: { enabled: boolean }) {
+export function AnchorRefreshButton({ enabled, lang = "id" }: { enabled: boolean; lang?: Lang }) {
+  const t = mkT(CERT, lang);
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
@@ -28,12 +31,12 @@ export function AnchorRefreshButton({ enabled }: { enabled: boolean }) {
     setBusy(false);
     if (res.ok) {
       if (res.finalized === 0) {
-        setNotice("Tidak ada anchor pending yang naik ke final saat ini.");
+        setNotice(t("refreshNone"));
       } else {
-        setNotice(`${res.finalized} anchor pending kini final.`);
+        setNotice(fmt(t("refreshOk"), { n: res.finalized }));
       }
     } else {
-      setNotice(`Gagal: ${errText(res.error)}`);
+      setNotice(fmt(t("failed"), { msg: errText(res.error, t) }));
     }
     router.refresh();
   }
@@ -50,7 +53,7 @@ export function AnchorRefreshButton({ enabled }: { enabled: boolean }) {
         disabled={busy}
         className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60 dark:border-slate-600 dark:text-slate-200"
       >
-        {busy ? "Memeriksa status…" : "Refresh status anchor"}
+        {busy ? t("refreshBusy") : t("refreshIdle")}
       </button>
       {notice && (
         <p role="status" className="mt-2 text-sm">

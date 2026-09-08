@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computeUnlock, nextBestAction } from "@/lib/progress";
+import { DISPLAY_TIMEZONE } from "@/lib/time";
 import {
   DEFAULT_WEEKLY_GOAL_MINUTES,
   formatActiveMinutes,
@@ -14,6 +15,8 @@ import {
 } from "@/lib/progress-planning";
 import { MeterBar, ProgressRing, SectionHeader, StatCard, StateBadge } from "@/components/dashboard";
 import { ChartPanel, ColumnChart } from "@/components/charts";
+import { fmt, getLang, localeFor, mkT } from "@/lib/i18n";
+import { LEARN } from "@/lib/ui-text/learn";
 import { WeeklyGoalForm } from "./weekly-goal-form";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +52,9 @@ interface QuizBar {
 async function getDashboard(
   userId: string,
   requestedEnrollmentId?: string,
+  quizTitle = "Kuis",
+  attemptHint: (n: number) => string = (n) => `Percobaan ${n}`,
+  lang: "id" | "en" = "id",
 ): Promise<{
   levels: LiveLevel[];
   courseTitle: string;
@@ -147,7 +153,7 @@ async function getDashboard(
   const weekly: WeeklyInfo = { unit, ...weeklyRollupForUnit(unit, measured, goalValue) };
 
   // Grafik menit aktif per hari (Sen–Min) — sumber sama dengan ring target di atas.
-  const weekBars = weekActiveMinutesByDay(sessionRows ?? [], weekStart);
+  const weekBars = weekActiveMinutesByDay(sessionRows ?? [], weekStart, DISPLAY_TIMEZONE, lang);
 
   // Grafik skor kuis: percobaan TERAKHIR yang sudah dinilai (final_score server).
   const { data: attemptRowsData } = await supabase
@@ -169,13 +175,13 @@ async function getDashboard(
       .select("id,activities(title)")
       .in("id", asmtIds);
     for (const a of (asmtRowsData as { id: string; activities: { title: string } | null }[] | null) ?? []) {
-      quizTitles.set(a.id, a.activities?.title ?? "Kuis");
+      quizTitles.set(a.id, a.activities?.title ?? quizTitle);
     }
   }
   const quizBars = gradedAttempts.map((a) => ({
-    label: quizTitles.get(a.assessment_id) ?? "Kuis",
+    label: quizTitles.get(a.assessment_id) ?? quizTitle,
     value: Number(a.final_score ?? 0),
-    hint: `Percobaan ${a.attempt_no}`,
+    hint: attemptHint(a.attempt_no),
   }));
 
   const { data: prereqs } = await supabase.from("prerequisites").select("target_id,required_id");
@@ -214,64 +220,62 @@ async function getDashboard(
   return { levels, courseTitle: enr.courses.title, enrollmentId: enr.id, weekly, weekBars, quizBars };
 }
 
-function weeklyLabel(weekly: WeeklyInfo, unit: WeeklyGoalUnit): string {
-  if (unit === "minutes") {
-    return `${formatActiveMinutes(weekly.completed)} dari ${formatActiveMinutes(weekly.goal)} menit aktif`;
-  }
-  return `${weekly.completed}/${weekly.goal} selesai`;
-}
-
-function weeklyRemaining(weekly: WeeklyInfo, unit: WeeklyGoalUnit): string {
-  if (unit === "minutes") {
-    return `${formatActiveMinutes(Math.max(0, weekly.goal - weekly.completed))} lagi untuk mencapai target minggu ini.`;
-  }
-  return `${weekly.goal - weekly.completed} aktivitas lagi untuk mencapai target minggu ini.`;
-}
-
 export default async function LearnPage({
   searchParams,
 }: {
   searchParams: Promise<{ enrollment?: string }>;
 }) {
   const { enrollment } = await searchParams;
+  const lang = await getLang();
+  const t = mkT(LEARN, lang);
+  const loc = localeFor(lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
   let live: Awaited<ReturnType<typeof getDashboard>> = null;
   if (userId) {
     try {
-      live = await getDashboard(userId, enrollment);
+      live = await getDashboard(
+        userId,
+        enrollment,
+        t("quizFallbackTitle"),
+        (n) => fmt(t("quizAttemptHint"), { n }),
+        lang,
+      );
     } catch {
       live = null;
     }
   }
 
   const levels = live?.levels ?? [];
-  const rec = nextBestAction(levels.map((l) => ({ ...l, locked: l.state === "locked" })));
+  const rec = nextBestAction(
+    levels.map((l) => ({ ...l, locked: l.state === "locked" })),
+    lang,
+  );
 
   return (
     <main id="main" className="mx-auto max-w-4xl px-4 py-10">
       <p className="text-sm font-semibold tracking-wide text-blue-700 uppercase dark:text-blue-300">
-        Ruang Belajar
+        {t("eyebrow")}
       </p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight">
-        {live ? live.courseTitle : "Target hari ini"}
+        {live ? live.courseTitle : t("fallbackTitle")}
       </h1>
       {!live ? (
         <p
           className="card-lift mt-4 rounded-2xl border bg-white p-5 shadow-[var(--shadow-soft)] dark:bg-slate-900"
           role="status"
         >
-          Belum ada enrollment aktif. Hubungi guru Anda untuk didaftarkan ke kelas.
+          {t("noEnrollment")}
         </p>
       ) : (
         <>
           <div className="mt-6 grid gap-4 md:grid-cols-5">
             <section
-              aria-label="Rekomendasi belajar"
+              aria-label={t("recAria")}
               className="rounded-2xl bg-gradient-to-br from-blue-700 to-blue-900 p-6 text-white shadow-md md:col-span-3 dark:from-blue-900 dark:to-slate-900"
             >
-              <p className="text-sm font-medium text-blue-100">Langkah berikutnya</p>
+              <p className="text-sm font-medium text-blue-100">{t("nextStep")}</p>
               {rec ? (
                 <>
                   <p className="mt-2 text-lg leading-relaxed font-semibold">{rec.reason}</p>
@@ -279,101 +283,117 @@ export default async function LearnPage({
                     href={`/learn/${rec.id}?enrollment=${live.enrollmentId}`}
                     className="mt-4 inline-block rounded-xl bg-white px-5 py-2.5 font-bold text-blue-800 shadow hover:bg-blue-50"
                   >
-                    Lanjutkan belajar
+                    {t("continueLearning")}
                   </Link>
                 </>
               ) : (
-                <p className="mt-2 text-lg font-semibold">
-                  Semua level selesai atau masih terkunci — pertahankan konsistensimu.
-                </p>
+                <p className="mt-2 text-lg font-semibold">{t("allDone")}</p>
               )}
             </section>
 
             <section
-              aria-label="Target mingguan"
+              aria-label={t("weeklyAria")}
               className="card-lift rounded-2xl border bg-white p-6 text-center shadow-[var(--shadow-soft)] md:col-span-2 dark:bg-slate-900"
             >
-              <ProgressRing pct={live.weekly.pct} label="Progress target mingguan" />
-              <p className="mt-3 font-semibold">Target mingguan</p>
+              <ProgressRing pct={live.weekly.pct} label={t("weeklyRingAria")} />
+              <p className="mt-3 font-semibold">{t("weeklyTarget")}</p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
-                {weeklyLabel(live.weekly, live.weekly.unit)}
+                {live.weekly.unit === "minutes"
+                  ? fmt(t("weeklyMinuteSummary"), {
+                      done: formatActiveMinutes(live.weekly.completed, lang),
+                      goal: formatActiveMinutes(live.weekly.goal, lang),
+                    })
+                  : fmt(t("weeklyCompletionSummary"), {
+                      done: live.weekly.completed,
+                      goal: live.weekly.goal,
+                    })}
               </p>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
                 {live.weekly.achieved
-                  ? "Target minggu ini tercapai. Pertahankan!"
-                  : weeklyRemaining(live.weekly, live.weekly.unit)}
+                  ? t("weeklyAchieved")
+                  : live.weekly.unit === "minutes"
+                    ? fmt(t("weeklyRemainingMinutes"), {
+                        remaining: formatActiveMinutes(
+                          Math.max(0, live.weekly.goal - live.weekly.completed),
+                          lang,
+                        ),
+                      })
+                    : fmt(t("weeklyRemainingCompletions"), {
+                        remaining: Math.max(0, live.weekly.goal - live.weekly.completed),
+                      })}
               </p>
             </section>
           </div>
 
           <section
-            aria-label="Pengaturan target"
+            aria-label={t("goalAria")}
             className="card-lift mt-4 rounded-2xl border bg-white p-5 shadow-[var(--shadow-soft)] dark:bg-slate-900"
           >
             <WeeklyGoalForm
               enrollmentId={live.enrollmentId}
               unit={live.weekly.unit}
               goal={live.weekly.goal}
+              lang={lang}
             />
           </section>
 
           <div className="mt-8 grid gap-4 lg:grid-cols-2">
             <ChartPanel
-              title="Menit aktif minggu ini"
-              desc="Belajar nyata diukur dari detik aktif (heartbeat terbatas, di-clamp server) — bukan dari halaman yang sekadar terbuka."
-              updatedAt={new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
-              footnote="Batang = menit aktif per hari (Sen–Min); jumlahnya sejalan dengan ring target di atas. Data: study_sessions."
+              title={t("activeChartTitle")}
+              desc={t("activeChartDesc")}
+              updatedAt={new Date().toLocaleString(loc, { timeZone: "Asia/Jakarta" })}
+              footnote={t("activeChartFootnote")}
               empty={
                 live.weekBars.length === 0 || live.weekBars.every((b) => b.minutes === 0)
-                  ? "Belum ada menit aktif tercatat minggu ini. Buka lesson dari rekomendasi di atas dan mulai belajar — grafik terisi otomatis."
+                  ? t("activeChartEmpty")
                   : undefined
               }
+              lang={lang}
             >
               {live.weekBars.length > 0 && (
                 <ColumnChart
                   bars={live.weekBars.map((b) => ({ label: b.label, value: b.minutes }))}
-                  ariaLabel="Diagram batang menit aktif belajar per hari dalam minggu ini"
+                  ariaLabel={t("activeChartAria")}
                   suffix=" m"
                   tone="blue"
+                  lang={lang}
                 />
               )}
             </ChartPanel>
 
             <ChartPanel
-              title="Skor kuis terakhir"
-              desc="Skor final (0–100) yang dihitung server untuk tiap percobaan kuis yang sudah dinilai — hingga 6 percobaan terakhir."
-              updatedAt={new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" })}
-              footnote="Kunci jawaban dan penilaian tidak pernah dihitung di browser; grafik membaca attempts.final_score."
-              empty={
-                live.quizBars.length === 0
-                  ? "Belum ada kuis yang dinilai. Kerjakan kuis di jalur level untuk melihat tren skormu di sini."
-                  : undefined
-              }
+              title={t("quizChartTitle")}
+              desc={t("quizChartDesc")}
+              updatedAt={new Date().toLocaleString(loc, { timeZone: "Asia/Jakarta" })}
+              footnote={t("quizChartFootnote")}
+              empty={live.quizBars.length === 0 ? t("quizChartEmpty") : undefined}
+              lang={lang}
             >
               {live.quizBars.length > 0 && (
                 <ColumnChart
                   bars={live.quizBars}
-                  ariaLabel="Diagram batang skor kuis final per percobaan terakhir"
+                  ariaLabel={t("quizChartAria")}
                   formatValue={(v) => String(Math.round(v))}
                   suffix="%"
                   tone="emerald"
                   scaleMax={100}
+                  lang={lang}
                 />
               )}
             </ChartPanel>
           </div>
 
-          <SectionHeader title="Jalur level" hint={`${levels.length} level dalam kursus ini`} />
+          <SectionHeader title={t("pathTitle")} hint={fmt(t("pathHint"), { n: levels.length })} />
           <ol className="mt-4 space-y-0">
             {levels.map((l, i) => {
               const label =
                 l.state === "locked"
-                  ? "Terkunci — selesaikan prerequisite"
+                  ? t("stateLocked")
                   : l.state === "completed"
-                    ? `Mastery ${Math.round(l.mastery * 100)}% — selesai`
+                    ? fmt(t("stateCompleted"), { pct: Math.round(l.mastery * 100) })
                     : l.state === "in_progress"
-                      ? `Mastery ${Math.round(l.mastery * 100)}% — sedang dikerjakan`
-                      : "Tersedia — mulai dari sini";
+                      ? fmt(t("stateInProgress"), { pct: Math.round(l.mastery * 100) })
+                      : t("stateAvailable");
               const last = i === levels.length - 1;
               return (
                 <li key={l.id} className="relative flex gap-4 pb-6 last:pb-0">
@@ -398,18 +418,22 @@ export default async function LearnPage({
                   <div className="card-lift flex-1 rounded-2xl border bg-white p-4 shadow-[var(--shadow-soft)] dark:bg-slate-900">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-bold">{l.title}</p>
-                      <StateBadge state={l.state} label={`Status ${l.title}`} />
+                      <StateBadge
+                        state={l.state}
+                        label={fmt(t("statusAria"), { title: l.title })}
+                        lang={lang}
+                      />
                     </div>
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{label}</p>
                     <div className="mt-3">
-                      <MeterBar pct={l.mastery * 100} label={`Mastery ${l.title}`} />
+                      <MeterBar pct={l.mastery * 100} label={fmt(t("masteryAria"), { title: l.title })} />
                     </div>
                     {l.state !== "locked" && (
                       <Link
                         href={`/learn/${l.id}?enrollment=${live.enrollmentId}`}
                         className="mt-3 inline-block rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-1.5 text-sm font-semibold text-white shadow-[var(--glow-btn)] transition hover:from-blue-700 hover:to-indigo-700"
                       >
-                        Buka level
+                        {t("openLevel")}
                       </Link>
                     )}
                   </div>
@@ -420,17 +444,17 @@ export default async function LearnPage({
 
           <div className="mt-8 grid grid-cols-3 gap-3">
             <StatCard
-              label="Level selesai"
+              label={t("statLevelsDone")}
               value={String(levels.filter((l) => l.state === "completed").length)}
               tone="emerald"
             />
             <StatCard
-              label="Dikerjakan"
+              label={t("statInProgress")}
               value={String(levels.filter((l) => l.state === "in_progress").length)}
               tone="amber"
             />
             <StatCard
-              label="Terkunci"
+              label={t("statLocked")}
               value={String(levels.filter((l) => l.state === "locked").length)}
               tone="slate"
             />
@@ -439,7 +463,7 @@ export default async function LearnPage({
       )}
       <p className="mt-6 text-sm text-slate-500">
         <Link href="/catalog" className="underline">
-          Lihat katalog coursemu
+          {t("catalogLink")}
         </Link>
       </p>
     </main>

@@ -1,18 +1,23 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { mkT, type Lang } from "@/lib/i18n";
+import { ANALYTICS } from "@/lib/ui-text/analytics";
 
 export function AnalyticsFilters({
   cohorts,
   assessments,
   selectedCohort,
   selectedAssessment,
+  lang = "id",
 }: {
   cohorts: { id: string; name: string }[];
   assessments: { id: string; title: string }[];
   selectedCohort: string;
   selectedAssessment: string;
+  lang?: Lang;
 }) {
+  const t = mkT(ANALYTICS, lang);
   const router = useRouter();
 
   function update(key: "cohortId" | "assessmentId", value: string) {
@@ -28,7 +33,7 @@ export function AnalyticsFilters({
     >
       <div>
         <label htmlFor="analytics-cohort" className="text-sm font-semibold">
-          Cohort
+          {t("filterCohort")}
         </label>
         <select
           id="analytics-cohort"
@@ -45,7 +50,7 @@ export function AnalyticsFilters({
       </div>
       <div>
         <label htmlFor="analytics-assessment" className="text-sm font-semibold">
-          Assessment
+          {t("filterAssessment")}
         </label>
         <select
           id="analytics-assessment"
@@ -53,7 +58,7 @@ export function AnalyticsFilters({
           onChange={(e) => update("assessmentId", e.target.value)}
           className="mt-1 rounded-lg border px-3 py-2 text-sm"
         >
-          <option value="all">Semua assessment</option>
+          <option value="all">{t("allAssessments")}</option>
           {assessments.map((a) => (
             <option key={a.id} value={a.id}>
               {a.title}

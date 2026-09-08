@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { acknowledgeAlert, resolveAlert, snoozeAlert } from "@/features/actions";
+import { fmt, mkT, type Lang } from "@/lib/i18n";
+import { DASH } from "@/lib/ui-text/dash";
 
 export interface AlertItem {
   id: string;
@@ -13,7 +15,16 @@ export interface AlertItem {
   studentName: string;
 }
 
-export function AlertControls({ alerts }: { cohortId: string; alerts: AlertItem[] }) {
+export function AlertControls({
+  cohortId: _cohortId,
+  alerts,
+  lang = "id",
+}: {
+  cohortId: string;
+  alerts: AlertItem[];
+  lang?: Lang;
+}) {
+  const t = mkT(DASH, lang);
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<Record<string, string>>({});
@@ -22,7 +33,7 @@ export function AlertControls({ alerts }: { cohortId: string; alerts: AlertItem[
   if (alerts.length === 0) {
     return (
       <p className="mt-3 rounded-xl border p-4" role="status">
-        Tidak ada sinyal. 🎉
+        {t("noSignals")}
       </p>
     );
   }
@@ -58,18 +69,18 @@ export function AlertControls({ alerts }: { cohortId: string; alerts: AlertItem[
                   onClick={() => run(s.id, () => acknowledgeAlert({ alertId: s.id }), false)}
                   className="rounded border px-3 py-1 text-sm"
                 >
-                  Acknowledge
+                  {t("acknowledge")}
                 </button>
                 <button
                   disabled={busy !== null}
                   onClick={() => run(s.id, () => snoozeAlert({ alertId: s.id }), false)}
                   className="rounded border px-3 py-1 text-sm"
                 >
-                  Snooze 3 hari
+                  {t("snooze3d")}
                 </button>
                 <input
-                  aria-label={`Catatan intervensi ${s.studentName}`}
-                  placeholder="Catatan intervensi…"
+                  aria-label={fmt(t("interventionNoteAria"), { name: s.studentName })}
+                  placeholder={t("interventionNotePlaceholder")}
                   value={note[s.id] ?? ""}
                   onChange={(e) => setNote((n) => ({ ...n, [s.id]: e.target.value }))}
                   className="rounded border px-2 py-1 text-sm"
@@ -81,7 +92,7 @@ export function AlertControls({ alerts }: { cohortId: string; alerts: AlertItem[
                   }
                   className="rounded border px-3 py-1 text-sm"
                 >
-                  Resolve
+                  {t("resolve")}
                 </button>
               </div>
             )}
@@ -92,7 +103,7 @@ export function AlertControls({ alerts }: { cohortId: string; alerts: AlertItem[
                   onClick={() => run(s.id, async () => ({ ok: true }), true)}
                   className="rounded border px-3 py-1 text-sm"
                 >
-                  Dismiss sesi ini
+                  {t("dismissSession")}
                 </button>
               </div>
             )}

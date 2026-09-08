@@ -4,6 +4,8 @@ import { getOrgAdminContext } from "@/lib/org-admin";
 import { summarizeCohort, type StudentRow } from "@/lib/analytics";
 import { detectRisk } from "@/lib/progress";
 import { MeterBar, SectionHeader, StatCard } from "@/components/dashboard";
+import { fmt, getLang, mkT, type Lang } from "@/lib/i18n";
+import { DASH } from "@/lib/ui-text/dash";
 import { AlertControls } from "./alert-controls";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +19,7 @@ interface Alert {
   studentName: string;
 }
 
-async function getDashboard(userId: string, cohortId: string | null) {
+async function getDashboard(userId: string, cohortId: string | null, lang: Lang = "id") {
   const supabase = await createClient();
   const { data: cohorts } = await supabase.from("cohorts").select("id,name").eq("teacher_id", userId);
   const list = (cohorts as { id: string; name: string }[] | null) ?? [];
@@ -106,16 +108,19 @@ async function getDashboard(userId: string, cohortId: string | null) {
     const inactiveDays = r.lastActivityAt
       ? Math.round((Date.now() - Date.parse(r.lastActivityAt)) / 86400000)
       : 999;
-    for (const s of detectRisk({
-      inactiveDays,
-      attemptsLast7d: 0,
-      scoreDelta: 0,
-      avgSecondsPerItem: 60,
-      accuracy: 1,
-      prereqMastery: 1,
-      progressPct: r.progressPct,
-      expectedPct: 70,
-    })) {
+    for (const s of detectRisk(
+      {
+        inactiveDays,
+        attemptsLast7d: 0,
+        scoreDelta: 0,
+        avgSecondsPerItem: 60,
+        accuracy: 1,
+        prereqMastery: 1,
+        progressPct: r.progressPct,
+        expectedPct: 70,
+      },
+      lang,
+    )) {
       autoSignals.push({
         id: `auto-${r.studentId}-${s.code}`,
         student_id: r.studentId,
@@ -139,16 +144,18 @@ async function getDashboard(userId: string, cohortId: string | null) {
 
 export default async function TeacherPage({ searchParams }: { searchParams: Promise<{ cohort?: string }> }) {
   const { cohort } = await searchParams;
+  const lang = await getLang();
+  const t = mkT(DASH, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub ?? "";
   let data: Awaited<ReturnType<typeof getDashboard>>;
   try {
-    data = await getDashboard(userId, cohort ?? null);
+    data = await getDashboard(userId, cohort ?? null, lang);
   } catch {
     return (
       <main id="main" className="mx-auto max-w-5xl px-4 py-10">
-        <p role="alert">Dashboard tidak dapat dimuat.</p>
+        <p role="alert">{t("loadError")}</p>
       </main>
     );
   }
@@ -159,9 +166,9 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
   if (!data.active) {
     return (
       <main id="main" className="mx-auto max-w-5xl px-4 py-10">
-        <h1 className="text-3xl font-bold">Dashboard kelas</h1>
+        <h1 className="text-3xl font-bold">{t("emptyTitle")}</h1>
         <p className="mt-4 rounded-xl border p-5" role="status">
-          Belum ada cohort yang Anda ampu.
+          {t("emptyNoCohort")}
         </p>
       </main>
     );
@@ -175,7 +182,7 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
           <p className="text-sm font-semibold tracking-wide text-blue-700 uppercase dark:text-blue-300">
             {data.active.name}
           </p>
-          <h1 className="mt-1 text-3xl font-extrabold tracking-tight">Dasbor Kelas</h1>
+          <h1 className="mt-1 text-3xl font-extrabold tracking-tight">{t("title")}</h1>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
@@ -197,40 +204,48 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
           href={`/api/teacher/export?cohortId=${data.active.id}`}
           className="rounded-full border border-dashed px-4 py-1.5 font-medium underline"
         >
-          Export CSV
+          {t("exportCsv")}
         </a>
       </div>
 
-      <section aria-label="Ringkasan" className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5">
-        <StatCard label="Terdaftar" value={String(summary.enrolled)} tone="blue" hint="Murid di cohort" />
-        <StatCard label="Aktif 7 hari" value={String(summary.active7d)} tone="emerald" hint="Ada aktivitas" />
+      <section aria-label={t("summaryAria")} className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard
-          label="Rata-rata progress"
+          label={t("enrolled")}
+          value={String(summary.enrolled)}
+          tone="blue"
+          hint={t("enrolledHint")}
+        />
+        <StatCard
+          label={t("active7d")}
+          value={String(summary.active7d)}
+          tone="emerald"
+          hint={t("active7dHint")}
+        />
+        <StatCard
+          label={t("avgProgress")}
           value={`${Math.round(summary.avgProgress)}%`}
           tone="blue"
-          hint="Penyelesaian lesson"
+          hint={t("avgProgressHint")}
         />
         <StatCard
-          label="Rata-rata mastery"
+          label={t("avgMastery")}
           value={`${Math.round(summary.avgMastery * 100)}%`}
           tone="emerald"
-          hint="Penguasaan kompetensi"
+          hint={t("avgMasteryHint")}
         />
         <StatCard
-          label="Perlu perhatian"
+          label={t("needsAttention")}
           value={String(summary.needsAttention)}
           tone={summary.needsAttention > 0 ? "amber" : "slate"}
-          hint="Di bawah 50% progress"
+          hint={t("needsAttentionHint")}
         />
       </section>
-      <p className="mt-2 text-xs text-slate-500">
-        Definisi metrik v2026-09-06/v1 · n={summary.enrolled} · diperbarui saat halaman dimuat
-      </p>
+      <p className="mt-2 text-xs text-slate-500">{fmt(t("metricsFootnote"), { n: summary.enrolled })}</p>
 
-      <SectionHeader title="Matriks cohort" hint="Baris murid · status selalu berupa teks" />
+      <SectionHeader title={t("matrixTitle")} hint={t("matrixHint")} />
       {data.rows.length === 0 ? (
         <p className="mt-3 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900" role="status">
-          Belum ada murid di cohort ini.
+          {t("matrixEmpty")}
         </p>
       ) : (
         <>
@@ -252,34 +267,37 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
                     </Link>
                   </p>
                   <span
-                    aria-label={`Status ${r.displayName}`}
+                    aria-label={fmt(t("statusAria"), { name: r.displayName })}
                     className={`rounded-full px-3 py-1 text-sm font-semibold ${
                       r.progressPct < 50
                         ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                         : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
                     }`}
                   >
-                    {r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}
+                    {r.progressPct < 50 ? t("statusWatch") : t("statusOnTrack")}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 p-4 text-center">
                   <div>
                     <p className="text-xl font-extrabold">{r.progressPct}%</p>
-                    <p className="text-xs text-slate-500">Progress</p>
+                    <p className="text-xs text-slate-500">{t("progress")}</p>
                     <div className="mt-1">
-                      <MeterBar pct={r.progressPct} label={`Progress ${r.displayName}`} />
+                      <MeterBar pct={r.progressPct} label={fmt(t("progressAria"), { name: r.displayName })} />
                     </div>
                   </div>
                   <div>
                     <p className="text-xl font-extrabold">{Math.round(r.mastery * 100)}%</p>
-                    <p className="text-xs text-slate-500">Mastery</p>
+                    <p className="text-xs text-slate-500">{t("mastery")}</p>
                     <div className="mt-1">
-                      <MeterBar pct={r.mastery * 100} label={`Mastery ${r.displayName}`} />
+                      <MeterBar
+                        pct={r.mastery * 100}
+                        label={fmt(t("masteryAria"), { name: r.displayName })}
+                      />
                     </div>
                   </div>
                   <div>
                     <p className="text-xl font-extrabold">{r.submittedCount}</p>
-                    <p className="text-xs text-slate-500">Submit</p>
+                    <p className="text-xs text-slate-500">{t("submit")}</p>
                   </div>
                 </div>
               </li>
@@ -289,12 +307,12 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="border-b">
-                  <th className="p-2">Murid</th>
-                  <th className="p-2">Progress</th>
-                  <th className="p-2">Mastery</th>
-                  <th className="p-2">Submit</th>
-                  <th className="p-2">Status</th>
-                  <th className="p-2">Detail</th>
+                  <th className="p-2">{t("colStudent")}</th>
+                  <th className="p-2">{t("progress")}</th>
+                  <th className="p-2">{t("mastery")}</th>
+                  <th className="p-2">{t("submit")}</th>
+                  <th className="p-2">{t("colStatus")}</th>
+                  <th className="p-2">{t("colDetail")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -304,13 +322,13 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
                     <td className="p-2">{r.progressPct}%</td>
                     <td className="p-2">{Math.round(r.mastery * 100)}%</td>
                     <td className="p-2">{r.submittedCount}</td>
-                    <td className="p-2">{r.progressPct < 50 ? "⚠ Perlu perhatian" : "✓ On-track"}</td>
+                    <td className="p-2">{r.progressPct < 50 ? t("statusWatch") : t("statusOnTrack")}</td>
                     <td className="p-2">
                       <Link
                         href={`/teacher/students/${r.studentId}?cohort=${data.active?.id}`}
                         className="text-blue-700 underline"
                       >
-                        Detail
+                        {t("detail")}
                       </Link>
                     </td>
                   </tr>
@@ -321,46 +339,22 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         </>
       )}
 
-      <SectionHeader title="Sinyal risiko" hint="Aturan transparan — bukan ranking" />
+      <SectionHeader title={t("riskTitle")} hint={t("riskHint")} />
       <div className="mt-4">
-        <AlertControls cohortId={data.active.id} alerts={data.alerts} />
+        <AlertControls cohortId={data.active.id} alerts={data.alerts} lang={lang} />
       </div>
 
-      <SectionHeader title="Kelola kelas" hint="Alat kerja guru" />
-      <nav aria-label="Alat guru" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <SectionHeader title={t("toolsTitle")} hint={t("toolsHint")} />
+      <nav aria-label={t("toolsAria")} className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {[
-          {
-            href: "/teacher/grading",
-            title: "Antrian penilaian",
-            desc: "Nilai jawaban esai & tugas manual",
-          },
-          {
-            href: "/teacher/questions",
-            title: "Bank soal",
-            desc: "Buat soal berversi + kunci jawaban",
-          },
-          {
-            href: "/teacher/cohorts",
-            title: "Cohort & enrollment",
-            desc: "Kelola kelas dan pendaftaran murid",
-          },
-          {
-            href: "/teacher/analytics",
-            title: "Analitik kelas",
-            desc: "Butir soal, miskonsepsi, hambatan",
-          },
-          {
-            href: "/teacher/certificates",
-            title: "Sertifikat & anchoring",
-            desc: "Terbitkan, reissue, dan anchor batch",
-          },
+          { href: "/teacher/grading", title: t("toolGrading"), desc: t("toolGradingDesc") },
+          { href: "/teacher/questions", title: t("toolQuestions"), desc: t("toolQuestionsDesc") },
+          { href: "/teacher/cohorts", title: t("toolCohorts"), desc: t("toolCohortsDesc") },
+          { href: "/teacher/analytics", title: t("toolAnalytics"), desc: t("toolAnalyticsDesc") },
+          { href: "/teacher/certificates", title: t("toolCertificates"), desc: t("toolCertificatesDesc") },
           // Tautan admin hanya bila adminCtx (guru pemilik course) — bukan semua guru.
           ...((adminCtx && [
-            {
-              href: "/teacher/admin/map",
-              title: "Admin: mapping",
-              desc: "Petakan murid & guru ke kelas/subjek",
-            },
+            { href: "/teacher/admin/map", title: t("toolAdminMap"), desc: t("toolAdminMapDesc") },
           ]) ||
             []),
         ].map((a) => (

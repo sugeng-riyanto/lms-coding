@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { computeUnlock } from "@/lib/progress";
+import { getLang, mkT, type Lang } from "@/lib/i18n";
+import { LEARN } from "@/lib/ui-text/learn";
 
 export const dynamic = "force-dynamic";
 
@@ -36,32 +38,33 @@ interface MapModule {
 
 const QUIZ_LIKE = new Set(["quiz", "assessment"]);
 
-function activityBadge(type: string): string {
+function activityBadge(type: string, lang: Lang): string {
+  const t = mkT(LEARN, lang);
   switch (type) {
     case "quiz":
-      return "Kuis/Ujian";
+      return t("badgeQuiz");
     case "article":
-      return "Materi";
+      return t("badgeArticle");
     case "video_link":
-      return "Video";
+      return t("badgeVideoLink");
     case "resource":
-      return "Sumber belajar";
+      return t("badgeResource");
     case "reflection":
-      return "Refleksi";
+      return t("badgeReflection");
     case "assignment_upload":
-      return "Tugas";
+      return t("badgeAssignmentUpload");
     case "roblox_challenge":
-      return "Tantangan Roblox";
+      return t("badgeRobloxChallenge");
     case "code_board":
-      return "Papan kode";
+      return t("badgeCodeBoard");
     case "embed_youtube":
-      return "Video YouTube";
+      return t("badgeEmbedYoutube");
     case "embed_pdf":
-      return "PDF";
+      return t("badgeEmbedPdf");
     case "embed_audio":
-      return "Audio";
+      return t("badgeEmbedAudio");
     case "embed_file":
-      return "Berkas";
+      return t("badgeEmbedFile");
     default:
       return type;
   }
@@ -192,6 +195,8 @@ export default async function LevelMapPage({
 }) {
   const { id: levelId } = await params;
   const { enrollment } = await searchParams;
+  const lang = await getLang();
+  const t = mkT(LEARN, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
@@ -209,7 +214,7 @@ export default async function LevelMapPage({
     return (
       <main id="main" className="mx-auto max-w-3xl px-4 py-10">
         <p role="alert" className="rounded-xl border p-5">
-          Belum ada enrollment aktif. Hubungi guru Anda untuk didaftarkan ke kelas.
+          {t("noEnrollmentAlert")}
         </p>
       </main>
     );
@@ -228,7 +233,7 @@ export default async function LevelMapPage({
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
       <p className="text-sm font-semibold tracking-wide text-blue-700 uppercase dark:text-blue-300">
-        Peta level
+        {t("mapEyebrow")}
       </p>
       <h1 className="mt-1 text-3xl font-extrabold tracking-tight">{level.title}</h1>
       {level.objective && <p className="mt-2 text-slate-600 dark:text-slate-300">{level.objective}</p>}
@@ -237,17 +242,17 @@ export default async function LevelMapPage({
           role="status"
           className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
         >
-          ✓ Semua aktivitas level ini selesai — lanjut ke level berikutnya dari dashboard.
+          {t("allDoneBanner")}
         </p>
       )}
 
       {modules === null ? (
         <p role="alert" className="mt-6 rounded-xl border p-5">
-          Peta level tidak dapat dimuat. Coba lagi nanti.
+          {t("mapLoadError")}
         </p>
       ) : modules.length === 0 ? (
         <p role="status" className="mt-6 rounded-xl border p-5">
-          Level ini belum memiliki modul/aktivitas.
+          {t("mapEmpty")}
         </p>
       ) : (
         <ol className="mt-6 space-y-6">
@@ -265,19 +270,19 @@ export default async function LevelMapPage({
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-semibold">
                         {mi + 1}.{li + 1} {le.title}
-                        {!le.required && <span className="ml-2 text-xs text-slate-400">(opsional)</span>}
+                        {!le.required && <span className="ml-2 text-xs text-slate-400">{t("optional")}</span>}
                       </p>
                       {le.completed ? (
                         <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200">
-                          ✓ Selesai
+                          {t("doneBadge")}
                         </span>
                       ) : le.locked ? (
                         <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-500">
-                          🔒 Terkunci
+                          {t("lockedBadge")}
                         </span>
                       ) : (
                         <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700 dark:bg-blue-900 dark:text-blue-200">
-                          Tersedia
+                          {t("availableBadge")}
                         </span>
                       )}
                     </div>
@@ -306,7 +311,7 @@ export default async function LevelMapPage({
                                 <span>{a.title}</span>
                               </span>
                               <span className="rounded-full bg-slate-200 px-2.5 py-0.5 text-[11px] font-bold text-slate-600 dark:bg-slate-700 dark:text-slate-200">
-                                {activityBadge(a.type)}
+                                {activityBadge(a.type, lang)}
                               </span>
                             </Link>
                           )}
@@ -322,7 +327,7 @@ export default async function LevelMapPage({
       )}
       <p className="mt-6 text-sm text-slate-500">
         <Link href="/learn" className="underline">
-          Kembali ke dashboard
+          {t("backToDashboard")}
         </Link>
       </p>
     </main>

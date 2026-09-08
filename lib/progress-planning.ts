@@ -174,6 +174,12 @@ export function weeklyActiveMinutes(
 /** Label hari Sen–Minggu (urutan minggu ISO) untuk sumbu grafik. */
 export const WEEKDAY_SHORT_LABELS = ["Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min"] as const;
 
+/** Label sumbu grafik per bahasa: id (default) atau en. */
+export const WEEKDAY_LABELS_BY_LANG: Record<"id" | "en", readonly string[]> = {
+  id: WEEKDAY_SHORT_LABELS,
+  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+};
+
 export interface ActiveDayBar {
   /** Label pendek hari (Sen..Min). */
   label: string;
@@ -187,12 +193,13 @@ export interface ActiveDayBar {
  * Menit aktif PER HARI (Sen–Min) dalam satu minggu ISO dari baris
  * study_sessions — sumber sama dengan `weeklyActiveMinutes`, jadi grafik
  * murid selalu bisa direkonsiliasi dengan ring target mingguan (selisih ≤ 1 m
- * karena pembulatan per hari).
+ * karena pembulatan per hari). `lang` memilih label sumbu (id/en).
  */
 export function weekActiveMinutesByDay(
   sessions: StudySessionRow[],
   weekStart: string,
   tz: string = DISPLAY_TIMEZONE,
+  lang: "id" | "en" = "id",
 ): ActiveDayBar[] {
   const secByDay = [0, 0, 0, 0, 0, 0, 0];
   for (const s of sessions) {
@@ -203,16 +210,21 @@ export function weekActiveMinutesByDay(
     secByDay[idx] = (secByDay[idx] ?? 0) + clampSessionActiveSeconds(s.active_seconds);
   }
   const base = Date.parse(`${weekStart}T00:00:00Z`);
+  const labels = WEEKDAY_LABELS_BY_LANG[lang];
   return secByDay.map((sec, idx) => {
-    const label = WEEKDAY_SHORT_LABELS[idx] ?? "";
+    const label = labels[idx] ?? "";
     const date = toDateStr(base + idx * DAY_MS);
     return { label, date, minutes: Math.floor((sec ?? 0) / 60) };
   });
 }
 
-/** Format menit ramah-murid: "5 m", "125 m" → "2 j 5 m". */
-export function formatActiveMinutes(mins: number): string {
+/** Format menit ramah-murid: "5 m", "125 m" → "2 j 5 m" (id) / "2h 5m" (en). */
+export function formatActiveMinutes(mins: number, lang: "id" | "en" = "id"): string {
   const m = Math.max(0, Math.floor(mins));
+  if (lang === "en") {
+    if (m < 60) return `${m}m`;
+    return `${Math.floor(m / 60)}h${m % 60 > 0 ? ` ${m % 60}m` : ""}`;
+  }
   if (m < 60) return `${m} m`;
   return `${Math.floor(m / 60)} j ${m % 60} m`;
 }

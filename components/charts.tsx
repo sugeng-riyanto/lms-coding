@@ -1,4 +1,12 @@
 import type { ReactNode } from "react";
+import { fmt, mkT, type Lang, type TextDict } from "@/lib/i18n";
+
+/** Dictionary internal komponen grafik (caption, tooltip, label pembaruan). */
+export const CHART_TEXT = {
+  updated: { id: "Diperbarui: {at}.", en: "Updated: {at}." },
+  noData: { id: "{label}: belum ada data", en: "{label}: no data yet" },
+  valuePerCategory: { id: "Nilai per kategori: {values}", en: "Values per category: {values}" },
+} as const satisfies TextDict;
 
 /**
  * Kit grafik ringan — SERVER-SAFE (tanpa JS klien, tanpa dependensi baru).
@@ -47,6 +55,7 @@ export function ColumnChart({
   tone = "blue",
   scaleMax,
   trackHeight = 132,
+  lang = "id",
 }: {
   bars: ChartBar[];
   ariaLabel: string;
@@ -55,7 +64,9 @@ export function ColumnChart({
   tone?: ChartTone;
   scaleMax?: number;
   trackHeight?: number;
+  lang?: Lang;
 }) {
+  const t = mkT(CHART_TEXT, lang);
   const safe = bars.map((b) => ({
     label: typeof b.label === "string" ? b.label : "",
     value: asNumber(b.value),
@@ -90,7 +101,7 @@ export function ColumnChart({
                     />
                   ) : (
                     <div
-                      title={`${b.label}: belum ada data`}
+                      title={fmt(t("noData"), { label: b.label })}
                       className="mx-auto h-1 w-full rounded-full bg-slate-200 dark:bg-slate-700"
                     />
                   )}
@@ -112,8 +123,9 @@ export function ColumnChart({
         </div>
       </div>
       <figcaption className="sr-only">
-        {ariaLabel}. Nilai per kategori:{" "}
-        {safe.map((b) => `${b.label} ${formatValue(b.value)}${suffix}`).join("; ")}
+        {fmt(t("valuePerCategory"), {
+          values: safe.map((b) => `${b.label} ${formatValue(b.value)}${suffix}`).join("; "),
+        })}
       </figcaption>
     </figure>
   );
@@ -127,6 +139,7 @@ export function ChartPanel({
   footnote,
   empty,
   children,
+  lang = "id",
 }: {
   title: string;
   desc?: string;
@@ -134,7 +147,9 @@ export function ChartPanel({
   footnote?: string;
   empty?: string;
   children?: ReactNode;
+  lang?: Lang;
 }) {
+  const t = mkT(CHART_TEXT, lang);
   return (
     <section
       aria-label={title}
@@ -156,7 +171,7 @@ export function ChartPanel({
       </div>
       {(updatedAt || footnote) && (
         <p className="mt-4 border-t border-slate-100 pt-2 text-[11px] leading-relaxed text-slate-400 dark:border-slate-800 dark:text-slate-500">
-          {updatedAt && <>Diperbarui: {updatedAt}.</>}
+          {updatedAt && <>{fmt(t("updated"), { at: updatedAt })}</>}
           {updatedAt && footnote && " "}
           {footnote}
         </p>

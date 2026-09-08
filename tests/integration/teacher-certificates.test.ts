@@ -8,8 +8,10 @@ const actions = readFileSync("features/actions.ts", "utf8");
 const chip = readFileSync("components/anchor-status.tsx", "utf8");
 const studentPage = readFileSync("app/(teacher)/teacher/students/[studentId]/page.tsx", "utf8");
 const dashboard = readFileSync("app/(teacher)/teacher/page.tsx", "utf8");
+const certText = readFileSync("lib/ui-text/cert.ts", "utf8");
+const dashText = readFileSync("lib/ui-text/dash.ts", "utf8");
 
-describe("halaman /teacher/certificates — anchoring UI guru", () => {
+describe("halaman /teacher/certificates — anchoring UI guru (bilingual dictionary)", () => {
   it("route teacher force-dynamic + daftar sertifikat dengan status anchor per baris", () => {
     expect(page).toMatch(/export const dynamic = "force-dynamic"/);
     expect(page).toMatch(/from\("certificates"\)/);
@@ -28,24 +30,29 @@ describe("halaman /teacher/certificates — anchoring UI guru", () => {
   it("gerbang feature flag: AnchorBatchButton hanya saat isChainEnabled; catatan nonaktif jelas", () => {
     expect(page).toMatch(/isChainEnabled\(\)/);
     expect(page).toMatch(/chainEnabled \? \(/);
-    expect(page).toMatch(/BLOCKCHAIN_ANCHOR_ENABLED=false/);
-    expect(page).toMatch(/ADR-018/);
+    // Catatan nonaktif ada di dictionary per-halaman (kedua bahasa).
+    expect(certText).toMatch(/BLOCKCHAIN_ANCHOR_ENABLED=false/);
+    expect(certText).toMatch(/ADR-018/);
+    expect(certText).toMatch(/en: "Anchoring is disabled/);
   });
 
-  it("button client: anchorCertificateBatch + label 'anchor' TIDAK diklaim verified sebelum final", () => {
+  it("button client: anchorCertificateBatch + copy bilingual via dictionary; TIDAK diklaim verified sebelum final", () => {
     expect(button).toMatch(/"use client"/);
     expect(button).toMatch(/anchorCertificateBatch\(\)/);
-    expect(button).toMatch(/Anchor batch sertifikat/);
+    expect(button).toMatch(/mkT\(CERT, lang\)/);
+    expect(certText).toMatch(/batchIdle: \{ id: "Anchor batch sertifikat", en: "Anchor certificate batch"/);
+    // Kode error tetap token di client (dipetakan ke copy via dictionary).
     expect(button).toMatch(/BLOCKCHAIN_PROVIDER_PENDING/);
     expect(button).toMatch(/BLOCKCHAIN_DISABLED/);
     expect(button).not.toMatch(/blockchain verified/);
   });
 
-  it("chip: teks membedakan final/pending/failed/tidak di-anchor (bukan warna saja)", () => {
-    expect(chip).toMatch(/anchor final/);
-    expect(chip).toMatch(/anchor pending/);
-    expect(chip).toMatch(/anchor gagal/);
-    expect(chip).toMatch(/tidak di-anchor/);
+  it("chip: teks membedakan final/pending/failed/tidak di-anchor (bukan warna saja), dua bahasa", () => {
+    expect(chip).toMatch(/mkT\(CERT, lang\)/);
+    expect(certText).toMatch(/chipFinal: \{ id: "✓ anchor final", en: "✓ anchor final"/);
+    expect(certText).toMatch(/chipPending: \{ id: "anchor pending", en: "anchor pending"/);
+    expect(certText).toMatch(/chipFailed: \{ id: "anchor gagal", en: "anchor failed"/);
+    expect(certText).toMatch(/chipNone: \{ id: "tidak di-anchor", en: "not anchored"/);
   });
 
   it("halaman murid menampilkan chip anchor per sertifikat", () => {
@@ -54,16 +61,19 @@ describe("halaman /teacher/certificates — anchoring UI guru", () => {
     expect(studentPage).toMatch(/AnchorStatusChip[\s\S]*?chain_anchors\?\.status \?\? null/);
   });
 
-  it("dashboard guru menautkan ke /teacher/certificates", () => {
+  it("dashboard guru menautkan ke /teacher/certificates (copy via dictionary)", () => {
     expect(dashboard).toMatch(/["']\/teacher\/certificates["']/);
-    expect(dashboard).toMatch(/Sertifikat & anchoring/);
+    expect(dashText).toMatch(
+      /toolCertificates: \{ id: "Sertifikat & anchoring", en: "Certificates & anchoring"/,
+    );
   });
 
   it("halaman menampilkan tombol refresh status anchor di samping batch", () => {
     expect(page).toMatch(/AnchorRefreshButton/);
     expect(refreshButton).toMatch(/"use client"/);
     expect(refreshButton).toMatch(/refreshAnchorStatus\(\)/);
-    expect(refreshButton).toMatch(/Refresh status anchor/);
+    expect(refreshButton).toMatch(/mkT\(CERT, lang\)/);
+    expect(certText).toMatch(/refreshIdle: \{ id: "Refresh status anchor", en: "Refresh anchor status"/);
   });
 
   it("refreshAnchorStatus: gating membership→flag→Noop, hanya 'final' yang diterapkan", () => {

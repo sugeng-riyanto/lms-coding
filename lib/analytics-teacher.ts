@@ -112,17 +112,25 @@ export interface DigestAction {
  * Tiga prioritas tindakan guru minggu ini (bukan grafik): nilai manual,
  * peringatan belum ditindaklanjuti, murid tidak aktif. Setiap item membawa
  * alasan; kosong → item tunggal "tidak ada tindakan mendesak". Deterministik.
+ * `lang` memilih bahasa judul/alasan (default Indonesia, sesuai DEFAULT_LANG).
  */
-export function buildTeacherDigest(input: TeacherDigestInput): DigestAction[] {
+export function buildTeacherDigest(input: TeacherDigestInput, lang: "id" | "en" = "id"): DigestAction[] {
   const now = input.now ?? new Date();
   const actions: DigestAction[] = [];
+  const en = lang === "en";
 
   if (input.pendingGrading > 0) {
     actions.push({
       id: "digest-pending-grading",
-      title: `Nilai ${input.pendingGrading} jawaban manual`,
-      detail: `${input.pendingGrading} attempt menunggu penilaian di antrian grading.`,
-      reason: `Antrian penilaian menumpuk ${input.pendingGrading} item — murid menunggu umpan balik.`,
+      title: en
+        ? `Grade ${input.pendingGrading} manual ${input.pendingGrading === 1 ? "answer" : "answers"}`
+        : `Nilai ${input.pendingGrading} jawaban manual`,
+      detail: en
+        ? `${input.pendingGrading} ${input.pendingGrading === 1 ? "attempt is" : "attempts are"} waiting in the grading queue.`
+        : `${input.pendingGrading} attempt menunggu penilaian di antrian grading.`,
+      reason: en
+        ? `The grading queue has ${input.pendingGrading} ${input.pendingGrading === 1 ? "item" : "items"} backed up — students are waiting for feedback.`
+        : `Antrian penilaian menumpuk ${input.pendingGrading} item — murid menunggu umpan balik.`,
       priority: 1,
       href: "/teacher/grading",
     });
@@ -133,9 +141,13 @@ export function buildTeacherDigest(input: TeacherDigestInput): DigestAction[] {
     const oldest = [...unresolved].sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
     actions.push({
       id: "digest-alerts",
-      title: `Tindak lanjuti ${unresolved.length} peringatan murid`,
-      detail: oldest ? `Tertua: ${oldest.message}` : "",
-      reason: `${unresolved.length} peringatan belum selesai — sinyal risiko yang dapat ditindaklanjuti.`,
+      title: en
+        ? `Follow up on ${unresolved.length} student ${unresolved.length === 1 ? "alert" : "alerts"}`
+        : `Tindak lanjuti ${unresolved.length} peringatan murid`,
+      detail: oldest ? `${en ? "Oldest: " : "Tertua: "}${oldest.message}` : "",
+      reason: en
+        ? `${unresolved.length} ${unresolved.length === 1 ? "alert is" : "alerts are"} unresolved — actionable risk signals.`
+        : `${unresolved.length} peringatan belum selesai — sinyal risiko yang dapat ditindaklanjuti.`,
       priority: unresolved.length >= 5 ? 1 : 2,
       href: "/teacher",
     });
@@ -144,13 +156,17 @@ export function buildTeacherDigest(input: TeacherDigestInput): DigestAction[] {
   if (input.inactiveStudents.length > 0) {
     const names = input.inactiveStudents
       .slice(0, 3)
-      .map((s) => s.displayName || "murid")
+      .map((s) => s.displayName || (en ? "student" : "murid"))
       .join(", ");
     actions.push({
       id: "digest-inactive",
-      title: `Hubungi ${input.inactiveStudents.length} murid tidak aktif`,
+      title: en
+        ? `Reach out to ${input.inactiveStudents.length} inactive ${input.inactiveStudents.length === 1 ? "student" : "students"}`
+        : `Hubungi ${input.inactiveStudents.length} murid tidak aktif`,
       detail: names + (input.inactiveStudents.length > 3 ? ", …" : ""),
-      reason: `Tanpa aktivitas belajar ${">"} 7 hari — risiko tertinggal.`,
+      reason: en
+        ? "No learning activity for over 7 days — risk of falling behind."
+        : `Tanpa aktivitas belajar ${">"} 7 hari — risiko tertinggal.`,
       priority: 3,
       href: "/teacher/analytics",
     });
@@ -159,9 +175,11 @@ export function buildTeacherDigest(input: TeacherDigestInput): DigestAction[] {
   if (actions.length === 0) {
     actions.push({
       id: "digest-clear",
-      title: "Tidak ada tindakan mendesak",
-      detail: "Antrian nilai kosong, tidak ada peringatan terbuka, semua murid aktif.",
-      reason: "Dipantau pada " + now.toISOString(),
+      title: en ? "No urgent action needed" : "Tidak ada tindakan mendesak",
+      detail: en
+        ? "The grading queue is empty, no alerts are open, and all students are active."
+        : "Antrian nilai kosong, tidak ada peringatan terbuka, semua murid aktif.",
+      reason: (en ? "Monitored at " : "Dipantau pada ") + now.toISOString(),
       priority: 3,
       href: "/teacher",
     });
