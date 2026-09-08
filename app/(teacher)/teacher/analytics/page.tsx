@@ -15,6 +15,8 @@ import {
   type DigestAlert,
 } from "@/lib/analytics-teacher";
 import { ChartPanel, ColumnChart } from "@/components/charts";
+import { fmt, getLang, localeFor, mkT } from "@/lib/i18n";
+import { ANALYTICS } from "@/lib/ui-text/analytics";
 import { AnalyticsFilters } from "./analytics-filters";
 
 export const dynamic = "force-dynamic";
@@ -51,6 +53,8 @@ export default async function AnalyticsPage({
   searchParams: Promise<{ cohortId?: string; assessmentId?: string }>;
 }) {
   const params = await searchParams;
+  const lang = await getLang();
+  const t = mkT(ANALYTICS, lang);
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
@@ -68,18 +72,20 @@ export default async function AnalyticsPage({
   if (cohorts.length === 0 || !selectedCohort) {
     return (
       <main id="main" className="mx-auto max-w-5xl px-4 py-10">
-        <h1 className="text-2xl font-bold">Analitik kelas</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
         <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-5 dark:border-slate-700 dark:bg-slate-800">
-          Belum ada cohort yang Anda ampu. Buat cohort lalu daftarkan murid untuk melihat analitik.
+          {t("noCohort")}
         </p>
       </main>
     );
   }
 
   // ---- Data batch (tanpa N+1): enrollment → attempt → response → versi → soal ----
+  // Catatan: tidak ada FK enrollments→profiles (PGRST200 pada embed) — ambil
+  // display_name lewat query terpisah (pola sama seperti /teacher/certificates).
   const { data: enrRows } = await supabase
     .from("enrollments")
-    .select("id,student_id,course_id,enrolled_at,profiles(display_name)")
+    .select("id,student_id,course_id,enrolled_at")
     .eq("cohort_id", selectedCohort)
     .eq("status", "active");
   const enrollments =
@@ -89,11 +95,17 @@ export default async function AnalyticsPage({
           student_id: string;
           course_id: string;
           enrolled_at: string;
-          profiles: { display_name: string } | null;
         }[]
       | null) ?? [];
   const enrollmentIds = enrollments.map((e) => e.id);
-  const studentName = new Map(enrollments.map((e) => [e.student_id, e.profiles?.display_name ?? ""]));
+  const studentIds = [...new Set(enrollments.map((e) => e.student_id))];
+  const { data: profRows } =
+    studentIds.length > 0
+      ? await supabase.from("profiles").select("id,display_name").in("id", studentIds)
+      : { data: [] as { id: string; display_name: string }[] };
+  const studentName = new Map(
+    ((profRows as { id: string; display_name: string }[] | null) ?? []).map((p) => [p.id, p.display_name]),
+  );
 
   const { data: attemptRows } = await supabase
     .from("attempts")
@@ -268,9 +280,9 @@ export default async function AnalyticsPage({
   const lastActivityByEnr = new Map<string, number>();
   for (const c of completed) {
     if (!c.last_activity_at) continue;
-    const t = Date.parse(c.last_activity_at);
+    const tmpT = Date.parse(c.last_activity_at);
     const prev = lastActivityByEnr.get(c.enrollment_id) ?? 0;
-    if (t > prev) lastActivityByEnr.set(c.enrollment_id, t);
+    if (tmpT > prev) lastActivityByEnr.set(c.enrollment_id, tmpT);
   }
   const { data: allSnapRows } = await supabase
     .from("progress_snapshots")
@@ -280,9 +292,9 @@ export default async function AnalyticsPage({
   for (const s of (allSnapRows as { enrollment_id: string; last_activity_at: string | null }[] | null) ??
     []) {
     if (!s.last_activity_at) continue;
-    const t = Date.parse(s.last_activity_at);
+    const tmpT = Date.parse(s.last_activity_at);
     const prev = lastActivityByEnr.get(s.enrollment_id) ?? 0;
-    if (t > prev) lastActivityByEnr.set(s.enrollment_id, t);
+    if (tmpT > prev) lastActivityByEnr.set(s.enrollment_id, tmpT);
   }
   const now = currentEpochMs();
   const WEEK_MS = 7 * 86_400_000;
@@ -300,7 +312,10 @@ export default async function AnalyticsPage({
         : null,
     }));
 
-  const digest = buildTeacherDigest({ pendingGrading, openAlerts, inactiveStudents, now: new Date(now) });
+  const digest = buildTeacherDigest(
+    { pendingGrading, openAlerts, inactiveStudents, now: new Date(now) },
+    lang,
+  );
 
   // ---- Grafik DISTRIBUSI kelas: kemajuan per murid + skor asesmen ----
   // Lesson → module → level → course_version → course (semua dari hasil query
@@ -338,35 +353,36 @@ export default async function AnalyticsPage({
   const scoreDist = percentDistribution(scoreValues);
 
   const pct = (x: number) => `${Math.round(x * 100)}%`;
-  const lastUpdatedDisplay = new Date(lastUpdated).toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+  const loc = localeFor(lang);
+  const lastUpdatedDisplay = new Date(lastUpdated).toLocaleString(loc, { timeZone: "Asia/Jakarta" });
   const selectedAsmtLabel =
     selectedAssessment === "all"
-      ? "semua asesmen"
-      : (assessments.find((a) => a.id === selectedAssessment)?.activities?.title ?? "asesmen terpilih");
+      ? t("allScope")
+      : (assessments.find((a) => a.id === selectedAssessment)?.activities?.title ?? t("selectedScope"));
 
   return (
     <main id="main" className="mx-auto max-w-5xl px-4 py-10">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h1 className="text-2xl font-bold">Analitik kelas</h1>
+        <h1 className="text-2xl font-bold">{t("title")}</h1>
         <p className="text-sm text-slate-500">
-          Cohort: <strong>{cohorts.find((c) => c.id === selectedCohort)?.name}</strong>
+          {fmt(t("cohortLabel"), { name: cohorts.find((c) => c.id === selectedCohort)?.name ?? "" })}
         </p>
       </div>
 
       {/* Digest mingguan: tiga prioritas tindakan */}
-      <section aria-label="Prioritas tindakan minggu ini" className="mt-4">
-        <h2 className="text-lg font-semibold">Prioritas minggu ini</h2>
+      <section aria-label={t("digestAria")} className="mt-4">
+        <h2 className="text-lg font-semibold">{t("digestTitle")}</h2>
         <ul className="mt-2 grid gap-3 md:grid-cols-3">
           {digest.map((d) => (
             <li key={d.id} className="rounded-xl border p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                Prioritas {d.priority}
+                {fmt(t("priorityLabel"), { p: d.priority })}
               </p>
               <p className="mt-1 font-semibold">{d.title}</p>
               {d.detail && <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{d.detail}</p>}
               <p className="mt-2 text-xs text-slate-500">{d.reason}</p>
               <Link href={d.href} className="mt-2 inline-block text-sm text-blue-700 underline">
-                Buka
+                {t("open")}
               </Link>
             </li>
           ))}
@@ -381,48 +397,53 @@ export default async function AnalyticsPage({
         }))}
         selectedCohort={selectedCohort}
         selectedAssessment={selectedAssessment}
+        lang={lang}
       />
 
       {/* Distribusi kelas — grafik nyata (data dari attempts & progress_snapshots) */}
-      <section aria-label="Distribusi kelas" className="mt-6">
-        <h2 className="text-xl font-bold">Distribusi kelas</h2>
+      <section aria-label={t("distAria")} className="mt-6">
+        <h2 className="text-xl font-bold">{t("distTitle")}</h2>
         <div className="mt-3 grid gap-4 lg:grid-cols-2">
           <ChartPanel
-            title="Kemajuan murid"
-            desc="Sebaran persentase lesson selesai per murid terhadap total lesson di versi terbit kursusnya — bukan perkiraan, melainkan hasil hitung dari progress_snapshots."
+            title={t("progressTitle")}
+            desc={t("progressDesc")}
             updatedAt={lastUpdatedDisplay}
-            footnote={`Definisi ${CLASS_DISTRIBUTION_DEFINITIONS_VERSION}. n = ${progressDist.n} murid berenrollment aktif; rata-rata ${Math.round(progressDist.meanPct)}%.`}
-            empty={
-              progressDist.n === 0
-                ? "Belum ada murid dengan lesson terhitung. Distribusi muncul setelah murid mulai menyelesaikan lesson."
-                : undefined
-            }
+            footnote={fmt(t("progressFootnote"), {
+              def: CLASS_DISTRIBUTION_DEFINITIONS_VERSION,
+              n: progressDist.n,
+              avg: Math.round(progressDist.meanPct),
+            })}
+            empty={progressDist.n === 0 ? t("progressEmpty") : undefined}
+            lang={lang}
           >
             {progressDist.n > 0 && (
               <ColumnChart
                 bars={progressDist.buckets.map((b) => ({ label: b.label, value: b.count }))}
-                ariaLabel="Distribusi jumlah murid per rentang persentase kemajuan lesson"
+                ariaLabel={t("progressAria")}
                 tone="blue"
+                lang={lang}
               />
             )}
           </ChartPanel>
 
           <ChartPanel
-            title="Skor asesmen (final)"
-            desc={`Sebaran skor final 0–100 per attempt yang sudah dinilai, untuk ${selectedAsmtLabel}. Batang = jumlah attempt pada rentang skor.`}
+            title={t("scoreTitle")}
+            desc={fmt(t("scoreDesc"), { scope: selectedAsmtLabel })}
             updatedAt={lastUpdatedDisplay}
-            footnote={`Definisi ${CLASS_DISTRIBUTION_DEFINITIONS_VERSION}. n = ${scoreDist.n} attempt dinilai; rata-rata ${Math.round(scoreDist.meanPct)}%. Skor dihitung server, bukan browser.`}
-            empty={
-              scoreDist.n === 0
-                ? "Belum ada attempt ber-skor untuk cakupan ini. Filter asesmen di atas untuk mempersempit."
-                : undefined
-            }
+            footnote={fmt(t("scoreFootnote"), {
+              def: CLASS_DISTRIBUTION_DEFINITIONS_VERSION,
+              n: scoreDist.n,
+              avg: Math.round(scoreDist.meanPct),
+            })}
+            empty={scoreDist.n === 0 ? t("scoreEmpty") : undefined}
+            lang={lang}
           >
             {scoreDist.n > 0 && (
               <ColumnChart
                 bars={scoreDist.buckets.map((b) => ({ label: b.label, value: b.count }))}
-                ariaLabel="Distribusi jumlah attempt per rentang skor asesmen final"
+                ariaLabel={t("scoreAria")}
                 tone="amber"
+                lang={lang}
               />
             )}
           </ChartPanel>
@@ -430,23 +451,23 @@ export default async function AnalyticsPage({
       </section>
 
       {/* Item analysis */}
-      <section aria-label="Item analysis" className="mt-6">
-        <h2 className="text-lg font-semibold">Analisis butir soal</h2>
+      <section aria-label={t("itemAria")} className="mt-6">
+        <h2 className="text-lg font-semibold">{t("itemTitle")}</h2>
         {stats.length === 0 ? (
           <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Belum ada attempt soal pilihan di cohort ini untuk dianalisis.
+            {t("itemEmpty")}
           </p>
         ) : (
           <div className="mt-2 overflow-x-auto rounded-xl border">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-slate-50 dark:bg-slate-800">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Soal</th>
-                  <th className="px-3 py-2 font-semibold">Tipe</th>
+                  <th className="px-3 py-2 font-semibold">{t("colQuestion")}</th>
+                  <th className="px-3 py-2 font-semibold">{t("colType")}</th>
                   <th className="px-3 py-2 text-right font-semibold">n</th>
-                  <th className="px-3 py-2 text-right font-semibold">Kesulitan (p)</th>
-                  <th className="px-3 py-2 text-right font-semibold">Dilewati</th>
-                  <th className="px-3 py-2 text-right font-semibold">Diskriminasi</th>
+                  <th className="px-3 py-2 text-right font-semibold">{t("colDifficulty")}</th>
+                  <th className="px-3 py-2 text-right font-semibold">{t("colOmit")}</th>
+                  <th className="px-3 py-2 text-right font-semibold">{t("colDiscrimination")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -456,8 +477,8 @@ export default async function AnalyticsPage({
                     className="border-b last:border-0 odd:bg-white dark:odd:bg-slate-900"
                   >
                     <td className="max-w-64 px-3 py-2">
-                      <p className="truncate" title={s.promptText || "Tanpa teks soal"}>
-                        {s.promptText || "(tanpa teks)"}
+                      <p className="truncate" title={s.promptText || t("noPromptText")}>
+                        {s.promptText || t("noPromptFallback")}
                       </p>
                       <p className="text-xs text-slate-500">{s.questionId.slice(0, 8)}</p>
                     </td>
@@ -467,13 +488,9 @@ export default async function AnalyticsPage({
                     <td className="px-3 py-2 text-right">{pct(s.omit)}</td>
                     <td className="px-3 py-2 text-right">
                       {s.discrimination === null ? (
-                        <span title="Ukuran kelompok terlalu kecil untuk diskriminasi (min 3 per kelompok)">
-                          —
-                        </span>
+                        <span title={t("discSmallTitle")}>—</span>
                       ) : (
-                        <span title="p(kelompok atas) − p(kelompok bawah), tercile">
-                          {pct(s.discrimination)}
-                        </span>
+                        <span title={t("discTitle")}>{pct(s.discrimination)}</span>
                       )}
                     </td>
                   </tr>
@@ -485,15 +502,12 @@ export default async function AnalyticsPage({
       </section>
 
       {/* Misconception map */}
-      <section aria-label="Peta miskonsepsi" className="mt-6">
-        <h2 className="text-lg font-semibold">Peta miskonsepsi (pilihan jawaban)</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Distribusi opsi salah yang dipilih murid — bukti perilaku, bukan diagnosis. Setiap cluster
-          menampilkan pemilihnya.
-        </p>
+      <section aria-label={t("misconceptAria")} className="mt-6">
+        <h2 className="text-lg font-semibold">{t("misconceptTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-500">{t("misconceptDesc")}</p>
         {misconcepts.filter((m) => m.clusters.length > 0).length === 0 ? (
           <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Belum ada distractor terpilih untuk dipetakan.
+            {t("misconceptEmpty")}
           </p>
         ) : (
           <ul className="mt-2 space-y-3">
@@ -503,17 +517,24 @@ export default async function AnalyticsPage({
                 <li key={m.questionId} className="rounded-xl border p-4">
                   <details>
                     <summary className="cursor-pointer font-semibold">
-                      {m.questionId.slice(0, 8)} — {m.n} jawaban, {m.incorrect} salah
+                      {fmt(t("misconceptSummary"), {
+                        id: m.questionId.slice(0, 8),
+                        n: m.n,
+                        incorrect: m.incorrect,
+                      })}
                     </summary>
                     <ul className="mt-2 space-y-2">
                       {m.clusters.map((c) => (
                         <li key={c.optionId} className="rounded-lg bg-slate-50 p-3 dark:bg-slate-800">
                           <p className="font-medium">
-                            Opsi “{c.optionId || "(opsi kosong)"}” — dipilih {c.picked}× (
-                            {pct(c.shareOfIncorrect)} dari yang salah)
+                            {fmt(t("optionLabel"), {
+                              opt: c.optionId || t("emptyOption"),
+                              picked: c.picked,
+                              share: pct(c.shareOfIncorrect),
+                            })}
                           </p>
                           <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-                            Murid:{" "}
+                            {t("students")}{" "}
                             {c.studentNames.length > 0 ? c.studentNames.join(", ") : c.studentIds.join(", ")}
                           </p>
                         </li>
@@ -527,25 +548,23 @@ export default async function AnalyticsPage({
       </section>
 
       {/* Learning-path bottleneck */}
-      <section aria-label="Hambatan jalur belajar" className="mt-6">
-        <h2 className="text-lg font-semibold">Hambatan jalur belajar</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Lesson yang banyak dibuka tapi jarang diselesaikan (dropoff = 1 − selesai/mulai).
-        </p>
+      <section aria-label={t("bottleneckAria")} className="mt-6">
+        <h2 className="text-lg font-semibold">{t("bottleneckTitle")}</h2>
+        <p className="mt-1 text-sm text-slate-500">{t("bottleneckDesc")}</p>
         {bottlenecks.filter((b) => b.opened > 0).length === 0 ? (
           <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            Belum ada aktivitas lesson untuk dianalisis.
+            {t("bottleneckEmpty")}
           </p>
         ) : (
           <div className="mt-2 overflow-x-auto rounded-xl border">
             <table className="w-full text-left text-sm">
               <thead className="border-b bg-slate-50 dark:bg-slate-800">
                 <tr>
-                  <th className="px-3 py-2 font-semibold">Lesson</th>
-                  <th className="px-3 py-2 text-right font-semibold">Mulai</th>
-                  <th className="px-3 py-2 text-right font-semibold">Selesai</th>
-                  <th className="px-3 py-2 text-right font-semibold">Dropoff</th>
-                  <th className="px-3 py-2 font-semibold">Status</th>
+                  <th className="px-3 py-2 font-semibold">{t("colLesson")}</th>
+                  <th className="px-3 py-2 text-right font-semibold">{t("colStarted")}</th>
+                  <th className="px-3 py-2 text-right font-semibold">{t("colCompleted")}</th>
+                  <th className="px-3 py-2 text-right font-semibold">{t("colDropoff")}</th>
+                  <th className="px-3 py-2 font-semibold">{t("colStatus")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -571,12 +590,12 @@ export default async function AnalyticsPage({
                           }`}
                         >
                           {b.severity === "insufficient"
-                            ? "n kecil"
+                            ? t("severitySmallN")
                             : b.severity === "high"
-                              ? "Hambatan"
+                              ? t("severityHigh")
                               : b.severity === "watch"
-                                ? "Perhatikan"
-                                : "Normal"}
+                                ? t("severityWatch")
+                                : t("severityOk")}
                         </span>
                       </td>
                     </tr>
@@ -588,10 +607,11 @@ export default async function AnalyticsPage({
       </section>
 
       <p className="mt-6 border-t pt-3 text-xs text-slate-500">
-        Definisi metrik: item {ITEM_METRIC_DEFINITIONS_VERSION} · dashboard{" "}
-        {TEACHER_ANALYTICS_DEFINITIONS_VERSION} · diperbarui{" "}
-        {new Date(lastUpdated).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })} ·
-        statistik menyertakan ukuran sampel (n); diskriminasi disembunyikan bila kelompok terlalu kecil.
+        {fmt(t("footer"), {
+          item: ITEM_METRIC_DEFINITIONS_VERSION,
+          dash: TEACHER_ANALYTICS_DEFINITIONS_VERSION,
+          at: new Date(lastUpdated).toLocaleString(loc, { dateStyle: "short", timeStyle: "short" }),
+        })}
       </p>
     </main>
   );
