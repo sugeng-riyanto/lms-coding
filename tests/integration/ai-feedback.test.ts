@@ -36,6 +36,23 @@ describe("migration 000011 — consent + draft AI", () => {
     expect(migration).toMatch(/create rule no_delete_ai_drafts/);
   });
 
+  it("migration 000001 replaces RULE with trigger-based guard (cascade-safe)", () => {
+    const fix = readFileSync("supabase/migrations/20260909000001_ai_draft_cascade_fix.sql", "utf8");
+    // Old rule must be dropped
+    expect(fix).toMatch(/drop rule if exists no_delete_ai_drafts/);
+    // New trigger function in private schema
+    expect(fix).toMatch(/create or replace function private\.block_direct_ai_draft_delete/);
+    expect(fix).toMatch(/security definer/);
+    expect(fix).toMatch(/set search_path = private, public, pg_temp/);
+    // pg_trigger_depth() gate: 0 = direct (block), >0 = cascade (allow)
+    expect(fix).toMatch(/pg_trigger_depth\(\)/);
+    // Trigger attached
+    expect(fix).toMatch(/create trigger guard_ai_draft_delete/);
+    expect(fix).toMatch(/before delete on public\.ai_feedback_drafts/);
+    expect(fix).toMatch(/for each row/);
+    expect(fix).toMatch(/execute function private\.block_direct_ai_draft_delete/);
+  });
+
   it("RPC definer + search_path + revoke PUBLIC + grant authenticated", () => {
     for (const fn of ["set_org_ai_consent", "upsert_ai_draft", "apply_ai_feedback"]) {
       expect(migration).toMatch(new RegExp(`create or replace function private\\.${fn}`));
