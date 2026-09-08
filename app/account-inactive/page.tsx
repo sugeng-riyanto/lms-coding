@@ -1,5 +1,8 @@
 import Link from "next/link";
 
+// Nonce CSP (lib/csp.ts) memerlukan dynamic rendering.
+export const dynamic = "force-dynamic";
+
 export default function AccountInactivePage() {
   return (
     <main id="main" className="mx-auto max-w-xl px-4 py-16">

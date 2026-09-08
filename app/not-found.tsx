@@ -1,5 +1,9 @@
 import Link from "next/link";
 
+// Nonce CSP (lib/csp.ts) memerlukan dynamic rendering agar inline scripts
+// halaman 404 ikut diberi nonce.
+export const dynamic = "force-dynamic";
+
 export default function NotFound() {
   return (
     <main id="main" className="mx-auto max-w-xl px-4 py-16">

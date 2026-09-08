@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+// Nonce CSP (lib/csp.ts) hanya di-inject pada halaman yang di-render dinamis
+// (docs resmi Next.js: nonces memerlukan dynamic rendering). Landing page
+// ini murah untuk di-render per-request.
+export const dynamic = "force-dynamic";
+
 const FEATURES = [
   {
     icon: "🧭",

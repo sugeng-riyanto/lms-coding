@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import "./globals.css";
 import { isDemoBackend } from "@/lib/supabase/demo";
 
@@ -14,11 +15,15 @@ export const metadata: Metadata = {
 /** Inisialisasi tema tanpa FOUC: localStorage dulu, fallback preferensi sistem. */
 const THEME_INIT = `(function(){try{var t=localStorage.getItem("lms-theme");if(t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches)){document.documentElement.classList.add("dark");}}catch(e){}})();`;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Nonce CSP (proxy.ts → x-nonce) DIOPERKAN eksplisit ke script inline tema:
+  // Next hanya memberi nonce otomatis ke script generasinya sendiri — script
+  // buatan (dangerouslySetInnerHTML) wajib nonce manual agar lolos enforce.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="id" suppressHydrationWarning>
       <body className="min-h-screen bg-white text-slate-900 antialiased">
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
         {isDemoBackend() && (
           <p
             role="status"
