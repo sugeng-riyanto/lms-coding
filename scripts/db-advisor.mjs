@@ -17,11 +17,24 @@ for (const t of new Set(created)) {
     errors.push(`missing RLS: ${t}`);
   }
 }
-// 2. Secret tidak boleh di migration
-if (/service_role|secret_key|sb_secret/i.test(sql)) errors.push("possible secret in migration");
-// 3. View harus security_invoker
+// 2. Secret tidak boleh di migration. Pattern presisi: nilai berbentuk secret
+// (JWT eyJ…, publishable sb_secret_…, assignment secret_key/service_role = …),
+// BUKAN nama role `service_role` di policy (mis. `to service_role`) — itu
+// identifier Supabase yang sah di migration dan bukan rahasia.
+if (
+  /eyJ[a-zA-Z0-9_-]{10,}/i.test(sql) ||
+  /sb_secret_[a-zA-Z0-9_-]{10,}/i.test(sql) ||
+  /(?:secret_key|service_role)\s*=\s*['"]?[a-zA-Z0-9._-]{20,}/i.test(sql)
+) {
+  errors.push("possible secret in migration");
+}
+// 3. View harus security_invoker — dinilai dari DEFINISI TERAKHIR per nama
+// (migrasi boleh mengubah view: `create or replace view … with
+// (security_invoker = true)` di migrasi baru menimpa definsi lama).
 const views = [...sql.matchAll(/create .*? view public\.(\w+)([\s\S]*?);/gi)];
-for (const [, name, body] of views) {
+const latestByView = new Map();
+for (const [, name, body] of views) latestByView.set(name, body);
+for (const [name, body] of latestByView) {
   if (!/security_invoker\s*=\s*true/i.test(body)) errors.push(`view ${name} missing security_invoker=true`);
 }
 // 4. Function private harus set search_path
