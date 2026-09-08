@@ -50,10 +50,16 @@
 - [x] Manual grade dan revision dapat diaudit.
       Bukti: grading queue + `grade_response_manual` + `grade_revisions`
       (prev/new/actor/reason) + `audit_logs`; rubric per-kriteria RPC (000013).
-- [ ] Competency mastery dapat ditelusuri ke evidence.
-      ⚠️ Parsial: `competencyMastery` + snapshots + evidence per-kompetensi
-      otomatis parsial (mastery level = rata-rata snapshot). Perlu lintasan
-      evidence per-kompetensi yang eksplisit sebelum dicentang penuh.
+- [x] Competency mastery dapat ditelusuri ke evidence.
+      Bukti: `lib/mastery-evidence.ts` (murni) menghitung mastery per
+      kompetensi dari ATTEMPT nyata — Σ(weight×best)/Σ(weight) berbobot
+      `activity_competencies` — dan membangun lintasan per kompetensi:
+      assessment → attempt → `grade_revisions` (prev/new/actor/reason) →
+      rubrik + skor kriteria versi final (draft=false). Tampilan guru:
+      `/teacher/students/[studentId]` bagian "Competency mastery & evidence"
+      (RLS guru-cohort; fetch terikat attempt milik murid). Verifikasi live
+      hosted: PY-FUND 100% / PY-LOOP 100% dengan attempt + revisi bernama
+      actor; unit 9 + pinned integration 4; gates 634/1, build 0.
 
 ## Dashboard
 

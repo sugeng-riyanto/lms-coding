@@ -4,8 +4,133 @@ import { createClient } from "@/lib/supabase/server";
 import { IssueCertificateButton } from "./issue-button";
 import { ReissueCertificateButton } from "./reissue-button";
 import { AnchorStatusChip } from "@/components/anchor-status";
+import { getLang, mkT } from "@/lib/i18n";
+import { STUDENT_DETAIL } from "@/lib/ui-text/student-detail";
+import { buildMasteryEvidence, type MasteryEvidenceInput } from "@/lib/mastery-evidence";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Bukti mastery (AC-53): fetch baris DB DI BAWAH RLS guru-cohort, lalu bangun
+ * lintasan per kompetensi (murni di lib/mastery-evidence.ts). Terikat oleh
+ * attempt milik murid ini — bukan scan seluruh org.
+ */
+async function fetchMasteryEvidenceInput(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  enrollmentIds: string[],
+): Promise<MasteryEvidenceInput | null> {
+  const empty: MasteryEvidenceInput = {
+    competencies: [],
+    activityCompetencies: [],
+    activities: [],
+    assessments: [],
+    attempts: [],
+    responses: [],
+    questionVersions: [],
+    rubrics: [],
+    rubricCriteria: [],
+    criterionScores: [],
+    revisions: [],
+  };
+  if (enrollmentIds.length === 0) return empty;
+
+  const { data: attemptRows } = await supabase
+    .from("attempts")
+    .select("id,assessment_id,attempt_no,status,final_score,submitted_at")
+    .in("enrollment_id", enrollmentIds);
+  const attempts = (attemptRows as MasteryEvidenceInput["attempts"] | null) ?? [];
+  if (attempts.length === 0) return empty;
+  const attemptIds = attempts.map((a) => a.id);
+  const assessmentIds = [...new Set(attempts.map((a) => a.assessment_id))];
+
+  const { data: asmtRows } = await supabase
+    .from("assessments")
+    .select("id,activity_id")
+    .in("id", assessmentIds);
+  const assessments = (asmtRows as MasteryEvidenceInput["assessments"] | null) ?? [];
+  const activityIds = [...new Set(assessments.map((a) => a.activity_id))];
+
+  const { data: actRows } = await supabase.from("activities").select("id,title,type").in("id", activityIds);
+  const activities = (actRows as MasteryEvidenceInput["activities"] | null) ?? [];
+
+  const { data: acRows } = await supabase
+    .from("activity_competencies")
+    .select("activity_id,competency_id,weight")
+    .in("activity_id", activityIds);
+  const activityCompetencies = (acRows as MasteryEvidenceInput["activityCompetencies"] | null) ?? [];
+  const competencyIds = [...new Set(activityCompetencies.map((ac) => ac.competency_id))];
+
+  let competencies: MasteryEvidenceInput["competencies"] = [];
+  if (competencyIds.length > 0) {
+    const { data: compRows } = await supabase
+      .from("competencies")
+      .select("id,code,title")
+      .in("id", competencyIds);
+    competencies = (compRows as MasteryEvidenceInput["competencies"] | null) ?? [];
+  }
+
+  const { data: respRows } = await supabase
+    .from("responses")
+    .select("id,attempt_id,question_version_id,auto_score,manual_score")
+    .in("attempt_id", attemptIds);
+  const responses = (respRows as MasteryEvidenceInput["responses"] | null) ?? [];
+  const qvIds = [
+    ...new Set(responses.map((r) => r.question_version_id).filter((x): x is string => Boolean(x))),
+  ];
+
+  let questionVersions: MasteryEvidenceInput["questionVersions"] = [];
+  let rubrics: MasteryEvidenceInput["rubrics"] = [];
+  let rubricCriteria: MasteryEvidenceInput["rubricCriteria"] = [];
+  if (qvIds.length > 0) {
+    const { data: qvRows } = await supabase
+      .from("question_versions")
+      .select("id,version,rubric_id")
+      .in("id", qvIds);
+    questionVersions = (qvRows as MasteryEvidenceInput["questionVersions"] | null) ?? [];
+    const rubricIds = [
+      ...new Set(questionVersions.map((q) => q.rubric_id).filter((x): x is string => Boolean(x))),
+    ];
+    if (rubricIds.length > 0) {
+      const { data: rubRows } = await supabase.from("rubrics").select("id,title,version").in("id", rubricIds);
+      rubrics = (rubRows as MasteryEvidenceInput["rubrics"] | null) ?? [];
+      const { data: crRows } = await supabase
+        .from("rubric_criteria")
+        .select("id,rubric_id,version,title,max_points")
+        .in("rubric_id", rubricIds);
+      rubricCriteria = (crRows as MasteryEvidenceInput["rubricCriteria"] | null) ?? [];
+    }
+  }
+
+  const responseIds = responses.map((r) => r.id);
+  let criterionScores: MasteryEvidenceInput["criterionScores"] = [];
+  if (responseIds.length > 0) {
+    const { data: scRows } = await supabase
+      .from("criterion_scores")
+      .select("criterion_id,response_id,score,draft")
+      .in("response_id", responseIds);
+    criterionScores = (scRows as MasteryEvidenceInput["criterionScores"] | null) ?? [];
+  }
+
+  const { data: revRows } = await supabase
+    .from("grade_revisions")
+    .select("attempt_id,previous_score,new_score,reason,changed_by,created_at")
+    .in("attempt_id", attemptIds);
+  const revisions = (revRows as MasteryEvidenceInput["revisions"] | null) ?? [];
+
+  return {
+    competencies,
+    activityCompetencies,
+    activities,
+    assessments,
+    attempts,
+    responses,
+    questionVersions,
+    rubrics,
+    rubricCriteria,
+    criterionScores,
+    revisions,
+  };
+}
 
 /** Detail murid: timeline, attempts, revisions, certificates (RLS cohort guru). */
 async function getDetail(studentId: string, cohortId: string | undefined) {
@@ -140,6 +265,10 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
       });
     }
   }
+  const evidenceInput = await fetchMasteryEvidenceInput(
+    supabase,
+    enrs.map((e) => e.id),
+  );
   return {
     profile,
     courses: enrs.map((e) => e.courses?.title ?? e.course_id),
@@ -148,6 +277,7 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
     revisions,
     certs: certRows,
     issuable,
+    masteryEvidence: evidenceInput ? buildMasteryEvidence(evidenceInput) : [],
   };
 }
 
@@ -158,6 +288,8 @@ export default async function StudentDetailPage({
   params: Promise<{ studentId: string }>;
   searchParams: Promise<{ cohort?: string }>;
 }) {
+  const lang = await getLang();
+  const t = mkT(STUDENT_DETAIL, lang);
   const { studentId } = await params;
   const { cohort } = await searchParams;
   let data: Awaited<ReturnType<typeof getDetail>>;
@@ -187,6 +319,86 @@ export default async function StudentDetailPage({
       <p className="text-sm text-slate-500">
         Status: {data.profile.status} · {data.courses.join(", ")}
       </p>
+
+      <h2 className="mt-6 text-xl font-semibold">{t("masteryEvidence")}</h2>
+      <p className="text-sm text-slate-500">{t("masteryEvidenceBody")}</p>
+      {data.masteryEvidence.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">{t("noCompetencyEvidence")}</p>
+      ) : (
+        <div className="mt-3 space-y-3">
+          {data.masteryEvidence.map((c) => (
+            <details key={c.competencyId} className="rounded-xl border bg-white p-3 dark:bg-slate-900">
+              <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold">
+                  {c.code} — {c.title}
+                </span>
+                <span className="text-sm text-slate-600 dark:text-slate-300">
+                  {t("mastery")}: {(c.mastery * 100).toFixed(1)}%
+                  {!c.hasEvidence && <span className="ml-2 text-amber-700">({t("noEvidence")})</span>}
+                </span>
+              </summary>
+              {c.assessments.length === 0 ? (
+                <p className="mt-2 text-sm text-slate-500">{t("noAttempts")}</p>
+              ) : (
+                <ul className="mt-2 space-y-2 text-sm">
+                  {c.assessments.map((a) => (
+                    <li
+                      key={a.assessmentId}
+                      className="rounded-lg border border-slate-200 p-2 dark:border-slate-700"
+                    >
+                      <p className="font-semibold">
+                        {a.activityTitle}
+                        {a.bestScore !== null && (
+                          <span className="ml-2 font-medium text-green-700 dark:text-green-400">
+                            · {t("best")} {a.bestScore}
+                          </span>
+                        )}
+                      </p>
+                      {a.attempts.length === 0 ? (
+                        <p className="mt-1 text-slate-500">{t("noAttempts")}</p>
+                      ) : (
+                        <ul className="mt-1 space-y-1">
+                          {a.attempts.map((att) => (
+                            <li key={att.attemptId} className="text-slate-700 dark:text-slate-200">
+                              #{att.attemptNo} · {t("status")}: {att.status} · {t("score")}:{" "}
+                              {att.finalScore ?? "—"} · {att.submittedAt ?? "—"}
+                              {att.rubric && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {t("rubricUsed")}: {att.rubric.title} v{att.rubric.version}
+                                  {att.rubric.criteria.length > 0 && (
+                                    <span>
+                                      {" "}
+                                      —{" "}
+                                      {att.rubric.criteria
+                                        .map((cr) => `${cr.title} ${cr.score}/${cr.maxPoints}`)
+                                        .join(" · ")}
+                                    </span>
+                                  )}
+                                </p>
+                              )}
+                              {att.revisions.length > 0 && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                  {t("revisions")}:{" "}
+                                  {att.revisions
+                                    .map(
+                                      (r) =>
+                                        `${r.prev ?? "—"}→${r.next ?? "—"} (${r.reason}, ${r.by}, ${r.at})`,
+                                    )
+                                    .join(" · ")}
+                                </p>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </details>
+          ))}
+        </div>
+      )}
 
       <h2 className="mt-6 text-xl font-semibold">Attempt history</h2>
       {data.attempts.length === 0 ? (
