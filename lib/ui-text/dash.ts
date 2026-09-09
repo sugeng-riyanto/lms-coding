@@ -54,6 +54,16 @@ export const DASH = {
   riskTitle: { id: "Sinyal risiko", en: "Risk signals" },
   riskHint: { id: "Aturan transparan — bukan ranking", en: "Transparent rules — not a ranking" },
 
+  // Quick actions (top of dashboard)
+  quickActionsTitle: { id: "Aksi cepat", en: "Quick actions" },
+  quickActionsHint: { id: "Tugas yang perlu diperhatikan", en: "Items that need your attention" },
+  quickGrading: { id: "Nilai jawaban", en: "Grade answers" },
+  quickGradingDesc: { id: "{n} esai menunggu penilaian", en: "{n} essays awaiting grading" },
+  quickNewCourse: { id: "Buat kursus baru", en: "Create new course" },
+  quickNewCourseDesc: { id: "Mulai kursus dari awal", en: "Start a course from scratch" },
+  quickImport: { id: "Import siswa", en: "Import students" },
+  quickImportDesc: { id: "Daftar massal via XLSX", en: "Bulk register via XLSX" },
+
   // Teacher tools
   toolsTitle: { id: "Kelola kelas", en: "Manage classes" },
   toolsHint: { id: "Alat kerja guru", en: "Teacher tools" },

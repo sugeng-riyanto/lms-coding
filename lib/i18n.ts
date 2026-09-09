@@ -43,6 +43,8 @@ export const NAV = {
   studentCertificatesDesc: { id: "Sertifikatku", en: "My certificates" },
   teacherDashboard: { id: "Dasbor", en: "Dashboard" },
   teacherDashboardDesc: { id: "Ringkasan kelas", en: "Class summary" },
+  teacherCourses: { id: "Kursus", en: "Courses" },
+  teacherCoursesDesc: { id: "Buat & kelola kursus", en: "Create & manage courses" },
   teacherClasses: { id: "Kelas", en: "Classes" },
   teacherClassesDesc: { id: "Cohort & enrollment", en: "Cohorts & enrollment" },
   teacherGrading: { id: "Penilaian", en: "Grading" },

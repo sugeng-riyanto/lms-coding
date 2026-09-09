@@ -208,6 +208,35 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         </a>
       </div>
 
+      {/* Quick actions — prominent cards for the most common next steps. */}
+      <SectionHeader title={t("quickActionsTitle")} hint={t("quickActionsHint")} />
+      <nav aria-label={t("quickActionsTitle")} className="mt-3 grid gap-3 sm:grid-cols-3">
+        <Link
+          href="/teacher/grading"
+          className="group rounded-2xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-5 shadow-sm transition hover:border-amber-400 hover:shadow-md dark:from-amber-950/30 dark:to-slate-900 dark:hover:border-amber-600"
+        >
+          <p className="text-2xl">📝</p>
+          <p className="mt-2 font-bold text-amber-800 group-hover:underline dark:text-amber-200">{t("quickGrading")}</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{fmt(t("quickGradingDesc"), { n: String(summary.needsAttention) })}</p>
+        </Link>
+        <Link
+          href="/teacher/courses/new"
+          className="group rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-blue-50 to-white p-5 shadow-sm transition hover:border-blue-400 hover:shadow-md dark:from-blue-950/30 dark:to-slate-900 dark:hover:border-blue-600"
+        >
+          <p className="text-2xl">📚</p>
+          <p className="mt-2 font-bold text-blue-800 group-hover:underline dark:text-blue-200">{t("quickNewCourse")}</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("quickNewCourseDesc")}</p>
+        </Link>
+        <Link
+          href="/teacher/cohorts"
+          className="group rounded-2xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-sm transition hover:border-emerald-400 hover:shadow-md dark:from-emerald-950/30 dark:to-slate-900 dark:hover:border-emerald-600"
+        >
+          <p className="text-2xl">👥</p>
+          <p className="mt-2 font-bold text-emerald-800 group-hover:underline dark:text-emerald-200">{t("quickImport")}</p>
+          <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{t("quickImportDesc")}</p>
+        </Link>
+      </nav>
+
       <section aria-label={t("summaryAria")} className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-5">
         <StatCard
           label={t("enrolled")}

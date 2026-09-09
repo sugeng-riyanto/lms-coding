@@ -43,7 +43,7 @@ export async function AppShell({
           </div>
         </div>
         <nav aria-label={eyebrow} className="flex-1 overflow-y-auto p-3">
-          <NavLinks items={nav} />
+          <NavLinks items={nav} lang={lang} />
         </nav>
         <div className="border-t p-3">
           <LogoutButton lang={lang} />
