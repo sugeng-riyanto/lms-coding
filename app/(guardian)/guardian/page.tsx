@@ -29,11 +29,6 @@ type AttemptRow = {
   status: string;
   submitted_at: string | null;
 };
-type AssessmentRow = { id: string; activity_id: string };
-type ActivityTitleRow = { id: string; title: string; lesson_id: string };
-type LessonTitleRow = { id: string; title: string; module_id: string };
-type ModuleTitleRow = { id: string; title: string; level_id: string };
-type LevelTitleRow = { id: string; title: string; course_version_id: string };
 
 
 interface ChildSummary {
@@ -141,71 +136,42 @@ async function getChildren(userId: string): Promise<ChildSummary[]> {
       }
     }
 
-    // ── Quiz scores: attempts grouped by assessment → subject ──
+    // ── Quiz scores: attempts grouped by course ──
     let quizScores: QuizScore[] = [];
     let totalStudySeconds = 0;
     let studySessionCount = 0;
     let lastStudyAt: string | null = null;
     if (enrollmentIds.length > 0) {
+      // Get enrollment → course title mapping
+      const { data: enrRows } = await supabase
+        .from("enrollments")
+        .select("id,course_id")
+        .in("id", enrollmentIds);
+      const enrMap = new Map<string, string>();
+      const courseIds = [...new Set(((enrRows as { id: string; course_id: string }[] | null) ?? []).map((e) => e.course_id))];
+      for (const e of (enrRows as { id: string; course_id: string }[] | null) ?? []) enrMap.set(e.id, e.course_id);
+      const courseTitleMap = new Map<string, string>();
+      if (courseIds.length > 0) {
+        const { data: courses } = await supabase
+          .from("courses")
+          .select("id,title")
+          .in("id", courseIds);
+        for (const c of (courses as { id: string; title: string }[] | null) ?? [])
+          courseTitleMap.set(c.id, c.title);
+      }
+
       const { data: attempts } = await supabase
         .from("attempts")
         .select("id,enrollment_id,assessment_id,final_score,status,submitted_at")
         .in("enrollment_id", enrollmentIds)
         .eq("status", "submitted");
       const attemptRows = (attempts as AttemptRow[] | null) ?? [];
-      if (attemptRows.length > 0) {
-        // Resolve assessment → activity → lesson → module → level → course
-        const asmtIds = [...new Set(attemptRows.map((a) => a.assessment_id))];
-        const { data: asmts } = await supabase
-          .from("assessments")
-          .select("id,activity_id")
-          .in("id", asmtIds);
-        const asmtMap = new Map<string, string>();
-        for (const a of (asmts as AssessmentRow[] | null) ?? []) asmtMap.set(a.id, a.activity_id);
 
-        const actIds = [...new Set([...asmtMap.values()])];
-        const { data: acts } = await supabase
-          .from("activities")
-          .select("id,title,lesson_id")
-          .in("id", actIds);
-        const actMap = new Map<string, { title: string; lessonId: string }>();
-        for (const a of (acts as ActivityTitleRow[] | null) ?? [])
-          actMap.set(a.id, { title: a.title, lessonId: a.lesson_id });
-
-        const lesIds = [...new Set([...actMap.values()].map((v) => v.lessonId))];
-        const { data: lesRows } = await supabase
-          .from("lessons")
-          .select("id,title,module_id")
-          .in("id", lesIds);
-        const lesMap = new Map<string, { title: string; moduleId: string }>();
-        for (const l of (lesRows as LessonTitleRow[] | null) ?? [])
-          lesMap.set(l.id, { title: l.title, moduleId: l.module_id });
-
-        const modIds = [...new Set([...lesMap.values()].map((v) => v.moduleId))];
-        const { data: modRows } = await supabase
-          .from("modules")
-          .select("id,title,level_id")
-          .in("id", modIds);
-        const modMap = new Map<string, { title: string; levelId: string }>();
-        for (const m of (modRows as ModuleTitleRow[] | null) ?? [])
-          modMap.set(m.id, { title: m.title, levelId: m.level_id });
-
-        const lvIds = [...new Set([...modMap.values()].map((v) => v.levelId))];
-        const { data: lvRows } = await supabase
-          .from("levels")
-          .select("id,title")
-          .in("id", lvIds);
-        const lvMap = new Map<string, string>();
-        for (const l of (lvRows as LevelTitleRow[] | null) ?? []) lvMap.set(l.id, l.title);
-
-        // Group by level (subject)
-        const bySubject = new Map<string, { best: number | null; count: number; last: string | null; status: string }>();
-        for (const att of attemptRows) {
-          const actId = asmtMap.get(att.assessment_id);
-          const act = actId ? actMap.get(actId) : undefined;
-          const les = act ? lesMap.get(act.lessonId) : undefined;
-          const mod = les ? modMap.get(les.moduleId) : undefined;
-          const subject = mod ? (lvMap.get(mod.levelId) ?? "—") : "—";
+      // Group by course title
+      const bySubject = new Map<string, { best: number | null; count: number; last: string | null; status: string }>();
+      for (const att of attemptRows) {
+        const courseId = enrMap.get(att.enrollment_id);
+        const subject = courseId ? (courseTitleMap.get(courseId) ?? "—") : "—";
           const existing = bySubject.get(subject);
           const score = att.final_score != null ? Number(att.final_score) : null;
           if (existing) {
@@ -232,7 +198,6 @@ async function getChildren(userId: string): Promise<ChildSummary[]> {
             latestStatus: v.status,
           }))
           .sort((a, b) => a.subject.localeCompare(b.subject, "id"));
-      }
 
       // ── Study time ──
       const { data: sessions } = await supabase
