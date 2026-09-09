@@ -174,15 +174,25 @@ async function getLevelMap(levelId: string, enrollmentId: string): Promise<MapMo
   }));
 }
 
-/** Fallback enrollment bila query kosong (perilaku sama dengan /learn). */
-async function firstActiveEnrollment(userId: string): Promise<string | null> {
+/** Fallback enrollment bila query kosong (perilaku sama dengan /learn).
+ *  Prioritas: enrollment AKTIF untuk course milik level ini; baru kemudian
+ *  enrollment aktif pertama lintas kursus (agar deep-link tidak memakai
+ *  enrollment kursus lain → polusi attempt/event lintas course). */
+async function enrollmentForLevel(userId: string, courseId: string | null): Promise<string | null> {
   const supabase = await createClient();
-  const { data } = await supabase
-    .from("enrollments")
-    .select("id")
-    .eq("student_id", userId)
-    .eq("status", "active")
-    .limit(1);
+  let q = supabase.from("enrollments").select("id").eq("student_id", userId).eq("status", "active");
+  if (courseId) q = q.eq("course_id", courseId);
+  const { data } = await q.limit(1);
+  if (courseId && !((data as { id: string }[] | null) ?? []).length) {
+    // Tidak ada enrollment course ini → fallback lama (enrollment aktif pertama).
+    const { data: anyEnr } = await supabase
+      .from("enrollments")
+      .select("id")
+      .eq("student_id", userId)
+      .eq("status", "active")
+      .limit(1);
+    return ((anyEnr as { id: string }[] | null) ?? [])[0]?.id ?? null;
+  }
   return ((data as { id: string }[] | null) ?? [])[0]?.id ?? null;
 }
 
@@ -203,13 +213,16 @@ export default async function LevelMapPage({
 
   const { data: levelRow } = await supabase
     .from("levels")
-    .select("id,title,objective,passing_score")
+    .select("id,title,objective,passing_score,course_versions(course_id)")
     .eq("id", levelId)
     .single();
-  const level = levelRow as { id: string; title: string; objective: string; passing_score: number } | null;
+  const level = levelRow as
+    | { id: string; title: string; objective: string; passing_score: number; course_versions: { course_id: string } | null }
+    | null;
   if (!level) notFound();
 
-  const enrollmentId = enrollment || (userId ? await firstActiveEnrollment(userId) : null);
+  const enrollmentId =
+    enrollment || (userId ? await enrollmentForLevel(userId, level.course_versions?.course_id ?? null) : null);
   if (!enrollmentId || !userId) {
     return (
       <main id="main" className="mx-auto max-w-3xl px-4 py-10">
