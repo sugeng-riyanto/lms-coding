@@ -43,6 +43,12 @@ export const reorderSiblingsSchema = z.object({
   orderedIds: z.array(uuidSchema).min(1).max(200),
 });
 
+export const saveCatalogOrderSchema = z.object({
+  /** student_catalog = katalog murid (kursus yang diikuti/diikuti), teacher_courses = kursus milik guru. */
+  scope: z.enum(["student_catalog", "teacher_courses"]),
+  orderedIds: z.array(uuidSchema).min(1).max(200),
+});
+
 export const archiveCourseSchema = z.object({
   courseId: uuidSchema,
 });

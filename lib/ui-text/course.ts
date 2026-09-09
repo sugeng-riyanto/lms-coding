@@ -111,4 +111,15 @@ export const COURSE: TextDict = {
   statusPublished: { id: "Terbit", en: "Published" },
   statusDraft: { id: "Draft", en: "Draft" },
   statusArchived: { id: "Diarsipkan", en: "Archived" },
+
+  // ---- reorderable card list (drag/sort) ----
+  listSortAsc: { id: "Urut A→Z", en: "Sort A→Z" },
+  listSortDesc: { id: "Urut Z→A", en: "Sort Z→A" },
+  listDragHint: {
+    id: "Tarik kartu atau pakai ▲▼ untuk menyusun ulang — urutan tersimpan ke akun Anda.",
+    en: "Drag cards or use ▲▼ to reorder — the order is saved to your account.",
+  },
+  listSaving: { id: "Menyimpan…", en: "Saving…" },
+  listSaved: { id: "Urutan tersimpan ✓", en: "Order saved ✓" },
+  listSaveFailed: { id: "Gagal menyimpan urutan.", en: "Failed to save the order." },
 } as const;

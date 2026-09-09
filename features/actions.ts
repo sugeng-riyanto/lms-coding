@@ -47,6 +47,7 @@ import {
   releaseGradesSchema,
   reissueCertificateSchema,
   reorderSiblingsSchema,
+  saveCatalogOrderSchema,
   submitReviewSchema,
   resolveAlertSchema,
   revokeCertificateSchema,
@@ -1316,6 +1317,45 @@ const REORDER_PAIRS = {
   lessons: "module_id",
   activities: "lesson_id",
 } as const;
+
+// ---------- Katalog: simpan urutan kartu pribadi per pengguna (RBAC-scoped) ----------
+// Murid mengurutkan katalog kursus yang mereka ikuti/lihat; guru mengurutkan
+// kursus yang mereka CREATE. Hanya preferensi render — bukan data otoritatif.
+export async function saveCatalogOrder(input: unknown) {
+  const parsed = saveCatalogOrderSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const { scope, orderedIds } = parsed.data;
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const userId = (claims.claims as { sub?: string }).sub;
+  if (!userId) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  // Otorisasi scope: himpunan id harus PERSIS himpunan kartu yang berhak diurutkan
+  // (tidak ada id asing disusupkan / baris dibuang).
+  let q;
+  if (scope === "teacher_courses") {
+    q = supabase.from("courses").select("id").eq("owner_id", userId);
+  } else {
+    q = supabase.from("courses").select("id").eq("status", "published");
+  }
+  const { data: allowedRows } = await q;
+  const allowedIds = new Set(((allowedRows as { id: string }[] | null) ?? []).map((r) => r.id));
+  if (
+    allowedIds.size !== orderedIds.length ||
+    orderedIds.some((id) => !allowedIds.has(id)) ||
+    new Set(orderedIds).size !== orderedIds.length
+  ) {
+    return { ok: false as const, error: "MISMATCH" };
+  }
+
+  const { error } = await supabase.from("user_catalog_order").upsert(
+    { user_id: userId, scope, course_order: orderedIds, updated_at: new Date().toISOString() },
+    { onConflict: "user_id,scope" },
+  );
+  if (error) return { ok: false as const, error: "SAVE_FAILED" };
+  return { ok: true as const };
+}
 
 // ---------- Authoring: reorder siblings (posisi rapat 0..n) ----------
 export async function reorderSiblings(input: unknown) {

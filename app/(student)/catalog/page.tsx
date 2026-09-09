@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { computeUnlock } from "@/lib/progress";
+import { CatalogReorder, type CatalogOrderItem } from "@/components/catalog-reorder";
 
 export const dynamic = "force-dynamic";
 
@@ -109,74 +110,103 @@ export default async function CatalogPage() {
     );
   }
 
+  // Urutan kartu pribadi murid (yang dia ikuti/lihat) — disimpan per user.
+  const { data: saved } = await supabase
+    .from("user_catalog_order")
+    .select("course_order")
+    .eq("user_id", userId)
+    .eq("scope", "student_catalog")
+    .maybeSingle();
+  const savedOrder = (saved as { course_order: string[] } | null)?.course_order ?? null;
+
+  const items: CatalogOrderItem[] = courses.map((c) => ({
+    id: c.courseId,
+    sortValue: c.title,
+    node: (
+      <section
+        aria-label={c.title}
+        className="rounded-2xl border bg-white p-5 shadow-[var(--shadow-soft)] dark:bg-slate-900"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-xl font-bold">{c.title}</h2>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-bold ${
+              c.enrolled
+                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200"
+                : "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200"
+            }`}
+          >
+            {c.enrolled ? "Terdaftar" : "Tersedia"}
+          </span>
+        </div>
+        <p className="text-sm text-slate-600 dark:text-slate-300">{c.description}</p>
+        {c.enrolled ? (
+          <>
+            <ol className="mt-3 space-y-2">
+              {c.levels.map((l, i) => (
+                <li
+                  key={l.id}
+                  className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800"
+                >
+                  <span>
+                    <strong>{i + 1}.</strong> {l.title}
+                  </span>
+                  <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold dark:bg-slate-700">
+                    {l.status === "completed"
+                      ? "Completed"
+                      : l.status === "locked"
+                        ? "Locked"
+                        : "Available"}
+                  </span>
+                </li>
+              ))}
+            </ol>
+            <Link
+              href={`/learn?enrollment=${c.enrollmentId}`}
+              className="mt-3 inline-block rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 font-semibold text-white shadow-[var(--glow-btn)] transition hover:from-blue-700 hover:to-indigo-700"
+            >
+              Lanjutkan belajar
+            </Link>
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+            Belum terdaftar di kursus ini. Minta guru/administrator mendaftarkan Anda (enrollment
+            dilakukan pihak sekolah).
+          </p>
+        )}
+      </section>
+    ),
+  }));
+
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
       <h1 className="text-3xl font-bold">Katalog pembelajaran</h1>
       <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
         Semua kursus yang tersedia di sekolah Anda. Kursus yang sudah terdaftar bisa langsung dilanjutkan;
-        kursus lain dapat didaftarkan oleh guru/administrator.
+        kursus lain dapat didaftarkan oleh guru/administrator. Urutan kartu bisa diubah (A→Z / Z→A atau
+        geser/tombol ▲▼) dan tersimpan ke akun Anda.
       </p>
       {courses.length === 0 ? (
         <p className="mt-6 rounded-xl border p-5" role="status">
           Belum ada kursus published. Hubungi guru Anda.
         </p>
       ) : (
-        <div className="mt-6 space-y-6">
-          {courses.map((c) => (
-            <section
-              key={c.courseId}
-              aria-label={c.title}
-              className="rounded-2xl border bg-white p-5 shadow-[var(--shadow-soft)] dark:bg-slate-900"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-xl font-bold">{c.title}</h2>
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-bold ${
-                    c.enrolled
-                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-200"
-                      : "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200"
-                  }`}
-                >
-                  {c.enrolled ? "Terdaftar" : "Tersedia"}
-                </span>
-              </div>
-              <p className="text-sm text-slate-600 dark:text-slate-300">{c.description}</p>
-              {c.enrolled ? (
-                <>
-                  <ol className="mt-3 space-y-2">
-                    {c.levels.map((l, i) => (
-                      <li
-                        key={l.id}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800"
-                      >
-                        <span>
-                          <strong>{i + 1}.</strong> {l.title}
-                        </span>
-                        <span className="rounded-full bg-slate-200 px-3 py-1 text-xs font-bold dark:bg-slate-700">
-                          {l.status === "completed"
-                            ? "Completed"
-                            : l.status === "locked"
-                              ? "Locked"
-                              : "Available"}
-                        </span>
-                      </li>
-                    ))}
-                  </ol>
-                  <Link
-                    href={`/learn?enrollment=${c.enrollmentId}`}
-                    className="mt-3 inline-block rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 font-semibold text-white shadow-[var(--glow-btn)] transition hover:from-blue-700 hover:to-indigo-700"
-                  >
-                    Lanjutkan belajar
-                  </Link>
-                </>
-              ) : (
-                <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                  Belum terdaftar di kursus ini. Minta guru/administrator mendaftarkan Anda (enrollment
-                  dilakukan pihak sekolah).
-                </p>
-              )}
-            </section>
-          ))}
+        <div className="mt-6">
+          <CatalogReorder
+            items={items}
+            scope="student_catalog"
+            initialOrder={savedOrder}
+            labels={{
+              sortAsc: "Urut A→Z",
+              sortDesc: "Urut Z→A",
+              dragHint: "Tarik kartu atau pakai ▲▼ untuk menyusun ulang.",
+              moveUp: "Naikkan {title}",
+              moveDown: "Turunkan {title}",
+              saving: "Menyimpan…",
+              saved: "Urutan tersimpan ✓",
+              saveFailed: "Gagal menyimpan urutan.",
+            }}
+          />
         </div>
       )}
     </main>

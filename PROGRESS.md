@@ -2183,3 +2183,12 @@ Dashboard guru (`/teacher`) kini menampilkan panel **"Bank soal: terpakai vs men
 - **Sumber data**: 4 query server-side (questions org → versi terbaru → used-set via assessment_questions → rantai courses→…→assessment_questions untuk flag demo). Terverifikasi live id & en (toggle di /settings).
 
 Gates: tsc 0 · lint 0 · vitest **731/1** · build 0. (Satu perbaikan saat gates: `bankKeyManual` id/en dibuat beda agar lolos tes parity i18n multi-kata.)
+
+## Katalog cards movable + sortable per RBAC (drag ▲▼ / A→Z Z→A, persisten)
+
+- **Migration `20260909054257_user_catalog_order.sql`** (di-push ke hosted): tabel `user_catalog_order(user_id, scope, course_order uuid[])` — preferensi urutan kartu PRIBADI per pengguna per scope (`student_catalog` = kursus yang murid ikuti/lihat; `teacher_courses` = kursus yang guru CREATE). RLS own-row (select/insert/update/delete `user_id = auth.uid()`), revoke anon/public. Hanya preferensi render — bukan data otoritatif.
+- **Server action `saveCatalogOrder`** (features/actions.ts): Zod `saveCatalogOrderSchema` (scope enum + uuid[] 1..200), otorisasi scope server-side — himpunan id harus PERSIS himpunan kursus yang berhak diurutkan (guru: `owner_id`; murid: semua course published) → selain itu `MISMATCH` (anti-susupan id).
+- **Komponen bersama `components/catalog-reorder.tsx`** (client): toolbar **Urut A→Z / Z→A** (localeCompare numeric) + **drag & drop** + tombol **▲/▼** (aksesibel, layar kecil); setiap perubahan langsung `persist` → indikator "Menyimpan…/Urutan tersimpan ✓/Gagal". Kartu baru yang belum ada di urutan tersimpan otomatis ditaruh di akhir.
+- **Halaman**: `/catalog` (murid — apa yang dia ikuti/lihat, hardcoded ID konsisten dgn halaman) dan `/teacher/courses` (guru — hanya kursus `owner_id` dia, bilingual via COURSE dict).
+- **Terverifikasi live hosted**: guru → Urut A→Z persist (8 kursus), reload bertahan, ▼ pindahkan Fisika Dasar, **drag & drop** Kimia→Fisika (event async 2-tick) → "Urutan tersimpan ✓"; murid → Z→A persist (7 kursus published, Retry pertama). DB: 2 baris (teacher_courses 8 id, student_catalog 7 id) RLS own-row.
+- Test schema `tests/unit/catalog-order.test.ts` (+4). Gates: tsc 0 · lint 0 · vitest **735/1** · build 0.

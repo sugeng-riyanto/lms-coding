@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getLang, mkT } from "@/lib/i18n";
 import { COURSE } from "@/lib/ui-text/course";
+import { CatalogReorder, type CatalogOrderItem } from "@/components/catalog-reorder";
 
 export const dynamic = "force-dynamic";
 
@@ -15,10 +16,14 @@ export default async function TeacherCoursesPage() {
   const lang = await getLang();
   const t = mkT(COURSE, lang);
   const supabase = await createClient();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub ?? "";
 
+  // Hanya kursus yang guru ini CREATE (RBAC: mengurutkan sesuai yang dia buat).
   const { data: courses } = await supabase
     .from("courses")
     .select("id,title,slug,description,status,created_at")
+    .eq("owner_id", userId)
     .order("created_at", { ascending: false });
 
   const rows = (courses as
@@ -31,6 +36,44 @@ export default async function TeacherCoursesPage() {
       : status === "archived"
         ? t("statusArchived")
         : t("statusDraft");
+
+  const { data: saved } = await supabase
+    .from("user_catalog_order")
+    .select("course_order")
+    .eq("user_id", userId)
+    .eq("scope", "teacher_courses")
+    .maybeSingle();
+  const savedOrder = (saved as { course_order: string[] } | null)?.course_order ?? null;
+
+  const items: CatalogOrderItem[] = rows.map((c) => ({
+    id: c.id,
+    sortValue: c.title,
+    node: (
+      <Link
+        href={`/teacher/courses/${c.id}`}
+        className="group block h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-700"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <h2 className="font-bold text-slate-900 group-hover:text-blue-700 dark:text-white dark:group-hover:text-blue-300">
+            {c.title}
+          </h2>
+          <span
+            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[c.status] ?? STATUS_STYLES.draft}`}
+          >
+            {statusLabel(c.status)}
+          </span>
+        </div>
+        <p className="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
+          {c.description || "—"}
+        </p>
+        <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+          /{c.slug} ·{" "}
+          {new Date(c.created_at).toLocaleDateString(lang === "id" ? "id-ID" : "en-GB")}
+        </p>
+      </Link>
+    ),
+  }));
+
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8">
@@ -60,34 +103,23 @@ export default async function TeacherCoursesPage() {
           </Link>
         </div>
       ) : (
-        <ul className="mt-6 grid gap-4 sm:grid-cols-2">
-          {rows.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={`/teacher/courses/${c.id}`}
-                className="group block h-full rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-blue-300 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 dark:hover:border-blue-700"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <h2 className="font-bold text-slate-900 group-hover:text-blue-700 dark:text-white dark:group-hover:text-blue-300">
-                    {c.title}
-                  </h2>
-                  <span
-                    className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${STATUS_STYLES[c.status] ?? STATUS_STYLES.draft}`}
-                  >
-                    {statusLabel(c.status)}
-                  </span>
-                </div>
-                <p className="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
-                  {c.description || "—"}
-                </p>
-                <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
-                  /{c.slug} ·{" "}
-                  {new Date(c.created_at).toLocaleDateString(lang === "id" ? "id-ID" : "en-GB")}
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <div className="mt-6">
+          <CatalogReorder
+            items={items}
+            scope="teacher_courses"
+            initialOrder={savedOrder}
+            labels={{
+              sortAsc: t("listSortAsc"),
+              sortDesc: t("listSortDesc"),
+              dragHint: t("listDragHint"),
+              moveUp: t("moveUp"),
+              moveDown: t("moveDown"),
+              saving: t("listSaving"),
+              saved: t("listSaved"),
+              saveFailed: t("listSaveFailed"),
+            }}
+          />
+        </div>
       )}
     </main>
   );
