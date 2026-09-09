@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { mkT, type Lang } from "@/lib/i18n";
 import { REVIEW } from "@/lib/ui-text/review";
@@ -26,31 +26,25 @@ export function ReviewQueue({ lang = "en", userId, enrollmentId }: ReviewQueuePr
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
-  const supabase = createClient();
-
   // Load spaced repetition records
-  const loadRecords = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      const client = createClient();
+      const { data, error } = await client
         .from("spaced_repetition")
         .select("*")
         .eq("student_id", userId)
         .eq("enrollment_id", enrollmentId)
         .order("next_review_at", { ascending: true });
-
-      if (error) throw error;
-      setRecords(data ?? []);
-    } catch {
-      setRecords([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, enrollmentId, supabase]);
-
-  useEffect(() => {
-    loadRecords();
-  }, [loadRecords]);
+      if (!cancelled) {
+        setRecords(error ? [] : (data ?? []));
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId, enrollmentId]);
 
   // Submit quality rating
   const handleRate = async () => {
@@ -60,7 +54,8 @@ export function ReviewQueue({ lang = "en", userId, enrollmentId }: ReviewQueuePr
     setResult(null);
 
     try {
-      const { error } = await supabase.rpc("update_spaced_repetition", {
+      const client = createClient();
+      const { error } = await client.rpc("update_spaced_repetition", {
         p_student_id: userId,
         p_question_version_id: selectedRecord.question_version_id,
         p_enrollment_id: enrollmentId,
@@ -72,7 +67,13 @@ export function ReviewQueue({ lang = "en", userId, enrollmentId }: ReviewQueuePr
       setResult({ success: true, message: t("rateSuccess") });
 
       // Refresh records
-      await loadRecords();
+      const { data } = await client
+        .from("spaced_repetition")
+        .select("*")
+        .eq("student_id", userId)
+        .eq("enrollment_id", enrollmentId)
+        .order("next_review_at", { ascending: true });
+      setRecords(data ?? []);
       setSelectedRecord(null);
       setSelectedQuality(null);
     } catch {
