@@ -2111,3 +2111,20 @@ loads and navigation. `<html lang>` tracks the preference in every state.
 | 2026-09-09 | `npx playwright test` (hermetic) | PASS 25 passed / 34 skipped | spec auth skip tanpa backend; fail-fast saat password live tidak di-set |
 
 Keputusan: spec e2e yang butuh auth memakai lazy getter `requireStudentPassword()` — melempar error eksplisit bila `E2E_STUDENT_PASSWORD` tidak di-set (tanpa fallback ke password lama yang sudah di-rotate), tetapi *skip* bila backend tidak tersedia sehingga CI hermetic tetap hijau. Sisa blokir hanya eksekusi deployment produksi nyata (domain, HTTPS, provisioning) yang memerlukan sumber daya eksternal — tercatat di `DEPLOYMENT.md` §8.
+
+### Prompt — Simulasi guru Fisika end-to-end (dummy data, HOSTED, 2026-09-09)
+
+| Date | Command | Result | Notes |
+|---|---|---|---|
+| 2026-09-09 | `node .freebuff/simulate-physics-teacher.mjs` | PASS 38/38 (2× dijalankan, idempoten) | Script mendrive jalur server actions yang SAMA (RLS per user, skor dihitung server, sertifikat via RPC security definer) |
+| 2026-09-09 | Guru membuat kursus **Fisika Dasar** (`fisika-dasar-demo`) | PASS | 2 level (Kinematika, Dinamika) · 2 modul · 6 lesson · 4 artikel · 6 asesmen (4 kuis + 2 ujian akhir) · 22 soal (MCQ + numerik) + kunci di question_versions · status published |
+| 2026-09-09 | Guru membuat cohort **Kelas Fisika 2026** + assign murid01 & murid02 | PASS | enrollment aktif 2 murid (RLS guru cohort) |
+| 2026-09-09 | murid01 belajar: 4 artikel (learning_events) + 6 asesmen 100% | PASS | 6 attempt submitted, score 100% server-grade, events activity_completed |
+| 2026-09-09 | `auto_issue_certificates` RPC | PASS | **2 sertifikat ACTIVE otomatis**: CERT-20260909-ab873e (Kinematika) & CERT-20260909-8598a0 (Dinamika) — aturan: semua lesson wajib selesai + quiz 100% + ujian ≥ 70% |
+| 2026-09-09 | murid02 hanya selesaikan Level 1 | PASS | progress parsial, **0 sertifikat** (kontrol negatif) |
+| 2026-09-09 | wali@demo.local akses portal | PASS | Melihat progress murid01 (2/2 level Fisika completed, 21% agregat lintas kursus) + 2 sertifikat + unduh PDF + verifikasi |
+| 2026-09-09 | Live UI drive (preview localhost:3000) | PASS | Dashboard guru tampil "Kelas Fisika 2026"; /teacher/courses kini menampilkan daftar (sebelumnya 404); /certificates murid01 menampilkan 2 sertifikat Fisika; /guardian menampilkan progress + sertifikat |
+
+Perbaikan tambahan: menu sidebar guru **Courses** mengarah ke `/teacher/courses` yang TIDAK punya index page (404) → ditambahkan `app/(teacher)/teacher/courses/page.tsx` (daftar kursus milik guru, badge status, tombol buat baru, bilingual EN/ID via dict `COURSE`). Gates: tsc 0 · lint 0 · vitest 715/1.
+
+Catatan: password demo di-rotate via GoTrue admin API ke `PhysDemo-2026!` (env `SIM_PHYSICS_PASSWORD`) untuk guru/wali/murid01/murid02 di hosted — lihat docs/credential-audit.md.

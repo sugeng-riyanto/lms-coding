@@ -96,4 +96,19 @@ export const COURSE: TextDict = {
   previewLevel: { id: "Level {n}: {title}", en: "Level {n}: {title}" },
   previewNoLessons: { id: "Belum ada lesson.", en: "No lessons yet." },
   previewLesson: { id: "Lesson {n}: {title}", en: "Lesson {n}: {title}" },
+
+  // ---- course index (app/(teacher)/teacher/courses/page.tsx) ----
+  listTitle: { id: "Kursus saya", en: "My courses" },
+  listIntro: {
+    id: "Kelola materi, level, dan versi kursus Anda.",
+    en: "Manage your materials, levels, and course versions.",
+  },
+  listEmpty: { id: "Belum ada kursus.", en: "No courses yet." },
+  listEmptyDesc: {
+    id: "Buat kursus pertama Anda untuk mulai mengajar.",
+    en: "Create your first course to start teaching.",
+  },
+  statusPublished: { id: "Terbit", en: "Published" },
+  statusDraft: { id: "Draft", en: "Draft" },
+  statusArchived: { id: "Diarsipkan", en: "Archived" },
 } as const;
