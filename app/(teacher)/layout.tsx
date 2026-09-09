@@ -3,7 +3,6 @@ import { AppShell } from "@/components/app-shell";
 import { navForRole } from "@/lib/role-nav";
 import { getOrgAdminContext } from "@/lib/org-admin";
 import { EYEBROW, getLang, pick } from "@/lib/i18n";
-import { NotificationBell } from "@/components/notification-bell";
 import { Messaging } from "@/components/messaging";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,7 +23,6 @@ export default async function TeacherLayout({ children }: { children: React.Reac
       topbarExtra={
         <div className="flex items-center gap-1">
           <Messaging lang={lang} userId={userId} role="teacher" />
-          <NotificationBell lang={lang} />
         </div>
       }
     >

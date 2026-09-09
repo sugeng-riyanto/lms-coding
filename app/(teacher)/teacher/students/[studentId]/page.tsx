@@ -269,6 +269,30 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
     supabase,
     enrs.map((e) => e.id),
   );
+
+  // Fetch alert history for this student (all statuses, ordered by most recent)
+  const { data: alertRows } = await supabase
+    .from("alerts")
+    .select("id,code,message,status,resolved_note,created_at,updated_at,assigned_to,due_at,escalation_level")
+    .eq("student_id", studentId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  const alertHistory =
+    (alertRows as
+      | {
+          id: string;
+          code: string;
+          message: string;
+          status: string;
+          resolved_note: string | null;
+          created_at: string;
+          updated_at: string;
+          assigned_to: string | null;
+          due_at: string | null;
+          escalation_level: number;
+        }[]
+      | null) ?? [];
+
   return {
     profile,
     courses: enrs.map((e) => e.courses?.title ?? e.course_id),
@@ -278,6 +302,7 @@ async function getDetail(studentId: string, cohortId: string | undefined) {
     certs: certRows,
     issuable,
     masteryEvidence: evidenceInput ? buildMasteryEvidence(evidenceInput) : [],
+    alertHistory,
   };
 }
 
@@ -439,6 +464,54 @@ export default async function StudentDetailPage({
           {data.events.map((e, i) => (
             <li key={i} className="rounded border px-3 py-2">
               {fmt(t("eventLine"), { type: e.type, at: e.at })}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h2 className="mt-6 text-xl font-semibold">{t("alertHistoryHeading")}</h2>
+      {data.alertHistory.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">{t("noAlerts")}</p>
+      ) : (
+        <ul className="mt-2 space-y-2 text-sm">
+          {data.alertHistory.map((a) => (
+            <li key={a.id} className="rounded border px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs font-bold">{a.code}</span>
+                <span
+                  className={`rounded px-1.5 py-0.5 text-xs ${
+                    a.status === "resolved"
+                      ? "bg-green-100 text-green-800"
+                      : a.status === "reopened"
+                        ? "bg-amber-100 text-amber-800"
+                        : a.status === "snoozed"
+                          ? "bg-slate-100 text-slate-600"
+                          : "bg-red-100 text-red-800"
+                  }`}
+                >
+                  {a.status}
+                </span>
+                {a.escalation_level > 0 && (
+                  <span className="text-xs text-red-600">L{a.escalation_level}</span>
+                )}
+                {a.due_at && (
+                  <span className="text-xs text-slate-500">
+                    {fmt(t("dueLabel"), { date: new Date(a.due_at).toLocaleDateString() })}
+                  </span>
+                )}
+              </div>
+              <p className="mt-1 text-sm">{a.message}</p>
+              {a.resolved_note && (
+                <p className="mt-1 text-xs text-slate-500">
+                  {t("interventionNote")}: {a.resolved_note}
+                </p>
+              )}
+              <p className="mt-1 text-xs text-slate-400">
+                {fmt(t("alertTimestamp"), {
+                  created: new Date(a.created_at).toLocaleString(),
+                  updated: new Date(a.updated_at).toLocaleString(),
+                })}
+              </p>
             </li>
           ))}
         </ul>

@@ -9,6 +9,7 @@ import { fmt, mkT, type Lang } from "@/lib/i18n";
 import { LEVEL } from "@/lib/ui-text/level";
 import { MARKDOWN_FORMAT_GUIDE, buildMarkdownAiPrompt } from "@/lib/markdown-ai-prompt";
 import { loadLocalPref, saveLocalPref } from "@/lib/client-storage";
+import { MarkdownEditor } from "@/components/markdown-editor";
 
 /** Pref perangkat: topik AI article terakhir (dipakai bila guru mengetik manual). */
 const ARTICLE_TOPIC_KEY = "ai:article-topic";
@@ -366,14 +367,23 @@ export function LevelManager({
           <label htmlFor="a-content" className="mt-2 block text-sm font-semibold">
             {actType === "article" ? t("contentLabelMarkdown") : t("contentLabelJson")}
           </label>
-          <textarea
-            id="a-content"
-            rows={2}
-            value={actContent}
-            onChange={(e) => setActContent(e.target.value)}
-            placeholder={hints[actType] ?? "{}"}
-            className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs"
-          />
+          {actType === "article" ? (
+            <MarkdownEditor
+              value={actContent}
+              onChange={setActContent}
+              placeholder="Write your article content in markdown..."
+              className="mt-1"
+            />
+          ) : (
+            <textarea
+              id="a-content"
+              rows={2}
+              value={actContent}
+              onChange={(e) => setActContent(e.target.value)}
+              placeholder={hints[actType] ?? "{}"}
+              className="mt-1 w-full rounded-lg border px-3 py-2 font-mono text-xs"
+            />
+          )}
           <p className="mt-1 text-xs text-slate-500">
             {t("examplePrefix")}
             {hints[actType] ?? "{}"}

@@ -18,6 +18,9 @@ interface Alert {
   message: string;
   status: string;
   studentName: string;
+  assigned_to: string | null;
+  due_at: string | null;
+  escalation_level: number;
 }
 
 // ── Panel bank soal: terpakai vs menganggur + flag soal demo Matematika/Kimia ──
@@ -251,14 +254,24 @@ async function getDashboard(userId: string, cohortId: string | null, lang: Lang 
 
   const { data: alertRows } = await supabase
     .from("alerts")
-    .select("id,student_id,code,message,status")
+    .select("id,student_id,code,message,status,assigned_to,due_at,escalation_level")
     .eq("cohort_id", active.id)
-    .eq("status", "open")
+    .in("status", ["open", "acknowledged", "snoozed", "reopened"])
     .order("created_at", { ascending: false })
     .limit(20);
   const alerts: Alert[] = [];
   for (const a of (alertRows as
-    { id: string; student_id: string; code: string; message: string; status: string }[] | null) ?? []) {
+    | {
+        id: string;
+        student_id: string;
+        code: string;
+        message: string;
+        status: string;
+        assigned_to: string | null;
+        due_at: string | null;
+        escalation_level: number;
+      }[]
+    | null) ?? []) {
     const row = rows.find((r) => r.studentId === a.student_id);
     alerts.push({ ...a, studentName: row?.displayName ?? a.student_id.slice(0, 8) });
   }
@@ -289,6 +302,9 @@ async function getDashboard(userId: string, cohortId: string | null, lang: Lang 
         message: s.message,
         status: "open",
         studentName: r.displayName,
+        assigned_to: null,
+        due_at: null,
+        escalation_level: 0,
       });
     }
   }
@@ -576,7 +592,7 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
 
       <SectionHeader title={t("riskTitle")} hint={t("riskHint")} />
       <div className="mt-4">
-        <AlertControls cohortId={data.active.id} alerts={data.alerts} lang={lang} />
+        <AlertControls cohortId={data.active.id} alerts={data.alerts} lang={lang} currentUserId={userId} />
       </div>
 
       <SectionHeader title={t("toolsTitle")} hint={t("toolsHint")} />

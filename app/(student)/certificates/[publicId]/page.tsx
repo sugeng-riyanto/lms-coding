@@ -50,7 +50,7 @@ export default async function CertificatePage({ params }: { params: Promise<{ pu
         </a>
       </div>
       <section
-        aria-label="Sertifikat kelulusan"
+        aria-label="Certificate of completion"
         className="certificate-a4 rounded-2xl border-4 border-double border-slate-800 p-10 text-center print:rounded-none"
       >
         <p className="text-sm tracking-widest text-slate-500">SEKOLAH DEMO</p>
