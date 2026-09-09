@@ -38,7 +38,8 @@ export function GradeQueue({
       feedback: feedbacks[item.responseId] ?? "",
     });
     setBusy(null);
-    setNotice(res.ok ? t("noticeSaved") : fmt(t("failPrefix"), { error: res.error }));
+    const isCorrection = item.manualScore !== null && res.ok;
+    setNotice(res.ok ? (isCorrection ? t("noticeCorrected") : t("noticeSaved")) : fmt(t("failPrefix"), { error: res.error }));
     if (res.ok) router.refresh();
   }
 
@@ -104,6 +105,19 @@ export function GradeQueue({
           <p className="mt-1 rounded bg-slate-50 p-2 text-sm">
             {t("answerLabel")} {JSON.stringify(it.answer)?.slice(0, 500)}
           </p>
+          {it.manualScore !== null && (
+            <p className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+              <span aria-hidden="true">✏️</span> {t("correctionBadge")}
+            </p>
+          )}
+          {it.manualScore !== null && (
+            <p className="mt-2 text-xs text-slate-600">{t("correctionHint")}</p>
+          )}
+          {it.attemptFinalScore !== null && (
+            <p className="mt-1 text-xs text-slate-500">
+              {t("attemptScoreLabel")}: {it.attemptFinalScore}%
+            </p>
+          )}
           {/* Kanvas anotasi sains/math: coretan murid (read-only) + umpan balik guru. */}
           <ResponseCanvasArea attemptId={it.attemptId} questionVersionId={it.questionVersionId} lang={lang} />
           {it.revisions.length > 0 && (
@@ -194,7 +208,8 @@ export function GradeQueue({
                     type="number"
                     min={0}
                     max={100}
-                    value={scores[it.responseId] ?? ""}
+                    step={0.01}
+                    value={scores[it.responseId] ?? (it.manualScore !== null ? String(it.manualScore) : "")}
                     onChange={(e) => setScores((s) => ({ ...s, [it.responseId]: e.target.value }))}
                     className="mt-1 w-full rounded-lg border px-3 py-2"
                   />
@@ -217,7 +232,11 @@ export function GradeQueue({
                 disabled={busy !== null}
                 className="mt-3 rounded-lg bg-blue-700 px-4 py-2 font-semibold text-white disabled:opacity-60"
               >
-                {busy === it.responseId ? t("saving") : t("saveScore")}
+                {busy === it.responseId
+                  ? t("saving")
+                  : it.manualScore !== null
+                    ? t("saveCorrection")
+                    : t("saveScore")}
               </button>
             </>
           )}

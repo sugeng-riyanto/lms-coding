@@ -2192,3 +2192,23 @@ Gates: tsc 0 · lint 0 · vitest **731/1** · build 0. (Satu perbaikan saat gate
 - **Halaman**: `/catalog` (murid — apa yang dia ikuti/lihat, hardcoded ID konsisten dgn halaman) dan `/teacher/courses` (guru — hanya kursus `owner_id` dia, bilingual via COURSE dict).
 - **Terverifikasi live hosted**: guru → Urut A→Z persist (8 kursus), reload bertahan, ▼ pindahkan Fisika Dasar, **drag & drop** Kimia→Fisika (event async 2-tick) → "Urutan tersimpan ✓"; murid → Z→A persist (7 kursus published, Retry pertama). DB: 2 baris (teacher_courses 8 id, student_catalog 7 id) RLS own-row.
 - Test schema `tests/unit/catalog-order.test.ts` (+4). Gates: tsc 0 · lint 0 · vitest **735/1** · build 0.
+
+## Alur koreksi nilai pasca-release (grade correction + audit lengkap)
+
+Migration `20260909055534_grade_correction_audit.sql` (di-push ke hosted) + UI queue:
+
+- **Celah yang ditutup (2):**
+  1. `grade_response_manual` (quick grade) mencatat `grade_revisions` dengan `previous_score=NULL` SELALU — bahkan saat mengoreksi nilai yang sudah ada → jejak lama→baru hilang. Kini menangkap `v_prev` (manual_score saat ini) SEBELUM update; `previous` = nilai lama (NULL hanya penilaian pertama).
+  2. Quick grade tidak pernah menulis `audit_logs` (hanya rubric finalize). Kini setiap quick grade menulis audit: `grade.manual` (penilaian pertama / nilai sama) vs `grade.corrected` (nilai BERUBAH = koreksi pasca-release), keduanya membawa `after_json {score, previous}`.
+  - Guard UNAUTHENTICATED/FORBIDDEN/INVALID_SCORE + `recompute_attempt_score` dipertahankan → murid langsung melihat skor terbaru.
+- **Queue grading kini menampilkan respons essay/file yang SUDAH dinilai** (filter `manual_score IS NULL` dihapus) → guru punya jalur koreksi di UI: badge **"Post-release correction"** + hint, input skor **pre-filled** dengan nilai saat ini, tombol "Save correction", dan **"Current attempt score"** (attempts.final_score) ditampilkan.
+- **Test** `tests/integration/grade-correction.test.ts` (+6): bukti statis — v_prev ditangkap, revisi previous→new, audit grade.manual vs grade.corrected, guards + recompute dipertahankan, wrapper publik tidak diubah.
+
+**Simulasi live (hosted, `.freebuff/simulate-grade-correction.mjs`, idempoten — run 1: 18/19 lalu 19/19 setelah fix asumsi status; run ulang: 5/5):**
+- Objek: essay kimia-esai `09d1f1b5…` (attempt `7c51fa59…`) yang dinilai di sesi sebelumnya dengan KODE LAMA (revisi `— → 20`, TANPA audit).
+- Guru koreksi **20 → 8** → revisi `previous=20 new=8` + audit `grade.corrected` (score 8, previous 20) + `attempts.final_score` recompute **28/40 = 70%**.
+- Koreksi kedua **8 → 15** → rantai revisi append-only 3 baris; final **35/40 = 87.5%**.
+- **Keamanan**: PATCH murid `final_score=100` ditolak RLS (no-op — skor hanya server).
+- **UI terverifikasi live**: guru `/teacher/grading` → badge + hint + "Current attempt score: 87.5%" + rantai revisi `— → 20 → 8 → 15` + input pre-filled 15 + tombol "Save correction"; koreksi UI Python essay 85→70 → notice "Correction saved — old→new revision + audit recorded, student sees the latest score." + revisi `— → 85 → 70`. Murid `/quiz/7c51fa59…` → **"Result: 87.5"** + per-butir "Auto: 0 · Manual: 15".
+
+Gates: tsc 0 · lint 0 · vitest **741/1** · build 0.

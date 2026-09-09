@@ -27,6 +27,7 @@ export interface QueueItem {
   questionVersionId: string;
   attemptNo: number;
   attemptStatus: string;
+  attemptFinalScore: number | null;
   studentName: string;
   promptText: string;
   qtype: string;
@@ -51,7 +52,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
   if (cohortIds.length === 0) return [];
   const { data: attempts } = await supabase
     .from("attempts")
-    .select("id,attempt_no,status,created_at,enrollments(student_id,cohort_id)")
+    .select("id,attempt_no,status,final_score,created_at,enrollments(student_id,cohort_id)")
     .neq("status", "in_progress")
     .order("created_at", { ascending: false })
     .limit(100);
@@ -62,6 +63,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
           id: string;
           attempt_no: number;
           status: string;
+          final_score: number | null;
           enrollments: { student_id: string; cohort_id: string } | null;
         }[]
       | null) ?? []
@@ -74,13 +76,15 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
       .select("display_name")
       .eq("id", a.enrollments?.student_id ?? "")
       .single();
+    // Tanpa filter manual_score IS NULL: respons essay/file yang SUDAH dinilai
+    // juga muncul (koreksi nilai pasca-release); yang belum dinilai manual tetap
+    // ditandai oleh manualScore === null di UI.
     const { data: responses } = await supabase
       .from("responses")
       .select(
         "id,question_version_id,answer_json,auto_score,manual_score,question_versions(rubric_id,question_id,questions(type,prompt_json))",
       )
-      .eq("attempt_id", a.id)
-      .is("manual_score", null);
+      .eq("attempt_id", a.id);
     for (const r of (responses as
       | {
           id: string;
@@ -150,6 +154,7 @@ async function getQueue(userId: string): Promise<QueueItem[]> {
         questionVersionId: r.question_version_id,
         attemptNo: a.attempt_no,
         attemptStatus: a.status,
+        attemptFinalScore: a.final_score,
         studentName: (prof as { display_name: string } | null)?.display_name ?? "—",
         promptText: r.question_versions?.questions?.prompt_json.text ?? "?",
         qtype,

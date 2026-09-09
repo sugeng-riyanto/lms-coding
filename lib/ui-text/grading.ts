@@ -57,6 +57,19 @@ export const GRADING = {
   saveScore: { id: "Simpan nilai", en: "Save score" },
   saving: { id: "Menyimpan…", en: "Saving…" },
 
+  // Post-release correction (nilai sudah pernah disimpan)
+  correctionBadge: { id: "Koreksi nilai pasca-release", en: "Post-release correction" },
+  correctionHint: {
+    id: "Nilai sudah disimpan. Ubah untuk mengoreksi — revisi lama→baru & audit dicatat otomatis.",
+    en: "Score already saved. Edit to correct — the old→new revision & audit are recorded automatically.",
+  },
+  attemptScoreLabel: { id: "Skor attempt saat ini", en: "Current attempt score" },
+  saveCorrection: { id: "Simpan koreksi", en: "Save correction" },
+  noticeCorrected: {
+    id: "Koreksi tersimpan — revisi lama→baru + audit tercatat, murid melihat skor terbaru.",
+    en: "Correction saved — old→new revision + audit recorded, student sees the latest score.",
+  },
+
   // Notices
   noticeSaved: { id: "Nilai tersimpan (revisi tercatat).", en: "Score saved (revision recorded)." },
   noticeDraftCreated: {
