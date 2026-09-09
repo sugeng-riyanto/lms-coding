@@ -11,6 +11,14 @@ export const metadata: Metadata = {
   },
   description:
     "School coding platform: structured learning paths, code boards, embedded media, quizzes, assessment, and verifiable certificates.",
+  manifest: "/manifest.json",
+  themeColor: "#2563eb",
+  viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "CSLMS",
+  },
 };
 
 /** Inisialisasi tema tanpa FOUC: localStorage dulu, fallback preferensi sistem. */
@@ -28,6 +36,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={lang} suppressHydrationWarning>
       <body className="min-h-screen bg-white text-slate-900 antialiased">
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT }} />
+        <script
+          nonce={nonce}
+          dangerouslySetInnerHTML={{
+            __html: `if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("/sw.js").catch(()=>{})})}`,
+          }}
+        />
         {isDemoBackend() && (
           <p
             role="status"
