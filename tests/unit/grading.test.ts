@@ -371,7 +371,118 @@ describe("satuan majemuk fisika (km/jam, m/s², kg·m/s²)", () => {
       expected: 1.5,
       toleranceAbsolute: 0.01,
       unit: { expectedUnit: "L", unitFactors: { L: 1, mL: 0.001 } },
+    };      expect(autoGrade(vol, "1500 ml")).toBe(10); // tetap hijau pasca-refactor
+  });
+});
+
+describe("satuan majemuk kimia (mol/L, g/mol, L/mol, ppm/ppb)", () => {
+  it("molaritas: mol/L → mmol/L dan mol/mL setara", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 0.5, // basis mol/L
+      toleranceAbsolute: 0.0001,
+      unit: {
+        expectedUnit: "mol/L",
+        unitFactors: { mol: 1, mmol: 0.001, µmol: 0.000001, L: 1, dL: 0.1, cL: 0.01, mL: 0.001 },
+      },
     };
-    expect(autoGrade(vol, "1500 ml")).toBe(10); // tetap hijau pasca-refactor
+    expect(parseNumericAnswer("0.5 mol/L", rule.unit)).toBeCloseTo(0.5, 6);
+    expect(parseNumericAnswer("500 mmol/L", rule.unit)).toBeCloseTo(0.5, 6);
+    expect(parseNumericAnswer("0.5 mmol/mL", rule.unit)).toBeCloseTo(0.5, 6); // 0.0005 / 0.001
+    expect(parseNumericAnswer("5e-1 mol/L", rule.unit)).toBeCloseTo(0.5, 6); // notasi ilmiah
+    expect(autoGrade(rule, "0.5 mol/L")).toBe(10);
+    expect(autoGrade(rule, "500 mmol/L")).toBe(10);
+    expect(autoGrade(rule, "501 mmol/L")).toBe(0); // 0.501 melewati toleransi
+  });
+
+  it("massa molar: g/mol → kg/mol dan mg/mol setara", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 18, // basis g/mol (H₂O)
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "g/mol", unitFactors: { g: 1, kg: 1000, mg: 0.001, mol: 1 } },
+    };
+    expect(parseNumericAnswer("18 g/mol", rule.unit)).toBeCloseTo(18, 6);
+    expect(parseNumericAnswer("0.018 kg/mol", rule.unit)).toBeCloseTo(18, 6); // 0.018 × 1000
+    expect(parseNumericAnswer("18000 mg/mol", rule.unit)).toBeCloseTo(18, 6); // 18000 × 0.001
+    expect(parseNumericAnswer("18 g*mol^-1", rule.unit)).toBeCloseTo(18, 6); // eksponen -1
+    expect(autoGrade(rule, "18 g/mol")).toBe(10);
+    expect(autoGrade(rule, "18.05 g/mol")).toBe(0); // di luar toleransi
+  });
+
+  it("volume molar: L/mol → mL/mol setara", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 22.4, // basis L/mol (STP)
+      toleranceAbsolute: 0.1,
+      unit: { expectedUnit: "L/mol", unitFactors: { L: 1, mL: 0.001, mol: 1 } },
+    };
+    expect(parseNumericAnswer("22.4 L/mol", rule.unit)).toBeCloseTo(22.4, 6);
+    expect(parseNumericAnswer("22400 mL/mol", rule.unit)).toBeCloseTo(22.4, 6); // 22400 × 0.001
+    expect(parseNumericAnswer("22.4 L*mol^-1", rule.unit)).toBeCloseTo(22.4, 6);
+    expect(autoGrade(rule, "22.4 L/mol")).toBe(10);
+    expect(autoGrade(rule, "22.51 L/mol")).toBe(0);
+  });
+
+  it("ppm → mg/L setara untuk pelarut air encer (500 ppm = 500 mg/L)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 500, // basis mg/L
+      toleranceAbsolute: 1,
+      unit: { expectedUnit: "mg/L", unitFactors: { mg: 1, g: 1000, µg: 0.001, L: 1 } },
+    };
+    expect(parseNumericAnswer("500 mg/L", rule.unit)).toBeCloseTo(500, 6);
+    expect(parseNumericAnswer("0.5 g/L", rule.unit)).toBeCloseTo(500, 6); // 0.5 × 1000
+    expect(parseNumericAnswer("500000 µg/L", rule.unit)).toBeCloseTo(500, 6); // 500000 × 0.001
+    expect(autoGrade(rule, "500 mg/L")).toBe(10);
+    expect(autoGrade(rule, "0.5 g/L")).toBe(10);
+  });
+
+  it("ppb → µg/L: 1000 ppb = 1 mg/L = 1000 µg/L", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 1000, // basis µg/L
+      toleranceAbsolute: 1,
+      unit: { expectedUnit: "µg/L", unitFactors: { µg: 1, mg: 1000, g: 1e6, L: 1 } },
+    };
+    expect(parseNumericAnswer("1000 µg/L", rule.unit)).toBeCloseTo(1000, 6);
+    expect(parseNumericAnswer("1 mg/L", rule.unit)).toBeCloseTo(1000, 6); // 1 × 1000
+    expect(autoGrade(rule, "1000 µg/L")).toBe(10);
+    expect(autoGrade(rule, "1.002 mg/L")).toBe(0); // 1002.0 melewati toleransi (1 + 1)
+  });
+
+  it("molaritas faktor ganda: mol/L dengan µmol dan dL (multi-separator)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 0.025, // basis mol/L
+      toleranceAbsolute: 0.0001,
+      unit: {
+        expectedUnit: "mol/L",
+        unitFactors: { mol: 1, mmol: 0.001, µmol: 0.000001, L: 1, dL: 0.1 },
+      },
+    };
+    expect(parseNumericAnswer("25 mmol/L", rule.unit)).toBeCloseTo(0.025, 6);
+    expect(parseNumericAnswer("25000 µmol/L", rule.unit)).toBeCloseTo(0.025, 6);
+    expect(parseNumericAnswer("2.5 mmol/dL", rule.unit)).toBeCloseTo(0.025, 6); // 0.0025/0.1
+    expect(autoGrade(rule, "25 mmol/L")).toBe(10);
+  });
+
+  it("kimia: satuan tak dikenal ditolak (M, N untuk normalitas)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 0.5,
+      toleranceAbsolute: 0.001,
+      unit: { expectedUnit: "mol/L", unitFactors: { mol: 1, mmol: 0.001, L: 1 } },
+    };
+    expect(parseNumericAnswer("0.5 M", rule.unit)).toBeNull(); // M tidak terdaftar
+    expect(parseNumericAnswer("0.5 N", rule.unit)).toBeNull(); // N tidak terdaftar
+    expect(autoGrade(rule, "0.5 M")).toBe(0);
   });
 });
