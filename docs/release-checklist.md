@@ -58,7 +58,7 @@ Legenda: ✅ Ready · ⚠️ Ready with limitation · ⛔ Blocked eksternal · �
 | Mobile 360 & desktop 1440 | ✅ | `responsive.spec.ts` (5 route publik × 3 viewport) + `responsive-authed.spec.ts` (8 route peran × 3 viewport) — 0 overflow, live 28/28 |
 | Keyboard-only critical path | ✅ | skip-link, focus-visible, label; e2e tab-check PASS (chromium) |
 | Loading/empty/offline/forbidden/error | ✅ | empty/empty/offline states per halaman + `error.tsx` + `unauthorized` + `account-inactive` |
-| Lint/typecheck/tests/build/security | ✅ | lokal hijau: format, lint, typecheck, 406 tests, build, advisor (38t/2v), live-denial 95/95, hardening tests |
+| Lint/typecheck/tests/build/security | ✅ | lokal hijau: format, lint, typecheck, 715 tests + 1 skip, build, advisor (40t/5v), live-denial 95/95, restore rehearsal 9/9, hardening tests, release gate 6/6 |
 | README/runbooks akurat | ✅ | `docs/runbooks.md` + `docs/release-checklist.md` (file ini) + kredensial demo RBAC di `README.md` |
 | Release gate (credential audit) | ✅ | `bash scripts/release-gate.sh` — 6 gates pass: no hardcoded password in app code, no demo.local in server actions, seed.sql local-only guard, no e2e fallback, no CI env defaults, no demo.local in page components. Wired into CI (`ci.yml` verify job). |
 | Password rotation (hosted) | ✅ | 2026-09-08: all 5 demo accounts rotated from `DemoPass-2026!` to `Demo-Rot8-exJmoqO5Aph!`; old password rejected (400), new password issues JWT (200). See PROGRESS.md. |

@@ -4,12 +4,14 @@ Dokumen ini diisi agent berdasarkan bukti aktual.
 
 ## Current phase
 
-> Status disinkronkan 2026-09-07 dari bukti di bawah; log kronologis sesi tetap sumber rincian.
+> Status disinkronkan 2026-09-09 dari bukti di bawah; log kronologis sesi tetap sumber rincian.
 
-- Phase: **Phases 0–6 selesai; Phase 7 (hardening/deployment) hampir selesai** — 3 KURANG terdokumentasi di bawah (live advisor pasca-perubahan DB, restore rehearsal, wiring e2e ke CI) + deployment produksi nyata belum dieksekusi (DEPLOYMENT.md kerangka).
-- Capaian utama hingga status ini: kursus Python 12 level/120 aktivitas ter-import dari XLSX dan full loop murid→kuis→nilai→sertifikat terverifikasi LIVE di hosted (`jspmxdzgxevtfwvldwxy`); sertifikat 2 halaman A4 + rekam digital web + JSON record publik; 520 test + 1 skip, build/lint/tsc 0; live-denial 95/95; e2e login live-hosted.
-- Branch: main — working tree bersih kecuali `docs/xlsx/` (sumber workbook pengguna, sengaja untracked). Commit terakhir yang di-push ke origin: `4ab57b7`; 4 commit lokal belum di-push (`0703a9d`, `f637c83`, `8d2e1c6`, `77f451e`) + 1 ubahan uncommitted (QR halaman 2 = 42.1875).
-- Lingkungan: Supabase HOSTED provisioned + seed demo (bukan lagi blocker lokal; CLI/Docker tersedia). Fitur opsional mati default: blockchain anchoring (mock, ADR-018), AI feedback (perlu consent + provider), code runner (provider belum dikonfigurasi, mock untuk preview).
+- Phase: **Phases 0–7 selesai (hardening/deployment pre-flight)** — semua acceptance criteria tercentang, seluruh gate CI hijau, live-denial 95/95, restore rehearsal 9/9, e2e hermetic 25 pass/34 skip. Yang tersisa hanya eksekusi deployment produksi nyata (domain/HTTPS/provisioning fresh Supabase) yang butuh sumber daya eksternal.
+- Capaian utama: kursus Python 12 level/120 aktivitas + Matematika Dasar 3 level/12 pelajaran/25 aktivitas ter-seed; full loop murid→kuis→nilai→sertifikat terverifikasi LIVE di hosted; sertifikat 2 halaman A4 + rekam digital web + JSON record publik + QR verifikasi; **bilingual penuh EN/ID** di semua permukaan (login, semua dashboard RBAC, quiz/review/activity, guru 9 halaman dalam, guardian, settings) dengan default English; **in-browser code runner (Pyodide WASM)** untuk Python; CSP nonce + frame-src allowlist + security monitor panel; RBAC workflow guide + grouped nav + quick actions; export CSV untuk semua peran (transcript murid, summary wali, analytics guru).
+- Gate terakhir: **format ✓ · lint 0 · tsc 0 · vitest 715/1 · build 0 · db:typecheck OK · release-gate ✅ · e2e hermetic 25 passed/34 skipped** (spec auth skip saat backend absent, fail-fast saat password tidak di-set di env live).
+- Branch: main — commit terakhir di-push ke origin: `5ae1157` (feat export RBAC).
+- Lingkungan: Supabase HOSTED provisioned + seed demo. Fitur opsional: blockchain anchoring (mock, ADR-018), AI feedback (consent + provider-gated), code runner (mock / Pyodide in-browser).
+- **Release-readiness** tercatat di `docs/release-checklist.md` (semua kotak centang) dan `docs/credential-audit.md` (0 referensi live-risk tersisa; gate `scripts/release-gate.sh` menolak launch bila ada).
 
 ### Prompt — Guardian dashboard slice (Wali: UI + route coverage)
 
@@ -2092,3 +2094,20 @@ loads and navigation. `<html lang>` tracks the preference in every state.
 - Screenshot confirms dark-mode rendering: grouped sidebar, 3 quick-action
   cards, 5 metric cards, cohort matrix, risk signals
 - Gates: tsc 0 · lint 0 · vitest 705/1 · build 0 (commit 22817da, pushed)
+
+### Prompt — Release-readiness pre-flight (2026-09-09)
+
+| Date | Command | Result | Notes |
+|---|---|---|---|
+| 2026-09-09 | `npx prettier --check` | PASS | 11 file diformat (formatting-only), bersih |
+| 2026-09-09 | `npm run lint` | PASS 0 | ESLint bersih |
+| 2026-09-09 | `npx tsc --noEmit` | PASS 0 | strict TS bersih |
+| 2026-09-09 | `npx vitest run` | PASS 715/1 | unit + integration hijau |
+| 2026-09-09 | `npm run build` | PASS | production build 0 error |
+| 2026-09-09 | `npm run db:typecheck` | PASS | advisor OK (40 tables / 5 views) |
+| 2026-09-09 | `bash scripts/release-gate.sh` | PASS 6/6 | gate kredensial demo: 0 live-risk tersisa |
+| 2026-09-09 | `bash scripts/live-denial/run.sh` (PG local) | PASS 95/95 | isolasi RLS org-1/org-2, wali, storage |
+| 2026-09-09 | `bash scripts/restore-rehearsal/run.sh` (PG local) | PASS 9/9 | prosedur restore DB terlatih |
+| 2026-09-09 | `npx playwright test` (hermetic) | PASS 25 passed / 34 skipped | spec auth skip tanpa backend; fail-fast saat password live tidak di-set |
+
+Keputusan: spec e2e yang butuh auth memakai lazy getter `requireStudentPassword()` — melempar error eksplisit bila `E2E_STUDENT_PASSWORD` tidak di-set (tanpa fallback ke password lama yang sudah di-rotate), tetapi *skip* bila backend tidak tersedia sehingga CI hermetic tetap hijau. Sisa blokir hanya eksekusi deployment produksi nyata (domain, HTTPS, provisioning) yang memerlukan sumber daya eksternal — tercatat di `DEPLOYMENT.md` §8.

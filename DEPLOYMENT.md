@@ -89,7 +89,7 @@ Run on the exact commit that will be deployed, from a clean checkout:
 | Format | `npm run format:check` | 0 |
 | Lint | `npm run lint` | 0 (`--max-warnings=0`) |
 | Typecheck | `npm run typecheck` | 0 |
-| Unit/integration | `npm test` | all passed (suite currently 520 + 1 skip) |
+| Unit/integration | `npm test` | all passed (suite currently 715 + 1 skip) |
 | Production build | `npm run build` | 0 |
 | DB advisor | `npm run db:typecheck` | OK (all migrations scanned) |
 | Live RLS denial | `bash scripts/live-denial/run.sh` | `PASS=… FAIL=0` against real Postgres, all migrations verbatim |
