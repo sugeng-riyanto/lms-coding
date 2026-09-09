@@ -61,6 +61,19 @@ export async function proxy(request: NextRequest) {
   supabaseResponse.headers.set(cspHeader, policy);
   supabaseResponse.headers.set("Reporting-Endpoints", `csp-endpoint="${CSP_REPORT_ENDPOINT}"`);
 
+  // Performance monitoring headers
+  supabaseResponse.headers.set("X-Response-Time", new Date().toISOString());
+  
+  // Cache control for static assets
+  const pathname = request.nextUrl.pathname;
+  if (pathname.startsWith("/_next/static/")) {
+    supabaseResponse.headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  } else if (pathname.startsWith("/api/")) {
+    supabaseResponse.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  } else {
+    supabaseResponse.headers.set("Cache-Control", "public, s-maxage=60, stale-while-revalidate=300");
+  }
+
   return supabaseResponse;
 }
 

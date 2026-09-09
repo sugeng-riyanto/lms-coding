@@ -15,6 +15,7 @@ import {
   type DigestAlert,
 } from "@/lib/analytics-teacher";
 import { ChartPanel, ColumnChart } from "@/components/charts";
+import { AnalyticsTrends } from "@/components/analytics-trends";
 import { fmt, getLang, localeFor, mkT } from "@/lib/i18n";
 import { ANALYTICS } from "@/lib/ui-text/analytics";
 import { AnalyticsFilters } from "./analytics-filters";
@@ -407,6 +408,11 @@ export default async function AnalyticsPage({
         selectedAssessment={selectedAssessment}
         lang={lang}
       />
+
+      {/* Trends */}
+      <section aria-label="Performance trends" className="mt-6">
+        <AnalyticsTrends cohortId={selectedCohort} lang={lang} />
+      </section>
 
       {/* Distribusi kelas — grafik nyata (data dari attempts & progress_snapshots) */}
       <section aria-label={t("distAria")} className="mt-6">

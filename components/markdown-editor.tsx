@@ -246,6 +246,25 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
           🔗
         </button>
         <span className="mx-1 h-4 w-px bg-slate-300 dark:bg-slate-600" />
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor.can().undo()}
+          className="rounded px-2 py-1 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30"
+          title="Undo (Ctrl+Z)"
+        >
+          ↩
+        </button>
+        <button
+          type="button"
+          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor.can().redo()}
+          className="rounded px-2 py-1 text-sm hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          ↪
+        </button>
+        <span className="mx-1 h-4 w-px bg-slate-300 dark:bg-slate-600" />
         {/* Mode toggles */}
         <div className="ml-auto flex items-center gap-1">
           <button

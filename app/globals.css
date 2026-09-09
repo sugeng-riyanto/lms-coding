@@ -239,3 +239,57 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* WCAG 2.2 AA: Touch targets ≥44px for primary controls */
+button,
+a[role="button"],
+input[type="submit"],
+input[type="button"],
+select,
+[role="tab"],
+[role="menuitem"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Exception: small inline buttons (undo/redo, formatting) */
+button[title*="Undo"],
+button[title*="Redo"],
+button:not([role]) {
+  min-height: auto;
+  min-width: auto;
+}
+
+/* Focus indicators for keyboard navigation */
+:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px rgb(37 99 235 / 0.14);
+}
+
+/* Skip navigation link */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #2563eb;
+  color: white;
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.3s;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+  button,
+  a {
+    border: 1px solid ButtonText;
+  }
+  :focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
