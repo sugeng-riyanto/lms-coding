@@ -2354,3 +2354,42 @@ All Phase 0–7 acceptance criteria satisfied. All gates green. Password rotatio
 ### Bilingual coverage (20 dictionaries, 71 tests)
 
 All teacher deep pages fully translated: grading queue, cohorts, question bank, admin map, security monitor, bulk import, student detail, certificates. Zero hardcoded Indonesian strings in teacher components.
+
+## Session 2026-09-10 — Full backlog commit + gate fixes
+
+### Commits pushed (10 themed commits, d3021a7..60adc27)
+
+| Commit | Theme | Files |
+|--------|-------|-------|
+| `4aae53e` | fix(hooks): use-presence TS errors | 1 |
+| `683523f` | feat(spaced-repetition): SM-2 scheduling | 1 |
+| `3ccd1d1` | feat(student): analytics + quiz result | 4 |
+| `02f6b6f` | feat(migrations): interventions, versioning, guardian | 1 |
+| `3a09d72` | feat(components): intervention queue, comments, version history | 1 |
+| `bc00eef` | feat(pwa): manifest, SW, offline queue, live announcer | 9 |
+| `67f751d` | feat(lib): quiz feedback, integrations, i18n | 10 |
+| `d0934c1` | feat(teacher/student): WYSIWYG, alerts, certificate | 6 |
+| `7f7479f` | fix(tests): CRLF normalization, dashboard i18n | 6 |
+| `8801590` | chore: deps, docs, progress | 5 |
+| `60adc27` | test: integration tests (cache, PWA, interventions) | 10 |
+
+### Gate results (final)
+
+| Gate | Result |
+|------|--------|
+| `tsc --noEmit` | ✅ 0 errors |
+| `vitest run` | ✅ 880 passed, 1 skipped |
+| `eslint --max-warnings=0` | ✅ 0 errors |
+| Working tree | ✅ Clean |
+
+### Fixes applied
+
+- `hooks/use-presence.ts`: Removed unused PresenceChannel, fixed supabaseRef in useLiveCursor
+- `components/review-queue.tsx`: Restructured useEffect to avoid sync setState (react-hooks/set-state-in-effect)
+- `tests/integration/learning-planning.test.ts`: CRLF→LF normalization for regex match on Windows
+
+### Evidence
+
+- All 47 uncommitted files committed across 10 themed commits
+- All commits pushed to origin/main
+- Preview live at http://localhost:50365/
