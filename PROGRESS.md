@@ -2071,3 +2071,24 @@ Indonesian in English mode, zero untranslated literals in Indonesian mode.
 
 **Result: All 5 surfaces fully bilingual.** Language toggle via Settings radio persists across page
 loads and navigation. `<html lang>` tracks the preference in every state.
+
+## RBAC UI/UX reorg — grouped nav + quick actions (2026-09-09, live)
+
+### Grouped teacher sidebar (verified live in EN + ID)
+- **OVERVIEW/RINGKASAN**: Dashboard, Analytics
+- **CONTENT/KONTEN**: Courses, Question Bank
+- **STUDENTS/SISWA**: Classes, Grading, Certificates
+- **ADMIN**: Admin (mapping), Security — org-admin facet only
+- Settings ungrouped at bottom
+
+### Quick action cards on /teacher (verified live in EN + ID)
+- 📝 Grade answers — amber card, shows pending count ("2 essays awaiting grading")
+- 📚 Create new course — blue card
+- 👥 Import students — emerald card (bulk XLSX)
+
+### Verification
+- Both languages switch correctly via Settings toggle (RINGKASAN ⇄ OVERVIEW etc.)
+- Mobile drawer inherits grouped layout
+- Screenshot confirms dark-mode rendering: grouped sidebar, 3 quick-action
+  cards, 5 metric cards, cohort matrix, risk signals
+- Gates: tsc 0 · lint 0 · vitest 705/1 · build 0 (commit 22817da, pushed)
