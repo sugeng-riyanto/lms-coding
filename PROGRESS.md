@@ -2173,3 +2173,13 @@ Kursus baru **Retry Mastery: Quiz Retake** (`retry-mastery-demo`, cohort Kelas R
 | Entry ulang di UI | level map → aktivitas quiz → tombol **"Start quiz"** (2/5 attempts terpakai, maxAttempts=5) |
 
 **Defect live yang diperbaiki (`app/(student)/learn/[id]/page.tsx`):** deep-link `/learn/{levelId}` tanpa `?enrollment=` memakai **enrollment aktif pertama lintas kursus** (murid01 → Matematika Dasar) — link kuis membawa enrollment kursus SALAH → potensi polusi attempt/learning-event lintas course. Fix: fallback kini di-scope ke **course milik level** (`level → course_versions → enrollment aktif course tsb`), fallback lama hanya bila tak ada enrollment course itu. Terverifikasi live: link aktivitas kini membawa `enrollment=8daf3fdd…` (course Retry) bukan `b5eda02e…` (Matematika). Gates: tsc 0 · lint 0 · vitest **724/1** · build 0.
+
+## Panel guru: bank soal terpakai vs menganggur + flag soal demo Matematika/Kimia
+
+Dashboard guru (`/teacher`) kini menampilkan panel **"Bank soal: terpakai vs menganggur"** (bilingual id/en via DASH dict):
+
+- **Statistik bank** (per org guru): Total **96** · Terpakai **93** · Menganggur **3** · Tingkat pemakaian **97%** (versi terbaru soal ter-link ke assessment = terpakai; draft termasuk; footnote definisi di UI).
+- **Tabel soal demo** (41 soal dari `matematika-numerik-demo` + `kimia-dasar-demo`): kolom Soal (truncate+title), Kursus (badge Math demo / Chem demo), Tipe (label lokal), **Kesulitan** (badge easy/medium/hard), **Kunci** (dari `question_versions.grading_json` — `correctOptionId`, `correctOptionIds`, `expected[+unit]`, `acceptedAnswers`, "— (kunci manual)" untuk essay), Status (✓ Terpakai / ○ Menganggur).
+- **Sumber data**: 4 query server-side (questions org → versi terbaru → used-set via assessment_questions → rantai courses→…→assessment_questions untuk flag demo). Terverifikasi live id & en (toggle di /settings).
+
+Gates: tsc 0 · lint 0 · vitest **731/1** · build 0. (Satu perbaikan saat gates: `bankKeyManual` id/en dibuat beda agar lolos tes parity i18n multi-kata.)

@@ -19,6 +19,155 @@ interface Alert {
   studentName: string;
 }
 
+// ── Panel bank soal: terpakai vs menganggur + flag soal demo Matematika/Kimia ──
+const DEMO_BANK_SLUGS = ["matematika-numerik-demo", "kimia-dasar-demo"];
+
+interface BankRow {
+  id: string;
+  type: string;
+  prompt: string;
+  difficulty: string;
+  key: string;
+  used: boolean;
+  courseSlug: string | null;
+}
+
+interface BankPanelData {
+  total: number;
+  used: number;
+  idle: number;
+  demoTotal: number;
+  demoIdle: number;
+  rows: BankRow[];
+}
+
+interface DemoCourseRow {
+  id: string;
+  slug: string;
+  course_versions: {
+    levels: {
+      modules: {
+        lessons: {
+          activities: {
+            assessments: { assessment_questions: { question_version_id: string }[] }[];
+          }[];
+        }[];
+      }[];
+    }[];
+  }[] | null;
+}
+
+/** Ringkas kunci jawaban dari grading_json versi terbaru (per tipe soal). */
+function summarizeKey(type: string, grading: Record<string, unknown> | undefined): string {
+  if (!grading) return "";
+  switch (type) {
+    case "single_choice":
+    case "true_false":
+      return String(grading.correctOptionId ?? "");
+    case "multiple_choice":
+      return Array.isArray(grading.correctOptionIds)
+        ? (grading.correctOptionIds as string[]).join(", ")
+        : "";
+    case "numeric_tolerance": {
+      const exp = grading.expected;
+      const unit = (grading.unit as { expectedUnit?: string } | undefined)?.expectedUnit;
+      return exp === undefined ? "" : `${exp}${unit ? " " + unit : ""}`;
+    }
+    case "short_text":
+      return Array.isArray(grading.acceptedAnswers)
+        ? (grading.acceptedAnswers as string[]).join(" / ")
+        : "";
+    default:
+      return ""; // essay/file → kunci manual (moderation)
+  }
+}
+
+/** Stats bank + daftar soal demo (Matematika/Kimia) dengan kunci & kesulitan. */
+async function getQuestionBankPanel(orgId: string): Promise<BankPanelData | null> {
+  const supabase = await createClient();
+  const { data: qs } = await supabase
+    .from("questions")
+    .select("id,type,prompt_json,difficulty")
+    .eq("organization_id", orgId);
+  const qRows = (qs as
+    | { id: string; type: string; prompt_json: { text?: string }; difficulty: string }[]
+    | null) ?? [];
+  if (qRows.length === 0) return null;
+
+  const qids = qRows.map((q) => q.id);
+  const { data: vs } = await supabase
+    .from("question_versions")
+    .select("id,question_id,version,grading_json")
+    .in("question_id", qids);
+  const vRows = (vs as
+    | { id: string; question_id: string; version: number; grading_json: Record<string, unknown> }[]
+    | null) ?? [];
+  const latestByQ = new Map<string, (typeof vRows)[number]>();
+  for (const v of vRows) if (!latestByQ.has(v.question_id)) latestByQ.set(v.question_id, v); // order desc → terbaru menang
+
+  const usedIds = new Set<string>();
+  if (vRows.length > 0) {
+    const { data: aq } = await supabase
+      .from("assessment_questions")
+      .select("question_version_id")
+      .in("question_version_id", vRows.map((v) => v.id));
+    for (const r of (aq as { question_version_id: string }[] | null) ?? []) usedIds.add(r.question_version_id);
+  }
+
+  // Rantai kursus demo → version id (slug kursus asal soal).
+  const { data: demoCourses } = await supabase
+    .from("courses")
+    .select("id,slug,course_versions(levels(modules(lessons(activities(assessments(assessment_questions(question_version_id)))))))")
+    .in("slug", DEMO_BANK_SLUGS);
+  const demoCourseByVersion = new Map<string, string>();
+  for (const c of (demoCourses as DemoCourseRow[] | null) ?? []) {
+    for (const cv of c.course_versions ?? [])
+      for (const l of cv.levels ?? [])
+        for (const m of l.modules ?? [])
+          for (const le of m.lessons ?? [])
+            for (const a of le.activities ?? [])
+              for (const as of a.assessments ?? [])
+                for (const aq2 of as.assessment_questions ?? [])
+                  demoCourseByVersion.set(aq2.question_version_id, c.slug);
+  }
+
+  const total = qRows.length;
+  let used = 0;
+  const rows: BankRow[] = [];
+  for (const q of qRows) {
+    const latest = latestByQ.get(q.id);
+    const isUsed = latest ? usedIds.has(latest.id) : false;
+    if (isUsed) used++;
+    const demoSlug = latest ? demoCourseByVersion.get(latest.id) ?? null : null;
+    if (demoSlug) {
+      rows.push({
+        id: q.id,
+        type: q.type,
+        prompt: q.prompt_json?.text ?? "",
+        difficulty: q.difficulty,
+        key: summarizeKey(q.type, latest?.grading_json),
+        used: isUsed,
+        courseSlug: demoSlug,
+      });
+    }
+  }
+  rows.sort((a, b) => Number(a.used) - Number(b.used) || a.prompt.localeCompare(b.prompt));
+  return { total, used, idle: total - used, demoTotal: rows.length, demoIdle: rows.filter((r) => !r.used).length, rows };
+}
+
+async function teacherOrgId(userId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: mem } = await supabase
+    .from("memberships")
+    .select("organization_id")
+    .eq("user_id", userId)
+    .eq("role", "teacher")
+    .eq("status", "active")
+    .limit(1)
+    .single();
+  return (mem as { organization_id: string } | null)?.organization_id ?? null;
+}
+
 async function getDashboard(userId: string, cohortId: string | null, lang: Lang = "id") {
   const supabase = await createClient();
   const { data: cohorts } = await supabase.from("cohorts").select("id,name").eq("teacher_id", userId);
@@ -173,6 +322,15 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
       </main>
     );
   }
+  const orgId = userId ? await teacherOrgId(userId) : null;
+  let bank: BankPanelData | null = null;
+  if (orgId) {
+    try {
+      bank = await getQuestionBankPanel(orgId);
+    } catch {
+      bank = null; // panel opsional — jangan mematahkan dashboard
+    }
+  }
   const summary = summarizeCohort(data.rows);
 
   return (
@@ -278,6 +436,112 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
         />
       </section>
       <p className="mt-2 text-xs text-slate-500">{fmt(t("metricsFootnote"), { n: summary.enrolled })}</p>
+
+      {bank && (
+        <>
+          <SectionHeader title={t("bankTitle")} hint={t("bankHint")} />
+          <section aria-label={t("bankAria")} className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <StatCard label={t("bankTotal")} value={String(bank.total)} tone="blue" hint={t("bankTotalHint")} />
+            <StatCard label={t("bankUsed")} value={String(bank.used)} tone="emerald" hint={t("bankUsedHint")} />
+            <StatCard label={t("bankIdle")} value={String(bank.idle)} tone="amber" hint={t("bankIdleHint")} />
+            <StatCard
+              label={t("bankUtil")}
+              value={`${bank.total > 0 ? Math.round((bank.used / bank.total) * 100) : 0}%`}
+              tone="slate"
+              hint={t("bankUtilHint")}
+            />
+          </section>
+          <p className="mt-2 text-xs text-slate-500">
+            {fmt(t("bankDemoIdleLine"), { n: bank.demoIdle, m: bank.demoTotal })}
+          </p>
+          {bank.rows.length === 0 ? (
+            <p role="status" className="mt-3 rounded-2xl border bg-white p-5 shadow-sm dark:bg-slate-900">
+              {t("bankNoDemo")}
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto rounded-2xl border bg-white shadow-sm dark:bg-slate-900">
+              <table className="w-full border-collapse text-left text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="p-2">{t("bankColQuestion")}</th>
+                    <th className="p-2">{t("bankColCourse")}</th>
+                    <th className="p-2">{t("bankColType")}</th>
+                    <th className="p-2">{t("bankColDifficulty")}</th>
+                    <th className="p-2">{t("bankColKey")}</th>
+                    <th className="p-2">{t("bankColStatus")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bank.rows.map((r) => (
+                    <tr key={r.id} className="border-b align-top">
+                      <td className="max-w-[16rem] p-2 font-medium" title={r.prompt}>
+                        {r.prompt.length > 64 ? r.prompt.slice(0, 63) + "…" : r.prompt}
+                      </td>
+                      <td className="p-2">
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            r.courseSlug === "kimia-dasar-demo"
+                              ? "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
+                              : "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
+                          }`}
+                        >
+                          {r.courseSlug === "kimia-dasar-demo" ? t("bankCourseChem") : t("bankCourseMath")}
+                        </span>
+                      </td>
+                      <td className="p-2 text-slate-600 dark:text-slate-300">
+                        {{
+                          single_choice: t("bankTypeSingleChoice"),
+                          true_false: t("bankTypeTrueFalse"),
+                          multiple_choice: t("bankTypeMultipleChoice"),
+                          numeric_tolerance: t("bankTypeNumeric"),
+                          short_text: t("bankTypeShortText"),
+                          essay_manual: t("bankTypeEssay"),
+                          file_manual: t("bankTypeFile"),
+                        }[r.type] ?? r.type}
+                      </td>
+                      <td className="p-2">
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            {
+                              easy: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+                              medium: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+                              hard: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
+                            }[r.difficulty] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                          }`}
+                        >
+                          {{
+                            easy: t("bankDiffEasy"),
+                            medium: t("bankDiffMedium"),
+                            hard: t("bankDiffHard"),
+                          }[r.difficulty] ?? r.difficulty}
+                        </span>
+                      </td>
+                      <td
+                        className="max-w-[14rem] p-2 font-mono text-xs"
+                        title={r.key ? r.key : undefined}
+                      >
+                        {r.key ? (r.key.length > 36 ? r.key.slice(0, 35) + "…" : r.key) : t("bankKeyManual")}
+                      </td>
+                      <td className="p-2">
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            r.used
+                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
+                              : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
+                          }`}
+                        >
+                          {r.used ? t("bankStatusUsed") : t("bankStatusIdle")}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="mt-2 text-xs text-slate-500">{t("bankFootnote")}</p>
+        </>
+      )}
 
       <SectionHeader title={t("matrixTitle")} hint={t("matrixHint")} />
       {data.rows.length === 0 ? (
