@@ -45,4 +45,35 @@ export const GUARDIAN: TextDict = {
     id: "Sertifikat ini dicabut; unduhan valid tidak tersedia.",
     en: "This certificate has been revoked; a valid download is unavailable.",
   },
+
+  // ── Quiz Scores ──
+  quizScoresTitle: { id: "Nilai Ujian", en: "Quiz Scores" },
+  quizScoresIntro: {
+    id: "Ringkasan nilai ujian anak Anda dari semua mata pelajaran yang diikuti.",
+    en: "Summary of your child's quiz scores across all enrolled subjects.",
+  },
+  quizNoAttempts: {
+    id: "Belum ada ujian dikerjakan.",
+    en: "No quizzes attempted yet.",
+  },
+  quizSubject: { id: "Mata Pelajaran", en: "Subject" },
+  quizScore: { id: "Nilai", en: "Score" },
+  quizDate: { id: "Tanggal", en: "Date" },
+  quizAttempts: { id: "{n} percobaan", en: "{n} attempts" },
+  quizBestScore: { id: "Skor terbaik", en: "Best score" },
+  quizStatus: { id: "Status", en: "Status" },
+
+  // ── Study Time ──
+  studyTimeTitle: { id: "Waktu Belajar", en: "Study Time" },
+  studyTimeIntro: {
+    id: "Total waktu belajar aktif anak Anda (dihitung dari sesi belajar yang terekam).",
+    en: "Total active study time for your child (calculated from recorded study sessions).",
+  },
+  studyTotalHours: { id: "Total jam", en: "Total hours" },
+  studySessions: { id: "{n} sesi", en: "{n} sessions" },
+  studyNoData: {
+    id: "Belum ada data waktu belajar.",
+    en: "No study time data yet.",
+  },
+  studyLastSession: { id: "Sesi terakhir", en: "Last session" },
 } as const;

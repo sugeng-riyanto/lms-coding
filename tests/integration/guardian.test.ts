@@ -22,12 +22,13 @@ describe("guardian dashboard slice (Wali) — route coverage", () => {
     expect(page).toMatch(/from\("guardian_links"\)/);
     expect(page).toMatch(/eq\("guardian_id", userId\)/);
     expect(page).toMatch(/eq\("status", "active"\)/);
-    // Permukaan data = tabel ber-policy guardian (profil/enrollment/progress),
-    // bukan attempts/responses (nilai & jawaban tidak boleh ke wali).
+    // Permukaan data = tabel ber-policy guardian (profil/enrollment/progress/attempts/sessions),
+    // tetapi responses (jawaban detail) tidak boleh ke wali.
     expect(page).toMatch(/from\("profiles"\)/);
     expect(page).toMatch(/from\("enrollments"\)/);
     expect(page).toMatch(/from\("progress_snapshots"\)/);
-    expect(page).not.toMatch(/from\("attempts"\)/);
+    // attempts & study_sessions diizinkan untuk guardian (quiz scores + study time)
+    // via RLS policy guardian_attempts_select / guardian_sessions_select.
     expect(page).not.toMatch(/from\("responses"\)/);
   });
   it("login → hub peran → dashboard Wali (role resolve server-side)", () => {

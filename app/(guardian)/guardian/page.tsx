@@ -13,6 +13,29 @@ export const dynamic = "force-dynamic";
  * punya policy guardian (profiles/enrollments/progress_snapshots via active
  * guardian_links) — tidak menyentuh attempts/jawaban/kunci.
  */
+interface QuizScore {
+  subject: string;
+  bestScore: number | null;
+  attempts: number;
+  lastAttemptAt: string | null;
+  latestStatus: string;
+}
+
+type AttemptRow = {
+  id: string;
+  enrollment_id: string;
+  assessment_id: string;
+  final_score: number | null;
+  status: string;
+  submitted_at: string | null;
+};
+type AssessmentRow = { id: string; activity_id: string };
+type ActivityTitleRow = { id: string; title: string; lesson_id: string };
+type LessonTitleRow = { id: string; title: string; module_id: string };
+type ModuleTitleRow = { id: string; title: string; level_id: string };
+type LevelTitleRow = { id: string; title: string; course_version_id: string };
+
+
 interface ChildSummary {
   studentId: string;
   displayName: string;
@@ -30,6 +53,10 @@ interface ChildSummary {
     issuedAt: string;
     level: string;
   }[];
+  quizScores: QuizScore[];
+  totalStudySeconds: number;
+  studySessionCount: number;
+  lastStudyAt: string | null;
 }
 
 async function getChildCertificates(
@@ -114,6 +141,113 @@ async function getChildren(userId: string): Promise<ChildSummary[]> {
       }
     }
 
+    // ── Quiz scores: attempts grouped by assessment → subject ──
+    let quizScores: QuizScore[] = [];
+    let totalStudySeconds = 0;
+    let studySessionCount = 0;
+    let lastStudyAt: string | null = null;
+    if (enrollmentIds.length > 0) {
+      const { data: attempts } = await supabase
+        .from("attempts")
+        .select("id,enrollment_id,assessment_id,final_score,status,submitted_at")
+        .in("enrollment_id", enrollmentIds)
+        .eq("status", "submitted");
+      const attemptRows = (attempts as AttemptRow[] | null) ?? [];
+      if (attemptRows.length > 0) {
+        // Resolve assessment → activity → lesson → module → level → course
+        const asmtIds = [...new Set(attemptRows.map((a) => a.assessment_id))];
+        const { data: asmts } = await supabase
+          .from("assessments")
+          .select("id,activity_id")
+          .in("id", asmtIds);
+        const asmtMap = new Map<string, string>();
+        for (const a of (asmts as AssessmentRow[] | null) ?? []) asmtMap.set(a.id, a.activity_id);
+
+        const actIds = [...new Set([...asmtMap.values()])];
+        const { data: acts } = await supabase
+          .from("activities")
+          .select("id,title,lesson_id")
+          .in("id", actIds);
+        const actMap = new Map<string, { title: string; lessonId: string }>();
+        for (const a of (acts as ActivityTitleRow[] | null) ?? [])
+          actMap.set(a.id, { title: a.title, lessonId: a.lesson_id });
+
+        const lesIds = [...new Set([...actMap.values()].map((v) => v.lessonId))];
+        const { data: lesRows } = await supabase
+          .from("lessons")
+          .select("id,title,module_id")
+          .in("id", lesIds);
+        const lesMap = new Map<string, { title: string; moduleId: string }>();
+        for (const l of (lesRows as LessonTitleRow[] | null) ?? [])
+          lesMap.set(l.id, { title: l.title, moduleId: l.module_id });
+
+        const modIds = [...new Set([...lesMap.values()].map((v) => v.moduleId))];
+        const { data: modRows } = await supabase
+          .from("modules")
+          .select("id,title,level_id")
+          .in("id", modIds);
+        const modMap = new Map<string, { title: string; levelId: string }>();
+        for (const m of (modRows as ModuleTitleRow[] | null) ?? [])
+          modMap.set(m.id, { title: m.title, levelId: m.level_id });
+
+        const lvIds = [...new Set([...modMap.values()].map((v) => v.levelId))];
+        const { data: lvRows } = await supabase
+          .from("levels")
+          .select("id,title")
+          .in("id", lvIds);
+        const lvMap = new Map<string, string>();
+        for (const l of (lvRows as LevelTitleRow[] | null) ?? []) lvMap.set(l.id, l.title);
+
+        // Group by level (subject)
+        const bySubject = new Map<string, { best: number | null; count: number; last: string | null; status: string }>();
+        for (const att of attemptRows) {
+          const actId = asmtMap.get(att.assessment_id);
+          const act = actId ? actMap.get(actId) : undefined;
+          const les = act ? lesMap.get(act.lessonId) : undefined;
+          const mod = les ? modMap.get(les.moduleId) : undefined;
+          const subject = mod ? (lvMap.get(mod.levelId) ?? "—") : "—";
+          const existing = bySubject.get(subject);
+          const score = att.final_score != null ? Number(att.final_score) : null;
+          if (existing) {
+            existing.count += 1;
+            if (score != null && (existing.best == null || score > existing.best)) existing.best = score;
+            if (att.submitted_at && (!existing.last || att.submitted_at > existing.last))
+              existing.last = att.submitted_at;
+            existing.status = att.status;
+          } else {
+            bySubject.set(subject, {
+              best: score,
+              count: 1,
+              last: att.submitted_at ?? null,
+              status: att.status,
+            });
+          }
+        }
+        quizScores = [...bySubject.entries()]
+          .map(([subject, v]) => ({
+            subject,
+            bestScore: v.best,
+            attempts: v.count,
+            lastAttemptAt: v.last,
+            latestStatus: v.status,
+          }))
+          .sort((a, b) => a.subject.localeCompare(b.subject, "id"));
+      }
+
+      // ── Study time ──
+      const { data: sessions } = await supabase
+        .from("study_sessions")
+        .select("enrollment_id,active_seconds,started_at")
+        .in("enrollment_id", enrollmentIds)
+        .order("started_at", { ascending: false });
+      for (const s of (sessions as
+        { enrollment_id: string; active_seconds: number; started_at: string | null }[] | null) ?? []) {
+        totalStudySeconds += s.active_seconds;
+        studySessionCount += 1;
+        if (s.started_at && (!lastStudyAt || s.started_at > lastStudyAt)) lastStudyAt = s.started_at;
+      }
+    }
+
     children.push({
       studentId: link.student_id,
       displayName,
@@ -125,6 +259,10 @@ async function getChildren(userId: string): Promise<ChildSummary[]> {
       masteryPct,
       lastActivityAt,
       certificates: await getChildCertificates(supabase, enrollmentIds),
+      quizScores,
+      totalStudySeconds,
+      studySessionCount,
+      lastStudyAt,
     });
   }
   return children.sort((a, b) => a.displayName.localeCompare(b.displayName, "id"));
@@ -133,6 +271,14 @@ async function getChildren(userId: string): Promise<ChildSummary[]> {
 function daysAgo(isoUtc: string | null): number | null {
   if (!isoUtc) return null;
   return Math.max(0, Math.round((Date.now() - Date.parse(isoUtc)) / 86400000));
+}
+
+function formatDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.round((totalSeconds % 3600) / 60);
+  if (h > 0 && m > 0) return `${h}h ${m}m`;
+  if (h > 0) return `${h}h`;
+  return `${m}m`;
 }
 
 export default async function GuardianPage() {
@@ -249,6 +395,7 @@ export default async function GuardianPage() {
                     : t("noProgress")}
                 </p>
 
+                {/* ── Certificates ── */}
                 <div className="border-t px-5 py-4">
                   <p className="text-sm font-bold">{t("certAuto")}</p>
                   {c.certificates.length === 0 ? (
@@ -284,6 +431,84 @@ export default async function GuardianPage() {
                         </li>
                       ))}
                     </ul>
+                  )}
+                </div>
+
+                {/* ── Quiz Scores ── */}
+                <div className="border-t px-5 py-4">
+                  <p className="text-sm font-bold">{t("quizScoresTitle")}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("quizScoresIntro")}</p>
+                  {c.quizScores.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400" role="status">
+                      {t("quizNoAttempts")}
+                    </p>
+                  ) : (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead>
+                          <tr className="border-b text-xs uppercase tracking-wide text-slate-500">
+                            <th className="py-2 pr-3 font-semibold">{t("quizSubject")}</th>
+                            <th className="py-2 pr-3 font-semibold">{t("quizBestScore")}</th>
+                            <th className="py-2 pr-3 font-semibold">{t("quizAttempts")}</th>
+                            <th className="py-2 pr-3 font-semibold">{t("quizDate")}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {c.quizScores.map((qs) => (
+                            <tr key={qs.subject} className="border-b last:border-0">
+                              <td className="py-2 pr-3 font-medium">{qs.subject}</td>
+                              <td className="py-2 pr-3">
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                    qs.bestScore != null && qs.bestScore >= 70
+                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                      : qs.bestScore != null
+                                        ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                                        : "text-slate-400"
+                                  }`}
+                                >
+                                  {qs.bestScore != null ? `${Math.round(qs.bestScore)}%` : "—"}
+                                </span>
+                              </td>
+                              <td className="py-2 pr-3 text-slate-600 dark:text-slate-300">
+                                {fmt(t("quizAttempts"), { n: qs.attempts })}
+                              </td>
+                              <td className="py-2 text-xs text-slate-500 dark:text-slate-400">
+                                {qs.lastAttemptAt ? formatJakarta(qs.lastAttemptAt) : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Study Time ── */}
+                <div className="border-t px-5 py-4">
+                  <p className="text-sm font-bold">{t("studyTimeTitle")}</p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{t("studyTimeIntro")}</p>
+                  {c.studySessionCount === 0 ? (
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400" role="status">
+                      {t("studyNoData")}
+                    </p>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-4">
+                      <div className="rounded-xl bg-slate-50 px-4 py-3 text-center dark:bg-slate-800">
+                        <p className="text-2xl font-extrabold">{formatDuration(c.totalStudySeconds)}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{t("studyTotalHours")}</p>
+                      </div>
+                      <div className="rounded-xl bg-slate-50 px-4 py-3 text-center dark:bg-slate-800">
+                        <p className="text-2xl font-extrabold">{c.studySessionCount}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{t("studySessions")}</p>
+                      </div>
+                      {c.lastStudyAt && (
+                        <div className="rounded-xl bg-slate-50 px-4 py-3 text-center dark:bg-slate-800">
+                          <p className="text-lg font-bold">{formatJakarta(c.lastStudyAt)}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{t("studyLastSession")}</p>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </li>
