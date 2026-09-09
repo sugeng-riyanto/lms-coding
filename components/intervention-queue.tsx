@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 interface AtRiskStudent {
@@ -19,13 +19,6 @@ interface InterventionQueueProps {
   cohortId: string;
 }
 
-function formatLastActive(dateStr: string, now: number): string {
-  const diff = now - new Date(dateStr).getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  if (days === 0) return "Today";
-  if (days === 1) return "1d ago";
-  return `${days}d ago`;
-}
 
 export function InterventionQueue({ teacherId, cohortId }: InterventionQueueProps) {
   const [students, setStudents] = useState<AtRiskStudent[]>([]);
