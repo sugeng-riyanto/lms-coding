@@ -63,6 +63,7 @@ Jika ada konflik, dokumen dengan urutan lebih tinggi menang. Jangan menebak atur
 
 - `RBAC.md` / `SECURITY_PRIVACY.md` — peran, RLS, dan kebijakan data (wajib dibaca sebelum menulis kode akses).
 - `docs/design-system.md` — token elevasi, `.card-lift`, aturan gradien, pemetaan dark mode, dan kebijakan reduced-motion. **Baca sebelum memberi style pada komponen baru** agar konsisten.
+- `docs/compound-unit-authoring.md` — panduan guru menulis soal numerik dengan satuan majemuk (km/jam, kg·m/s², m/s²): sintaksis, `unitFactors`, eksponen/superskrip, validasi, dan template question pack.
 - `docs/runbooks.md` — prosedur operasional (migration, seed, live-denial, backup/restore).
 - `docs/release-checklist.md` — daftar rilis dan smoke test.
 - `docs/pilot-deployment.md` — playbook dry-run pilot: env set, urutan db push + smoke, prosedur restore (rehearsal 9/9).

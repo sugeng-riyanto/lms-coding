@@ -2233,3 +2233,17 @@ Gates: tsc 0 · lint 0 · vitest **741/1** · build 0.
 **Test** `tests/integration/randomized-pool.test.ts` (+5): bukti statis — port xmur3/mulberry32 konstanta sama, trigger BEFORE INSERT, null untuk non-randomize, revoke PUBLIC.
 
 Gates: tsc 0 · lint 0 · vitest **746/1** · build 0.
+
+## Dokumentasi compound-unit authoring
+
+`docs/compound-unit-authoring.md` — panduan komprehensif untuk guru Fisika/Kimia
+menulis soal numerik dengan satuan majemuk (km/jam, kg·m/s², m/s²):
+
+- Cara menghitung `unitFactors` relatif terhadap `expectedUnit` (basis).
+- Sintaksis pemisah (`/`, `*`, `·`, `×`, `⋅`) dan eksponen (`^N`, `²`, `³`, `⁻¹`).
+- Contoh soal per mata pelajaran (Fisika: kecepatan, percepatan, gaya, densitas, energi; Kimia: massa; Matematika: persen).
+- Template question pack dengan prefix `unit:`.
+- Aturan validasi dan penolakan (prinsip: tidak menebak unit tak dikenal).
+- Checklist penulisan soal.
+
+Direferensikan dari README.md (tautan ke docs/compound-unit-authoring.md).
