@@ -17,11 +17,13 @@ interface Props {
   status: string;
   locked?: boolean;
   lang: Lang;
+  /** Server-fetched result for submitted attempts — survives page reload. */
+  initialResult?: Result | null;
 }
 
 type Result = Awaited<ReturnType<typeof getAttemptResult>>;
 
-export function QuizTaker({ attemptId, questions, status, locked, lang }: Props) {
+export function QuizTaker({ attemptId, questions, status, locked, lang, initialResult }: Props) {
   const router = useRouter();
   const t = mkT(QUIZ, lang);
   const [answers, setAnswers] = useState<Record<string, unknown>>(
@@ -30,7 +32,7 @@ export function QuizTaker({ attemptId, questions, status, locked, lang }: Props)
   const [saving, setSaving] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [result, setResult] = useState<Result | null>(null);
+  const [result, setResult] = useState<Result | null>(initialResult ?? null);
 
   function setAnswer(qvId: string, value: unknown) {
     setAnswers((a) => ({ ...a, [qvId]: value }));
