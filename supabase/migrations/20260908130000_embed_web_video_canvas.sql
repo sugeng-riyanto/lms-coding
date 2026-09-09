@@ -13,7 +13,7 @@
 -- Strokes disanitasi server (lib/canvas.ts); RLS membatasi per peran.
 
 -- ---------- Bagian A: tipe aktivitas ----------
-alter table public.activities drop constraint activities_type_check;
+alter table public.activities drop constraint if exists activities_type_check;
 alter table public.activities add constraint activities_type_check
   check (type in (
     'article','video_link','resource','reflection','quiz',
@@ -23,7 +23,7 @@ alter table public.activities add constraint activities_type_check
   ));
 
 -- ---------- Bagian B: kanvas anotasi ----------
-create table public.canvas_annotations (
+create table if not exists public.canvas_annotations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id),
   attempt_id uuid not null references public.attempts(id) on delete cascade,
@@ -42,6 +42,7 @@ comment on table public.canvas_annotations is
 alter table public.canvas_annotations enable row level security;
 
 -- SELECT: murid pemilik attempt / guru cohort enrollment-nya.
+drop policy if exists canvas_student_select on public.canvas_annotations;
 create policy canvas_student_select on public.canvas_annotations for select to authenticated
   using (exists (
     select 1 from public.attempts a
@@ -50,6 +51,7 @@ create policy canvas_student_select on public.canvas_annotations for select to a
       and e.student_id = auth.uid()
   ));
 
+drop policy if exists canvas_teacher_select on public.canvas_annotations;
 create policy canvas_teacher_select on public.canvas_annotations for select to authenticated
   using (exists (
     select 1 from public.attempts a
@@ -59,6 +61,7 @@ create policy canvas_teacher_select on public.canvas_annotations for select to a
   ));
 
 -- INSERT/UPDATE murid: attempt in_progress MILIK murid, peran student saja.
+drop policy if exists canvas_student_insert on public.canvas_annotations;
 create policy canvas_student_insert on public.canvas_annotations for insert to authenticated
   with check (
     author_role = 'student'
@@ -71,6 +74,7 @@ create policy canvas_student_insert on public.canvas_annotations for insert to a
     )
   );
 
+drop policy if exists canvas_student_update on public.canvas_annotations;
 create policy canvas_student_update on public.canvas_annotations for update to authenticated
   using (exists (
     select 1 from public.attempts a
@@ -91,6 +95,7 @@ create policy canvas_student_update on public.canvas_annotations for update to a
   );
 
 -- INSERT/UPDATE guru: cohort guru (private.teacher_cohort_ids), peran teacher.
+drop policy if exists canvas_teacher_insert on public.canvas_annotations;
 create policy canvas_teacher_insert on public.canvas_annotations for insert to authenticated
   with check (
     author_role = 'teacher'
@@ -102,6 +107,7 @@ create policy canvas_teacher_insert on public.canvas_annotations for insert to a
     )
   );
 
+drop policy if exists canvas_teacher_update on public.canvas_annotations;
 create policy canvas_teacher_update on public.canvas_annotations for update to authenticated
   using (exists (
     select 1 from public.attempts a

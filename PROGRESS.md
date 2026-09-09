@@ -2141,3 +2141,18 @@ Catatan: password demo di-rotate via GoTrue admin API ke `PhysDemo-2026!` (env `
 | 2026-09-09 | Wali portal | PASS | progress 10/33 level lintas kursus + 8 sertifikat terlihat |
 
 **Bug nyata yang ditemukan & diperbaiki (lib/grading.ts):** `parseNumericAnswer` melakukan lookup `unitFactors[token.toLowerCase()]` — case-SENSITIVE terhadap KUNCI. Author menulis kunci `{ mL: 0.001 }`, murid menulis "1500 ml" → dinilai 0 diam-diam (defect live grading). Diperbaiki: lookup kunci case-insensitive (entries → compare lowercase). +2 test unit (`kunci unitFactors case-insensitive`). Gates: tsc 0 · lint 0 · vitest **716/1**.
+
+### Prompt — Simulasi grading manual guru (rubrik + grade_revisions + release), HOSTED 2026-09-09
+
+| Date | Command | Result | Notes |
+|---|---|---|---|
+| 2026-09-09 | `supabase db push --linked` | PASS | 3 migration diterapkan: 08130000 (di-idempotensikan: partial apply lama), 09000001 (ai draft cascade fix, sebelumnya pending), **09000002 attempt score recompute** |
+| 2026-09-09 | `node .freebuff/simulate-manual-grading.mjs` | PASS **23/23**, idempoten | Kursus `kimia-esai-demo` (kuis release=MANUAL: 2 MCQ + essay 20 poin; ujian akhir 2 MCQ) |
+| 2026-09-09 | murid01 submit essay quiz | PASS | auto 50% (essay auto 0), status submitted → **pending-release** (release manual) |
+| 2026-09-09 | Guru: rubrik "Rubrik Esai Kimia" (3 kriteria 10+6+4) diikat ke soal essay | PASS | save_criterion_grade draft → finalize **DITOLAK** (DRAFT_INCOMPLETE) → final → sukses |
+| 2026-09-09 | Hasil grading | PASS | manual_score **16 poin** (80%×20), attempts.final_score ter-recompute **90%** (auto 20 + manual 16), grade_revisions 1 baris "—→16 (rubric finalized)" + audit grade.finalized |
+| 2026-09-09 | Guru RELEASE nilai | PASS | status submitted → finalized (releaseGrades) |
+| 2026-09-09 | Murid melihat hasil (UI /quiz/[attemptId]) | PASS | **"Result: 90"** + per-butir "Auto: 0 · Manual: 16" — nilai + umpan balik terlihat sesuai policy |
+| 2026-09-09 | Ujian akhir 100% → sertifikat | PASS | auto_issue → CERT-20260909-4d2cca |
+
+**Defect live yang diperbaiki (migration 20260909000002):** nilai manual TIDAK pernah masuk `attempts.final_score` — murid melihat skor auto saja meski guru sudah menilai (panel hasil salah + kelayakan sertifikat untuk asesmen ber-essay tidak pernah terpenuhi). Fix: `private.recompute_attempt_score(p_attempt_id)` menghitung ulang raw/final dari responses (earned = min(auto+manual, points) per soal, hormati subset randomisasi), dipanggil dari `grade_response_manual` DAN `finalize_response_grades`. Sekaligus `finalize_response_grades` kini menyimpan manual_score dalam **POIN soal** (pct% × question_versions.points), konsisten dengan auto_score (sebelumnya persen 0-100 dicampur poin). Guard DRAFT_INCOMPLETE/EMPTY_RUBRIC/NO_RUBRIC + grade_revisions/audit append-only dipertahankan. +8 test statis (`tests/integration/manual-grading.test.ts`). Gates: tsc 0 · lint 0 · vitest **724/1**.
