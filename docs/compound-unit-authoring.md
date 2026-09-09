@@ -57,7 +57,11 @@ Setiap soal `numeric_tolerance` wajib menyertakan field `unit`:
 | **Fisika — Gaya** | `N` | `{ N: 1, kg: 1, m: 1, s: 1 }` | "Hitung gaya: massa 10 kg × percepatan 1 m/s²." |
 | **Fisika — Densitas** | `kg/m³` | `{ kg: 1, g: 0.001, m: 1, L: 0.001 }` | "Densitas air = 1000 kg/m³. Tulis dalam g/L." |
 | **Fisika — Energi** | `J` | `{ J: 1, kW: 1000, jam: 3600 }` | "Konsumsi 1 kW·jam = berapa Joule?" |
-| **Kimia — Massa** | `kg` | `{ kg: 1, g: 0.001 }` | "Timbangan menunjuk 5000 g. Tulis dalam kg." |
+| **Kimia — Massa** | `kg` | `{ kg: 1, g: 0.001, mg: 0.000001 }` | "Timbangan menunjuk 5000 g. Tulis dalam kg." |
+| **Kimia — Molaritas** | `mol/L` | `{ mol: 1, mmol: 0.001, µmol: 0.000001, L: 1, dL: 0.1, cL: 0.01, mL: 0.001 }` | "Larutan 0.5 mol/L. Tulis dalam mmol/mL." |
+| **Kimia — Massa Molar** | `g/mol` | `{ g: 1, kg: 1000, mg: 0.001, mol: 1 }` | "Massa molar H₂O = 18 g/mol. Tulis dalam kg/mol." |
+| **Kimia — Konsentrasi** | `mg/L` | `{ mg: 1, g: 1000, µg: 0.001, L: 1 }` | "Konsentrasi 500 mg/L. Tulis dalam g/L." |
+| **Kimia — ppb** | `µg/L` | `{ µg: 1, mg: 1000, g: 1e6, L: 1 }` | "Konsentrasi 1000 µg/L = berapa mg/L?" |
 | **Matematika — Persen** | `unit` | `{ "%": 0.01 }` | "Tentukan 75% dari 200." |
 
 ---
@@ -203,3 +207,37 @@ op      → / | * | · | × | ⋅ | spasi
 - [ ] Jangan gunakan `^0.5` (akar) — tidak didukung.
 - [ ] Toleransi `tol` (absolut) atau `tolRel` (proporsional) sesuai kebutuhan.
 - [ ] Test di tampilan soal dengan jawaban dalam berbagai satuan sebelum publish.
+
+---
+
+## 7. Quick Reference — Common Conversions
+
+### Physics
+
+| Quantity | expectedUnit | unitFactors (JSON) | Example answer |
+|---|---|---|---|
+| Velocity | `m/s` | `{"m":1,"km":1000,"s":1,"jam":3600}` | `20 m/s` or `72 km/jam` |
+| Acceleration | `m/s²` | `{"m":1,"s":1}` | `9.8 m/s²` |
+| Force | `N` | `{"N":1,"kg":1,"m":1,"s":1}` | `10 N` or `10 kg*m/s^2` |
+| Energy | `J` | `{"J":1,"kJ":0.001,"kW":1000,"jam":3600}` | `3600000 J` or `1 kW*jam` |
+| Density | `kg/m³` | `{"kg":1,"g":0.001,"m":1,"L":0.001}` | `1000 kg/m³` or `1 g/mL` |
+| Pressure | `Pa` | `{"Pa":1,"kPa":1000,"atm":101325,"bar":100000}` | `101325 Pa` or `1 atm` |
+
+### Chemistry
+
+| Quantity | expectedUnit | unitFactors (JSON) | Example answer |
+|---|---|---|---|
+| Molar mass | `g/mol` | `{"g":1,"kg":1000,"mg":0.001,"mol":1}` | `18 g/mol` or `0.018 kg/mol` |
+| Molarity | `mol/L` | `{"mol":1,"mmol":0.001,"L":1,"mL":0.001}` | `0.5 mol/L` or `500 mmol/L` |
+| Concentration | `mg/L` | `{"mg":1,"g":1000,"µg":0.001,"L":1}` | `500 mg/L` or `0.5 g/L` |
+| Mass | `kg` | `{"kg":1,"g":0.001,"mg":0.000001}` | `5 kg` or `5000 g` |
+
+### Common Mistakes
+
+| ❌ Wrong | ✅ Correct | Why |
+|---|---|---|
+| `km/menit` (tanpa `menit` di unitFactors) | Tambahkan `menit: 60` ke unitFactors | Token tak dikenal → ditolak |
+| `m^0.5` | Tidak didukung | Pangkat pecahan tidak ada |
+| `km@jam` | `km/jam` | `@` bukan operator valid |
+| `10` tanpa unit (saat soal minta unit) | `10 m/s` | Angka polos = basis; oke jika soal tidak wajib unit |
+| `5000` (expected=5, unitFactors `g: 0.001`) | `5000 g` | 5000 tanpa unit = 5000 basis, bukan 5 kg |
