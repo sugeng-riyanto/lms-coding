@@ -13,6 +13,7 @@ export interface BankRow {
   key: string;
   used: boolean;
   courseSlug: string | null;
+  linkedAt: string | null;
 }
 
 const PAGE_SIZE = 20;
@@ -185,7 +186,7 @@ export function BankIdlePanel({
             <option value="">{t("bankFilterCourse")}</option>
             {courses.map((c) => (
               <option key={c} value={c}>
-                {c === "kimia-dasar-demo" ? t("bankCourseChem") : c === "matematika-numerik-demo" ? t("bankCourseMath") : c || "—"}
+                {c === "kimia-dasar-demo" ? t("bankCourseChem") : c === "matematika-numerik-demo" ? t("bankCourseMath") : c === "python-review-demo" ? t("bankCoursePython") : c || "—"}
               </option>
             ))}
           </select>
@@ -227,6 +228,81 @@ export function BankIdlePanel({
         )}
       </div>
 
+      {/* ── Charts: donut + 7-day trend ── */}
+      {(() => {
+        const totalUsed = rows.filter((r) => r.used).length;
+        const totalIdle = rows.length - totalUsed;
+        const pct = rows.length > 0 ? (totalUsed / rows.length) * 100 : 0;
+        const circ = 2 * Math.PI * 42;
+        const filled = (pct / 100) * circ;
+
+        // 7-day trend from linkedAt dates
+        const now = new Date();
+        const days: { label: string; count: number }[] = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date(now);
+          d.setDate(d.getDate() - i);
+          const dayStr = d.toISOString().slice(0, 10);
+          const label = d.toLocaleDateString(lang === "id" ? "id-ID" : "en-US", { weekday: "short" });
+          const count = rows.filter((r) => r.linkedAt && r.linkedAt.slice(0, 10) === dayStr).length;
+          days.push({ label, count });
+        }
+        const maxCount = Math.max(1, ...days.map((d) => d.count));
+        const trendTotal = days.reduce((s, d) => s + d.count, 0);
+
+        return (
+          <div className="flex flex-wrap gap-4 border-b px-3 py-3">
+            {/* Donut chart */}
+            <div className="flex items-center gap-3">
+              <div className="relative" style={{ width: 100, height: 100 }}>
+                <svg width={100} height={100} className="-rotate-90" aria-hidden="true">
+                  <circle cx={50} cy={50} r={42} fill="none" strokeWidth={12} className="stroke-amber-200 dark:stroke-amber-800" />
+                  <circle
+                    cx={50} cy={50} r={42} fill="none" strokeWidth={12}
+                    strokeLinecap="round"
+                    strokeDasharray={`${filled} ${circ}`}
+                    className="stroke-emerald-500 dark:stroke-emerald-400"
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-lg font-extrabold">
+                  {Math.round(pct)}%
+                </span>
+              </div>
+              <div className="text-xs leading-5">
+                <div className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-emerald-500" /> {t("bankChartUsed")}: <strong>{totalUsed}</strong></div>
+                <div className="flex items-center gap-1.5"><span className="inline-block size-2.5 rounded-full bg-amber-400" /> {t("bankChartIdle")}: <strong>{totalIdle}</strong></div>
+              </div>
+            </div>
+
+            {/* 7-day trend bar chart */}
+            <div className="flex-1 min-w-[14rem]">
+              <div className="mb-1 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {t("bankTrendTitle")}
+              </div>
+              {trendTotal > 0 ? (
+                <>
+                  <div className="mb-1 text-[10px] text-slate-500">{fmt(t("bankTrendSubtitle"), { n: String(trendTotal) })}</div>
+                  <div className="flex items-end gap-1" style={{ height: 48 }}>
+                    {days.map((d) => (
+                      <div key={d.label} className="flex flex-1 flex-col items-center gap-0.5">
+                        <div
+                          className="w-full rounded-t bg-blue-500 dark:bg-blue-400 transition-all"
+                          style={{ height: d.count > 0 ? Math.max(4, (d.count / maxCount) * 36) : 2 }}
+                          title={`${d.label}: ${d.count}`}
+                        />
+                        <span className="text-[9px] text-slate-400">{d.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-slate-400">{t("bankTrendEmpty")}</p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Table ── */}
       {pageRows.length === 0 ? (
         <p role="status" className="p-5 text-center text-sm text-slate-500">
@@ -257,10 +333,12 @@ export function BankIdlePanel({
                       className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
                         r.courseSlug === "kimia-dasar-demo"
                           ? "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
+                          : r.courseSlug === "python-review-demo"
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
                           : "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
                       }`}
                     >
-                      {r.courseSlug === "kimia-dasar-demo" ? t("bankCourseChem") : t("bankCourseMath")}
+                      {r.courseSlug === "kimia-dasar-demo" ? t("bankCourseChem") : r.courseSlug === "python-review-demo" ? t("bankCoursePython") : t("bankCourseMath")}
                     </span>
                   </td>
                   <td className="p-2 text-slate-600 dark:text-slate-300">

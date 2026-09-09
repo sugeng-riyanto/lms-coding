@@ -21,7 +21,7 @@ interface Alert {
 }
 
 // ── Panel bank soal: terpakai vs menganggur + flag soal demo Matematika/Kimia ──
-const DEMO_BANK_SLUGS = ["matematika-numerik-demo", "kimia-dasar-demo"];
+const DEMO_BANK_SLUGS = ["matematika-numerik-demo", "kimia-dasar-demo", "python-review-demo"];
 
 interface BankRow {
   id: string;
@@ -31,6 +31,7 @@ interface BankRow {
   key: string;
   used: boolean;
   courseSlug: string | null;
+  linkedAt: string | null;
 }
 
 interface BankPanelData {
@@ -98,10 +99,10 @@ async function getQuestionBankPanel(orgId: string): Promise<BankPanelData | null
   const qids = qRows.map((q) => q.id);
   const { data: vs } = await supabase
     .from("question_versions")
-    .select("id,question_id,version,grading_json")
+    .select("id,question_id,version,grading_json,created_at")
     .in("question_id", qids);
   const vRows = (vs as
-    | { id: string; question_id: string; version: number; grading_json: Record<string, unknown> }[]
+    | { id: string; question_id: string; version: number; grading_json: Record<string, unknown>; created_at: string | null }[]
     | null) ?? [];
   const latestByQ = new Map<string, (typeof vRows)[number]>();
   for (const v of vRows) if (!latestByQ.has(v.question_id)) latestByQ.set(v.question_id, v); // order desc → terbaru menang
@@ -113,6 +114,15 @@ async function getQuestionBankPanel(orgId: string): Promise<BankPanelData | null
       .select("question_version_id")
       .in("question_version_id", vRows.map((v) => v.id));
     for (const r of (aq as { question_version_id: string }[] | null) ?? []) usedIds.add(r.question_version_id);
+  }
+  // linkedAt: use question_versions.created_at (closest available timestamp)
+  const linkedAtMap = new Map<string, string>();
+  for (const v of vRows) {
+    if (usedIds.has(v.id)) {
+      // prefer the latest version's created_at
+      const existing = linkedAtMap.get(v.question_id);
+      if (!existing) linkedAtMap.set(v.question_id, v.created_at ?? new Date().toISOString());
+    }
   }
 
   // Rantai kursus demo → version id (slug kursus asal soal).
@@ -149,6 +159,7 @@ async function getQuestionBankPanel(orgId: string): Promise<BankPanelData | null
         key: summarizeKey(q.type, latest?.grading_json),
         used: isUsed,
         courseSlug: demoSlug,
+        linkedAt: latest ? linkedAtMap.get(latest.id) ?? null : null,
       });
     }
   }

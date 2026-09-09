@@ -118,6 +118,13 @@ export const DASH = {
   bankDiffEasy: { id: "Mudah", en: "Easy" },
   bankDiffMedium: { id: "Sedang", en: "Medium" },
   bankDiffHard: { id: "Sulit", en: "Hard" },
+  bankChartTitle: { id: "Distribusi bank soal", en: "Question bank distribution" },
+  bankChartUsed: { id: "Terpakai", en: "Used" },
+  bankChartIdle: { id: "Menganggur", en: "Idle" },
+  bankTrendTitle: { id: "Soal baru dipakai (7 hari)", en: "Newly-used questions (7 days)" },
+  bankTrendSubtitle: { id: "{n} soal baru terhubung ke asesmen", en: "{n} questions linked to assessments" },
+  bankTrendEmpty: { id: "Belum ada data minggu ini", en: "No data this week" },
+  bankCoursePython: { id: "Demo Python", en: "Python demo" },
 
   // Quick actions (top of dashboard)
   quickActionsTitle: { id: "Aksi cepat", en: "Quick actions" },
