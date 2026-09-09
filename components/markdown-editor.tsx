@@ -89,8 +89,20 @@ interface MarkdownEditorProps {
 }
 
 export function MarkdownEditor({ value, onChange, placeholder, className }: MarkdownEditorProps) {
-  const [mode, setMode] = useState<"wysiwyg" | "markdown">("wysiwyg");
+  const [mode, setMode] = useState<"wysiwyg" | "markdown" | "preview">("wysiwyg");
   const [mdText, setMdText] = useState(value);
+  const [previewHtml, setPreviewHtml] = useState("");
+
+  // Update preview when entering preview mode
+  const enterPreview = useCallback(async () => {
+    setMode("preview");
+    if (mdText.trim().length > 0) {
+      const html = await markdownToTiptap(mdText);
+      setPreviewHtml(html);
+    } else {
+      setPreviewHtml("");
+    }
+  }, [mdText]);
 
   const editor = useEditor({
     extensions: [
@@ -113,6 +125,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
   useEffect(() => {
     if (!editor) return;
     if (value === mdText) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional sync
     setMdText(value);
     if (value.startsWith("{")) {
       editor.commands.setContent(JSON.parse(value));
@@ -121,6 +134,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
         editor.commands.setContent(html);
       });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mdText omitted intentionally
   }, [value, editor]);
 
   const switchToMarkdown = useCallback(() => {
@@ -130,14 +144,6 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
     }
     setMode("markdown");
   }, [editor]);
-
-  const switchToWysiwyg = useCallback(async () => {
-    if (editor && mdText.trim().length > 0) {
-      const html = await markdownToTiptap(mdText);
-      editor.commands.setContent(html);
-    }
-    setMode("wysiwyg");
-  }, [editor, mdText]);
 
   const handleMdChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -240,20 +246,37 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
           🔗
         </button>
         <span className="mx-1 h-4 w-px bg-slate-300 dark:bg-slate-600" />
-        {/* Mode toggle */}
-        <button
-          type="button"
-          onClick={mode === "wysiwyg" ? switchToMarkdown : switchToWysiwyg}
-          className="ml-auto rounded bg-slate-100 px-2 py-1 text-xs font-semibold hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"
-        >
-          {mode === "wysiwyg" ? "📝 Markdown" : "✨ Editor"}
-        </button>
+        {/* Mode toggles */}
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setMode("wysiwyg")}
+            className={`rounded px-2 py-1 text-xs font-semibold ${mode === "wysiwyg" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"}`}
+          >
+            ✨ Editor
+          </button>
+          <button
+            type="button"
+            onClick={() => { setMode("markdown"); switchToMarkdown(); }}
+            className={`rounded px-2 py-1 text-xs font-semibold ${mode === "markdown" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"}`}
+          >
+            📝 Markdown
+          </button>
+          <button
+            type="button"
+            onClick={enterPreview}
+            className={`rounded px-2 py-1 text-xs font-semibold ${mode === "preview" ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700"}`}
+          >
+            👁 Preview
+          </button>
+        </div>
       </div>
 
       {/* Content area */}
-      {mode === "wysiwyg" ? (
+      {mode === "wysiwyg" && (
         <EditorContent editor={editor} className="prose prose-sm max-w-none p-4 dark:prose-invert min-h-[200px] focus:outline-none [&_.ProseMirror]:min-h-[180px]" />
-      ) : (
+      )}
+      {mode === "markdown" && (
         <textarea
           value={mdText}
           onChange={handleMdChange}
@@ -261,6 +284,21 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
           placeholder={placeholder ?? "Write markdown..."}
           spellCheck={false}
         />
+      )}
+      {mode === "preview" && (
+        <div className="min-h-[200px] border-t bg-slate-50/50 p-4 dark:bg-slate-800/50">
+          {mdText.trim().length === 0 ? (
+            <p className="text-sm text-slate-400 italic">Nothing to preview — write some content first.</p>
+          ) : (
+            <div
+              className="prose prose-sm max-w-none dark:prose-invert"
+              dangerouslySetInnerHTML={{ __html: previewHtml }}
+            />
+          )}
+          <p className="mt-4 text-[10px] text-slate-400 dark:text-slate-500">
+            This is how students will see the published article.
+          </p>
+        </div>
       )}
     </div>
   );
