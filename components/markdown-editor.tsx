@@ -7,7 +7,7 @@ import Image from "@tiptap/extension-image";
 import Link from "@tiptap/extension-link";
 import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 const lowlight = createLowlight(common);
 
@@ -86,12 +86,15 @@ interface MarkdownEditorProps {
   onChange: (markdown: string) => void;
   placeholder?: string;
   className?: string;
+  onAutosave?: (markdown: string) => Promise<void>;
 }
 
-export function MarkdownEditor({ value, onChange, placeholder, className }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, onChange, placeholder, className, onAutosave }: MarkdownEditorProps) {
   const [mode, setMode] = useState<"wysiwyg" | "markdown" | "preview">("wysiwyg");
   const [mdText, setMdText] = useState(value);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Update preview when entering preview mode
   const enterPreview = useCallback(async () => {
@@ -103,6 +106,29 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
       setPreviewHtml("");
     }
   }, [mdText]);
+
+  // Autosave with debounce
+  const triggerAutosave = useCallback(
+    (content: string) => {
+      if (!onAutosave) return;
+      
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      
+      setSaveStatus("saving");
+      saveTimeoutRef.current = setTimeout(async () => {
+        try {
+          await onAutosave(content);
+          setSaveStatus("saved");
+          setTimeout(() => setSaveStatus("idle"), 2000);
+        } catch {
+          setSaveStatus("error");
+        }
+      }, 1000);
+    },
+    [onAutosave]
+  );
 
   const editor = useEditor({
     extensions: [
@@ -118,6 +144,7 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
       const md = tiptapToMarkdown(json);
       setMdText(md);
       onChange(md);
+      triggerAutosave(md);
     },
   });
 
@@ -264,6 +291,28 @@ export function MarkdownEditor({ value, onChange, placeholder, className }: Mark
         >
           ↪
         </button>
+        <span className="mx-1 h-4 w-px bg-slate-300 dark:bg-slate-600" />
+        {/* Save status */}
+        <div className="flex items-center gap-1 text-[10px] text-slate-500">
+          {saveStatus === "saving" && (
+            <>
+              <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-amber-500" />
+              <span>Saving...</span>
+            </>
+          )}
+          {saveStatus === "saved" && (
+            <>
+              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
+              <span>Saved</span>
+            </>
+          )}
+          {saveStatus === "error" && (
+            <>
+              <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
+              <span>Save failed</span>
+            </>
+          )}
+        </div>
         <span className="mx-1 h-4 w-px bg-slate-300 dark:bg-slate-600" />
         {/* Mode toggles */}
         <div className="ml-auto flex items-center gap-1">
