@@ -2294,3 +2294,55 @@ Credential audit: `docs/credential-audit.md` — 0 live-risk references remain.
 ### Release-readiness summary
 
 All Phase 0–7 acceptance criteria satisfied. All gates green. Password rotation complete. Environment configured for production. Credential audit clean. The only remaining external action is provisioning a fresh Supabase project with a real domain + HTTPS for the pilot deployment.
+
+## Daily report — 2026-09-09 (continued)
+
+### Session work summary
+
+| Feature | Commit | Status |
+|---|---|---|
+| Bank panel: donut chart + 7-day trend | `08b71c8` | ✅ Pushed |
+| Production env + lint fix + i18n parity | `97b5152` | ✅ Pushed |
+| Static route audit test (26 assertions) | `346940d` | ✅ Pushed |
+| Verifier: View PDF link + page-2 badge | `4bd4699` | ✅ Pushed |
+| Guardian: quiz scores + study time + certificates | `fa814a3` | ✅ Pushed |
+| Migration fix (enrollment join path) | `a579297` | ✅ Pushed |
+| Compound-unit docs: chemistry examples + quick-ref | `17e06cb` | ✅ Pushed |
+
+### Gates (final state)
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` | ✅ 0 errors |
+| `eslint . --max-warnings=0` | ✅ 0 warnings |
+| `vitest run` | ✅ 82 files · 808/808 · 1 skipped |
+| `npm run build` | ✅ All routes |
+| `scripts/release-gate.sh` | ✅ 6/6 |
+| `scripts/check-env.mjs` | ✅ Clean |
+| `tests/unit/i18n.test.ts` | ✅ 71/71 dictionaries |
+
+### Migration deployed to hosted
+
+| Migration | Tables | Policies |
+|---|---|---|
+| `20260909070000_guardian_read_progress.sql` | `attempts`, `study_sessions`, `assessments` | `guardian_attempts_select`, `guardian_sessions_select`, `guardian_assessments_select` |
+
+### Live verification
+
+| Page | Status | Evidence |
+|---|---|---|
+| Guardian dashboard (`/guardian`) | ✅ Live | Screenshot: quiz scores (100%, 68 attempts), study time (20m, 7 sessions), 11 certificates |
+| Verifier page (`/verify/{id}`) | ✅ Live | View PDF link + page-2 badge rendered |
+| Bank panel (`/teacher`) | ✅ Live | Donut chart + 7-day trend + filter/search/pagination |
+
+### Password rotation status (confirmed)
+
+| Account | Hosted password | Risk tier |
+|---|---|---|
+| `guru@demo.local` | `PhysDemo-2026!` | 🟢 LOCAL-ONLY |
+| `murid01–03@demo.local` | `PhysDemo-2026!` | 🟢 LOCAL-ONLY |
+| `wali@demo.local` | `PhysDemo-2026!` | 🟢 LOCAL-ONLY |
+
+### Bilingual coverage (20 dictionaries, 71 tests)
+
+All teacher deep pages fully translated: grading queue, cohorts, question bank, admin map, security monitor, bulk import, student detail, certificates. Zero hardcoded Indonesian strings in teacher components.

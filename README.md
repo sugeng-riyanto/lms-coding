@@ -1,83 +1,87 @@
 # Autonomous Learning LMS
 
-Blueprint siap-eksekusi untuk OpenCode atau agent coding lain. Produk ini adalah LMS personal bagi setiap murid, dengan dashboard guru, mastery learning, kuis dan asesmen, skor otomatis, progress real-time, serta sertifikat PDF A4 dengan QR verifikasi.
+Production-ready LMS with personal learning paths, teacher dashboards, mastery learning, quizzes, auto-grading, real-time progress, and A4 PDF certificates with QR verification. Bilingual EN/ID with English as default.
 
-## Akun demo & peran (RBAC)
+## Demo accounts & roles (RBAC)
 
-Akun seed anonim untuk local/preview (lihat `docs/e2e-setup.md` dan `RBAC.md`). Password sama untuk semua: `DemoPass-2026!`
+Seed accounts for local/preview (see `docs/e2e-setup.md` and `RBAC.md`). Hosted passwords are rotated — see notes below.
 
-| Peran (RBAC.md) | Email | Password | Akses utama |
-|---|---|---|---|
-| Guru (Owner/Guru) | `guru@demo.local` | `DemoPass-2026!` | `/teacher` — kelas, matriks cohort, grading, bank soal, analitik, sertifikat; `/teacher/admin/map` khusus guru pemilik course (facet Owner, ADR-008) |
-| Murid | `murid01@demo.local` | `DemoPass-2026!` | `/learn` — target, peta level, kuis; `/catalog`, `/review`, sertifikat sendiri |
-| Murid | `murid02@demo.local` | `DemoPass-2026!` | Sama seperti Murid 01 (data terisolasi per murid) |
-| Murid | `murid03@demo.local` | `DemoPass-2026!` | Sama seperti Murid 01 (data terisolasi per murid) |
-| Wali (Guardian) | `wali@demo.local` | `DemoPass-2026!` | `/guardian` — ringkasan Murid 01 yang tertaut aktif (tanpa jawaban/nilai rinci) |
-| Publik | — (tanpa login) | — | `/verify/{public_id}` — verifikasi sertifikat minimal-PII |
+| Role | Email | Local password | Hosted password | Access |
+|---|---|---|---|---|
+| Teacher | `guru@demo.local` | `DemoPass-2026!` | `PhysDemo-2026!` | `/teacher` — classes, cohort matrix, grading, question bank, analytics, certificates |
+| Student | `murid01@demo.local` | `DemoPass-2026!` | `PhysDemo-2026!` | `/learn` — targets, level map, quizzes; `/catalog`, `/review`, own certificates |
+| Student | `murid02@demo.local` | `DemoPass-2026!` | `PhysDemo-2026!` | Same as Murid 01 (data isolated per student) |
+| Student | `murid03@demo.local` | `DemoPass-2026!` | `PhysDemo-2026!` | Same as Murid 01 (data isolated per student) |
+| Guardian | `wali@demo.local` | `DemoPass-2026!` | `PhysDemo-2026!` | `/guardian` — child progress, quiz scores, study time, certificates |
+| Public | — (no login) | — | — | `/verify/{public_id}` — minimal-PII certificate verification |
 
-> ⚠️ Akun demo HANYA untuk local/preview. Jangan pernah memakai password ini di production — rotasi/ganti sebelum data murid nyata masuk. Wali hanya melihat anak via guardian link aktif; publik tidak melihat data internal apa pun.
+> ⚠️ Demo accounts are for local/preview only. Hosted passwords were rotated on 2026-09-08. Rotate again before real student data enters. Guardians see only linked children via active guardian links; public sees no internal data.
 
-> 📖 **Workflow lengkap per role**: lihat [`docs/rbac-workflows.md`](docs/rbac-workflows.md) untuk alur kerja detail teacher, student, dan guardian.
+> 📖 **Full workflow per role**: see [`docs/rbac-workflows.md`](docs/rbac-workflows.md) for detailed teacher, student, and guardian flows.
 
-## Sasaran
+## Goals
 
-- Murid memiliki jalur belajar personal dan dapat belajar mandiri.
-- Guru memantau keterlibatan, penguasaan, risiko tertinggal, dan nilai.
-- Materi, kuis, proyek, remedial, dan sertifikat dapat dikelola tanpa mengubah kode.
-- Data anak aman: least privilege, RLS, audit log, minimisasi data, dan persetujuan sesuai kebijakan sekolah.
+- Students have a personal learning path and can study independently.
+- Teachers monitor engagement, mastery, at-risk students, and grades.
+- Content, quizzes, projects, remedial, and certificates are manageable without code changes.
+- Student data is secure: least privilege, RLS, audit logs, data minimization, and consent per school policy.
 
-## Stack yang dikunci
+## Tech stack
 
 - Next.js App Router + TypeScript strict
 - Tailwind CSS + shadcn/ui
 - Supabase Auth, Postgres, Storage, Realtime, Edge Functions
-- Zod untuk validasi
+- Zod validation
 - React Hook Form
 - Vitest + Testing Library + Playwright
-- PDFKit atau React-PDF untuk sertifikat
-- QR code menuju `/verify/{public_id}`
-- Hash SHA-256; blockchain anchoring opsional melalui adapter
+- PDFKit for certificates
+- QR code → `/verify/{public_id}`
+- SHA-256 hash; optional blockchain anchoring via adapter
+- In-browser code runner (Pyodide WASM) for Python
+- CSP nonce + frame-src allowlist + security monitor
 
-## Cara memulai dengan OpenCode
+## Quick start
 
-1. Salin seluruh folder ini ke root repository kosong.
-2. Buka terminal pada folder tersebut.
-3. Jalankan `opencode`.
-4. Kirim isi `MASTER_PROMPT.md` sebagai perintah pertama.
-5. Agent wajib membaca `AGENTS.md` dan semua dokumen yang dirujuk sebelum menulis kode.
+1. Copy this folder to an empty repository root.
+2. Open a terminal in the folder.
+3. Run `npm install`.
+4. Copy `.env.example` to `.env` and fill in Supabase credentials.
+5. Run `npm run dev` and open `http://localhost:3000`.
 
-## Urutan sumber kebenaran
+## Source of truth order
 
 1. `AGENTS.md`
 2. `PRODUCT_REQUIREMENTS.md`
-3. `RBAC.md` dan `SECURITY_PRIVACY.md`
+3. `RBAC.md` and `SECURITY_PRIVACY.md`
 4. `DATA_MODEL.md`
 5. `LEARNING_ENGINE.md`
-6. Dokumen fitur lainnya
+6. Other feature documents
 7. `IMPLEMENTATION_PLAN.md`
 8. `ACCEPTANCE_CRITERIA.md`
 
-Jika ada konflik, dokumen dengan urutan lebih tinggi menang. Jangan menebak aturan penilaian atau kebijakan data; buat konfigurasi dan tandai keputusan yang memerlukan guru.
+If conflicts arise, the higher-ordered document wins. Never guess scoring rules or data policies; create configuration and flag decisions requiring teacher input.
 
-## Dokumentasi penting
+## Key documentation
 
-- `RBAC.md` / `SECURITY_PRIVACY.md` — peran, RLS, dan kebijakan data (wajib dibaca sebelum menulis kode akses).
-- `docs/design-system.md` — token elevasi, `.card-lift`, aturan gradien, pemetaan dark mode, dan kebijakan reduced-motion. **Baca sebelum memberi style pada komponen baru** agar konsisten.
-- `docs/compound-unit-authoring.md` — panduan guru menulis soal numerik dengan satuan majemuk (km/jam, kg·m/s², m/s²): sintaksis, `unitFactors`, eksponen/superskrip, validasi, dan template question pack.
-- `docs/runbooks.md` — prosedur operasional (migration, seed, live-denial, backup/restore).
-- `docs/release-checklist.md` — daftar rilis dan smoke test.
-- `docs/pilot-deployment.md` — playbook dry-run pilot: env set, urutan db push + smoke, prosedur restore (rehearsal 9/9).
-- `docs/language-policy.md` — kebijakan bahasa UI: shell publik WAJIB English, dashboard peran Bahasa Indonesia. **Baca sebelum menambah teks pada halaman shell** (ditegakkan `lms/no-indonesian-shell-text`).
-- `PROGRESS.md` — status fase, bukti gate, dan pekerjaan yang belum selesai.
+- `RBAC.md` / `SECURITY_PRIVACY.md` — roles, RLS, and data policies (must read before writing access code).
+- `docs/design-system.md` — elevation tokens, `.card-lift`, gradient rules, dark mode palette, reduced-motion policy. **Read before styling new components** for consistency.
+- `docs/compound-unit-authoring.md` — teacher guide for numeric questions with compound units (km/jam, kg·m/s², m/s²): syntax, `unitFactors`, exponents/superscripts, validation, and question pack templates.
+- `docs/runbooks.md` — operational procedures (migration, seed, live-denial, backup/restore).
+- `docs/release-checklist.md` — release checklist and smoke tests.
+- `docs/pilot-deployment.md` — pilot deployment playbook: env set, db push + smoke sequence, restore procedure (rehearsal 9/9).
+- `docs/language-policy.md` — UI language policy: public shells MUST be English, role dashboards bilingual. **Read before adding text to shell pages** (enforced by `lms/no-indonesian-shell-text`).
+- `PROGRESS.md` — phase status, gate evidence, and remaining work.
 
-## MVP selesai ketika
+## MVP is complete when
 
-- Guru dapat membuat course → level → lesson → activity → assessment.
-- Murid dapat belajar, melanjutkan posisi terakhir, mengerjakan kuis, dan menerima feedback.
-- Skor objektif dihitung otomatis dan riwayat attempt tidak ditimpa.
-- Dashboard guru menampilkan progress, mastery, waktu belajar, dan murid berisiko.
-- Level terkunci/terbuka berdasarkan prerequisite dan mastery threshold.
-- Sertifikat dibuat otomatis, dapat diverifikasi melalui QR, dan dapat dicabut.
+- Teachers can create course → level → lesson → activity → assessment.
+- Students can learn, resume position, take quizzes, and receive feedback.
+ - Objective scores are auto-calculated and attempt history is preserved.
+- Teacher dashboard shows progress, mastery, study time, and at-risk students.
+- Levels lock/unlock based on prerequisite and mastery threshold.
+- Certificates are auto-issued, QR-verifiable, and revocable.
+- Guardian dashboard shows child progress, quiz scores, study time, and certificates.
+- Compound-unit grading works for physics (km/jam, kg·m/s²) and chemistry (mol/L, g/mol).
 - RLS serta denial tests lulus.
 - Unit, integration, dan end-to-end tests utama lulus.
 # lms-coding
