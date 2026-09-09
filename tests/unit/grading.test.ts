@@ -261,3 +261,117 @@ describe("normalizeShortText unicode (English apostrof & Mandarin/IME full-width
     expect(autoGrade(rule, "你好，世界")).toBe(5);
   });
 });
+
+describe("satuan majemuk fisika (km/jam, m/s², kg·m/s²)", () => {
+  it("kecepatan: km/jam dikonversi ke basis m/s", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 20, // basis m/s
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "m/s", unitFactors: { m: 1, km: 1000, s: 1, jam: 3600 } },
+    };
+    expect(parseNumericAnswer("72 km/jam", rule.unit)).toBeCloseTo(20, 6);
+    expect(parseNumericAnswer("20 m/s", rule.unit)).toBeCloseTo(20, 6);
+    expect(parseNumericAnswer("72km/jam", rule.unit)).toBeCloseTo(20, 6);
+    expect(parseNumericAnswer("72 KM/jam", rule.unit)).toBeCloseTo(20, 6); // case-insensitive
+    expect(parseNumericAnswer("72 km / jam", rule.unit)).toBeCloseTo(20, 6); // spasi di sekitar /
+    expect(autoGrade(rule, "72 km/jam")).toBe(10);
+    expect(autoGrade(rule, "72.1 km/jam")).toBe(0); // 20.027… melewati toleransi
+  });
+
+  it("percepatan: superskrip ², ASCII ^, dan eksponen negatif setara", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 9.8, // basis m/s²
+      toleranceAbsolute: 0.001,
+      unit: { expectedUnit: "m/s²", unitFactors: { m: 1, s: 1 } },
+    };
+    expect(parseNumericAnswer("9.8 m/s²", rule.unit)).toBeCloseTo(9.8, 6);
+    expect(parseNumericAnswer("9.8 m·s⁻²", rule.unit)).toBeCloseTo(9.8, 6); // ⁻² = ^-2
+    expect(parseNumericAnswer("9.8 m/s^2", rule.unit)).toBeCloseTo(9.8, 6); // ASCII ^
+    expect(parseNumericAnswer("9.8 m*s^-2", rule.unit)).toBeCloseTo(9.8, 6);
+    expect(parseNumericAnswer("9.8 m⋅s⁻²", rule.unit)).toBeCloseTo(9.8, 6); // U+22C5
+    expect(autoGrade(rule, "9.8 m/s²")).toBe(10);
+    expect(autoGrade(rule, "9.801 m/s²")).toBe(10); // tepat di batas → inklusif
+    expect(autoGrade(rule, "9.802 m/s²")).toBe(0);
+  });
+
+  it("gaya: kg·m/s² setara N (faktor 1 relatif basis)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 10, // basis N (= kg·m/s²)
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "N", unitFactors: { N: 1, kg: 1, m: 1, s: 1 } },
+    };
+    expect(parseNumericAnswer("10 kg·m/s²", rule.unit)).toBeCloseTo(10, 6);
+    expect(parseNumericAnswer("10 kg×m/s²", rule.unit)).toBeCloseTo(10, 6); // U+00D7
+    expect(parseNumericAnswer("10 N", rule.unit)).toBeCloseTo(10, 6);
+    expect(autoGrade(rule, "10 kg·m/s²")).toBe(10);
+    expect(autoGrade(rule, "10.05 kg·m/s²")).toBe(0);
+  });
+
+  it("densitas: kg/m³ dan g/L setara (0.001/0.001 = 1)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 1, // basis kg/m³ (1 g/L = 1 kg/m³)
+      toleranceAbsolute: 0.0001,
+      unit: { expectedUnit: "kg/m³", unitFactors: { kg: 1, g: 0.001, m: 1, L: 0.001 } },
+    };
+    expect(parseNumericAnswer("1 kg/m³", rule.unit)).toBeCloseTo(1, 6);
+    expect(parseNumericAnswer("1000 g/m³", rule.unit)).toBeCloseTo(1, 6);
+    expect(parseNumericAnswer("1 g/L", rule.unit)).toBeCloseTo(1, 6);
+    expect(parseNumericAnswer("1 kg/m^3", rule.unit)).toBeCloseTo(1, 6);
+    expect(autoGrade(rule, "1000 g/m³")).toBe(10);
+  });
+
+  it("energi: kW·jam → Joule via kW & jam (basis J/s)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 3600000, // 1 kW·jam = 3,6e6 J
+      toleranceAbsolute: 1,
+      unit: { expectedUnit: "J", unitFactors: { J: 1, kW: 1000, jam: 3600 } },
+    };
+    expect(parseNumericAnswer("1 kW·jam", rule.unit)).toBeCloseTo(3.6e6, 0);
+    expect(autoGrade(rule, "1 kW·jam")).toBe(10);
+  });
+
+  it("unit majemuk tak dikenal / string ilegal → null (tidak menebak)", () => {
+    const rule = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 20,
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "m/s", unitFactors: { m: 1, km: 1000, s: 1, jam: 3600 } },
+    };
+    expect(parseNumericAnswer("5 km/menit", rule.unit)).toBeNull(); // menit tak dikenal
+    expect(parseNumericAnswer("5 km@jam", rule.unit)).toBeNull(); // @ ilegal
+    expect(parseNumericAnswer("5 km+jam", rule.unit)).toBeNull(); // + ilegal
+    expect(parseNumericAnswer("5 m^0.5", rule.unit)).toBeNull(); // pangkat pecahan tak didukung
+    expect(autoGrade(rule, "5 km/menit")).toBe(0);
+  });
+
+  it("satuan tunggal tetap jalan (back-compat: %, mL, kM)", () => {
+    const pct = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 0.5,
+      toleranceAbsolute: 0.0001,
+      unit: { expectedUnit: "unit", unitFactors: { "%": 0.01 } },
+    };
+    expect(parseNumericAnswer("50%", pct.unit)).toBeCloseTo(0.5, 6);
+    expect(autoGrade(pct, "50%")).toBe(10);
+    const vol = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 1.5,
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "L", unitFactors: { L: 1, mL: 0.001 } },
+    };
+    expect(autoGrade(vol, "1500 ml")).toBe(10); // tetap hijau pasca-refactor
+  });
+});

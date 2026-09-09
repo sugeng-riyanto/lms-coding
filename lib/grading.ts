@@ -40,8 +40,64 @@ export interface GradingRule {
   };
 }
 
+/** Ekspansi superskrip satuan (² ⁻¹ dst) → notasi `^exp` agar parser seragam. */
+const SUP_SCRIPT_DIGITS: Record<string, string> = {
+  "\u2070": "0", "\u00B9": "1", "\u00B2": "2", "\u00B3": "3",
+  "\u2074": "4", "\u2075": "5", "\u2076": "6", "\u2077": "7",
+  "\u2078": "8", "\u2079": "9",
+};
+const SUP_MINUS = "\u207B"; // ⁻
+function expandSuperscripts(u: string): string {
+  return u.replace(
+    new RegExp(`[${SUP_MINUS}${Object.keys(SUP_SCRIPT_DIGITS).join("")}]+`, "g"),
+    (run) => {
+      const minus = run.startsWith(SUP_MINUS);
+      const digits = [...run.slice(minus ? 1 : 0)].map((c) => SUP_SCRIPT_DIGITS[c]).join("");
+      return `^${minus ? "-" : ""}${digits}`;
+    },
+  );
+}
+
 /**
- * Parse jawaban numerik + konversi unit ke basis. Mengembalikan null bila:
+ * Faktor konversi SATUAN MAJEMUK ke basis. Mengembalikan null bila:
+ * - ada token unit yang TIDAK dikenal di unitFactors (tidak menebak);
+ * - string memuat karakter ilegal selain spasi, `*`/`·`/`×`/`⋅` (kali) dan `/` (bagi).
+ *
+ * Grammar: `kg`, `km/jam`, `m/s²`, `kg·m/s²`, `kg/m^3`, `m·s⁻²`, `N`, `%`.
+ * Tiap token boleh ber-eksponen: `^2`, `^3`, `^-1` atau superskrip `²`, `³`, `⁻¹`.
+ * Pangkat pecahan (mis. akar) TIDAK didukung — eksponen harus bilangan bulat.
+ */
+function compoundUnitFactor(unitText: string, unit: NumericUnitRule): number | null {
+  const normalized = expandSuperscripts(unitText);
+  const TOKEN = /([A-Za-zµ%]+)(?:\^(-?\d+))?/g;
+  const ALLOWED_GAP = /^[\s*/·×⋅]*$/; // spasi, *, /, ·, ×, ⋅
+  let factor = 1;
+  let consumed = 0;
+  let matched = 0;
+  for (const m of normalized.matchAll(TOKEN)) {
+    const idx = m.index ?? 0;
+    const gap = normalized.slice(consumed, idx);
+    if (!ALLOWED_GAP.test(gap)) return null; // karakter tak dikenal → jangan tebak
+    const slashes = (gap.match(/\//g) ?? []).length;
+    const sign = slashes % 2 === 1 ? -1 : 1; // tiap `/` membalik arah (pembilang↔penyebut)
+    const unitToken = m[1];
+    if (unitToken === undefined) return null;
+    const token = unitToken.toLowerCase();
+    const entry = Object.entries(unit.unitFactors).find(([k]) => k.toLowerCase() === token);
+    if (entry === undefined) return null; // unit tak dikenal → gagal
+    const expRaw = m[2];
+    const exp = (expRaw ? Number(expRaw) : 1) * sign;
+    factor *= Math.pow(entry[1], exp);
+    consumed = idx + m[0].length;
+    matched++;
+  }
+  if (!ALLOWED_GAP.test(normalized.slice(consumed))) return null;
+  return matched > 0 ? factor : null;
+}
+
+/**
+ * Parse jawaban numerik + konversi unit (tunggal ATAU majemuk) ke basis.
+ * Mengembalikan null bila:
  * - bukan number/string numerik yang valid;
  * - string memuat unit yang TIDAK ada di unitFactors (tidak menebak);
  * - string memuat unit dan rule tidak mendefinisikan unitFactors.
@@ -50,23 +106,21 @@ export interface GradingRule {
 export function parseNumericAnswer(answer: unknown, unit?: NumericUnitRule): number | null {
   if (typeof answer === "number") return Number.isFinite(answer) ? answer : null;
   if (typeof answer !== "string") return null;
-  // Dukung notasi ilmiah (fisika/kimia/matematika): 6.022e23, 1e-9, 2.5E+3.
-  const m = /^\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*([A-Za-zµ%]+)?\s*$/.exec(answer);
+  // Dukung notasi ilmiah (6.022e23, 1e-9) + satuan majemuk (72 km/jam, 9.8 m/s²).
+  const m = /^\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?)\s*(.*?)\s*$/.exec(answer);
   if (!m) return null;
   const value = Number(m[1]);
   if (!Number.isFinite(value)) return null;
-  const token = m[2];
-  if (!token) return value; // tanpa unit → basis
+  const unitText = m[2];
+  if (!unitText) return value; // tanpa unit → basis
   if (!unit || !unit.unitFactors) return null;
   // Lookup case-INSENSITIVE terhadap KUNCI unitFactors (bukan hanya token):
   // author boleh menulis { mL: 0.001 } sementara murid menulis "1500 ml" —
   // keduanya harus cocok. Tanpa ini, kunci non-lowercase (mL, kM, dst) membuat
   // jawaban ber-unit yang sah dinilai 0 diam-diam.
-  const factorEntry = Object.entries(unit.unitFactors).find(
-    ([k]) => k.toLowerCase() === token.toLowerCase(),
-  );
-  if (factorEntry === undefined) return null; // unit tak dikenal → gagal, jangan tebak
-  return value * factorEntry[1];
+  const factor = compoundUnitFactor(unitText, unit);
+  if (factor === null) return null; // unit tak dikenal / string ilegal → jangan tebak
+  return value * factor;
 }
 
 /** Lipat apostrof/kutip melengkung → lurus (dipakai saat `unicode: true`). */
