@@ -10,6 +10,7 @@ import { makeClientEventId } from "@/lib/sync-queue";
 import { fmt, mkT, type Lang } from "@/lib/i18n";
 import { QUIZ } from "@/lib/ui-text/quiz";
 import type { SanitizedQuestion } from "@/lib/attempt";
+import { QuizResult } from "./quiz-result";
 
 interface Props {
   attemptId: string;
@@ -213,18 +214,10 @@ export function QuizTaker({ attemptId, questions, status, locked, lang, initialR
       {result?.ok && result.visible && (
         <section aria-label={t("results")} className="rounded-xl border border-green-200 bg-green-50 p-5">
           <h2 className="font-bold">{fmt(t("resultTitle"), { score: result.finalScore ?? "—" })}</h2>
-          <ul className="mt-2 text-sm">
-            {result.items.map((it) => (
-              <li key={it.question_version_id}>
-                {fmt(t("autoScore"), { score: it.auto_score ?? "—" })}
-                {it.manual_score !== null && it.manual_score !== undefined
-                  ? fmt(t("manualScore"), { score: it.manual_score })
-                  : ""}
-              </li>
-            ))}
-          </ul>
+          <p className="mt-1 text-sm text-slate-600">{t("resultSubtitle")}</p>
         </section>
       )}
+      {result?.ok && result.visible && <QuizResult attemptId={attemptId} lang={lang} />}
       {result?.ok && !result.visible && (
         <p role="status" className="rounded-xl border p-4">
           {t("pendingRelease")}
