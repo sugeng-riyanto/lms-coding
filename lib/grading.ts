@@ -58,9 +58,15 @@ export function parseNumericAnswer(answer: unknown, unit?: NumericUnitRule): num
   const token = m[2];
   if (!token) return value; // tanpa unit → basis
   if (!unit || !unit.unitFactors) return null;
-  const factor = unit.unitFactors[token.toLowerCase()];
-  if (factor === undefined) return null; // unit tak dikenal → gagal, jangan tebak
-  return value * factor;
+  // Lookup case-INSENSITIVE terhadap KUNCI unitFactors (bukan hanya token):
+  // author boleh menulis { mL: 0.001 } sementara murid menulis "1500 ml" —
+  // keduanya harus cocok. Tanpa ini, kunci non-lowercase (mL, kM, dst) membuat
+  // jawaban ber-unit yang sah dinilai 0 diam-diam.
+  const factorEntry = Object.entries(unit.unitFactors).find(
+    ([k]) => k.toLowerCase() === token.toLowerCase(),
+  );
+  if (factorEntry === undefined) return null; // unit tak dikenal → gagal, jangan tebak
+  return value * factorEntry[1];
 }
 
 /** Lipat apostrof/kutip melengkung → lurus (dipakai saat `unicode: true`). */

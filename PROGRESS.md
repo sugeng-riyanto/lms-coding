@@ -2128,3 +2128,16 @@ Keputusan: spec e2e yang butuh auth memakai lazy getter `requireStudentPassword(
 Perbaikan tambahan: menu sidebar guru **Courses** mengarah ke `/teacher/courses` yang TIDAK punya index page (404) → ditambahkan `app/(teacher)/teacher/courses/page.tsx` (daftar kursus milik guru, badge status, tombol buat baru, bilingual EN/ID via dict `COURSE`). Gates: tsc 0 · lint 0 · vitest 715/1.
 
 Catatan: password demo di-rotate via GoTrue admin API ke `PhysDemo-2026!` (env `SIM_PHYSICS_PASSWORD`) untuk guru/wali/murid01/murid02 di hosted — lihat docs/credential-audit.md.
+
+### Prompt — Perluasan simulasi: Matematika (numeric+unit) & Kimia (short_text+essay), HOSTED 2026-09-09
+
+| Date | Command | Result | Notes |
+|---|---|---|---|
+| 2026-09-09 | `node .freebuff/simulate-physics-teacher.mjs` (v2) | PASS **57/57**, idempoten | 3 kursus: Fisika, **Matematika: Aritmetika & Pengukuran** (`matematika-numerik-demo`), **Kimia: Struktur Materi & Reaksi** (`kimia-dasar-demo`) |
+| 2026-09-09 | Matematika — soal **numeric_tolerance + KONVERSI SATUAN** | PASS | 100% di semua 6 asesmen: "5000 g→5 kg", "2,5 m→250 cm", "1500 mL→1,5 L", "90 menit→1,5 jam", "5.000.000 cm→50 km", "2 ton→2000 kg", "0,25 jam→15 menit" — jawaban ditulis dalam satuan non-basis, dikonversi server |
+| 2026-09-09 | Kimia — soal **short_text + essay** | PASS | short_text dinormalisasi (lowercase/trim/collapse) cocok dgn acceptedAnswers ("elektron","12","oksigen","4","fe"); kuis essay 50% auto → **guru menilai via grade_response_manual** (+grade_revisions append-only + audit) |
+| 2026-09-09 | Sertifikat auto-issued per level | PASS | Fisika 2 + Matematika 2 (CERT-…-f4a747, …-3055f2) + Kimia 2 (CERT-…-8f4ad8, …-d9de71) = **6 sertifikat baru** murid01; UI /certificates menampilkan 8 total |
+| 2026-09-09 | Kontrol negatif murid02 | PASS | Level 1 Fisika saja → 0 sertifikat |
+| 2026-09-09 | Wali portal | PASS | progress 10/33 level lintas kursus + 8 sertifikat terlihat |
+
+**Bug nyata yang ditemukan & diperbaiki (lib/grading.ts):** `parseNumericAnswer` melakukan lookup `unitFactors[token.toLowerCase()]` — case-SENSITIVE terhadap KUNCI. Author menulis kunci `{ mL: 0.001 }`, murid menulis "1500 ml" → dinilai 0 diam-diam (defect live grading). Diperbaiki: lookup kunci case-insensitive (entries → compare lowercase). +2 test unit (`kunci unitFactors case-insensitive`). Gates: tsc 0 · lint 0 · vitest **716/1**.

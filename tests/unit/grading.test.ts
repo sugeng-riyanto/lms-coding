@@ -99,6 +99,31 @@ describe("numeric unit normalization", () => {
     expect(parseNumericAnswer("5 KG", rule.unit)).toBe(5);
     expect(parseNumericAnswer("abc", rule.unit)).toBeNull();
   });
+  it("kunci unitFactors case-insensitive (mL/mL/ml semua cocok)", () => {
+    const mixed = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 1.5,
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "L", unitFactors: { L: 1, mL: 0.001 } },
+    };
+    // Jawaban dalam satuan kecil (mL) → dikonversi ke basis L.
+    expect(autoGrade(mixed, "1500 mL")).toBe(10);
+    expect(autoGrade(mixed, "1500 ml")).toBe(10);
+    expect(autoGrade(mixed, "1500ML")).toBe(10);
+    expect(parseNumericAnswer("1500 mL", mixed.unit)).toBe(1.5);
+    expect(parseNumericAnswer("1.5 L", mixed.unit)).toBe(1.5);
+    // Unit campuran lain: kM (kilo-meter) vs km.
+    const dist = {
+      type: "numeric_tolerance" as const,
+      points: 10,
+      expected: 3000,
+      toleranceAbsolute: 0.01,
+      unit: { expectedUnit: "m", unitFactors: { m: 1, kM: 1000 } },
+    };
+    expect(autoGrade(dist, "3 kM")).toBe(10);
+    expect(autoGrade(dist, "3km")).toBe(10);
+  });
 });
 
 describe("numeric tolerance boundary (inklusif)", () => {
