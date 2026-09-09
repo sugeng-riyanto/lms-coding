@@ -41,9 +41,9 @@ export function CodeBlock({ code, language }: { code: string; language?: string 
           type="button"
           onClick={copy}
           className="rounded-md bg-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-100 hover:bg-slate-600"
-          aria-label="Salin kode ke papan klip"
+          aria-label={copied ? "Copied to clipboard" : "Copy code to clipboard"}
         >
-          {copied ? "Tersalin ✓" : "Salin"}
+          {copied ? "Copied ✓" : "Copy"}
         </button>
       </div>
       <pre className="max-h-96 overflow-x-auto p-3 text-sm leading-relaxed text-slate-100">

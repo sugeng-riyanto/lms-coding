@@ -1,17 +1,16 @@
-const CACHE_NAME = "cslms-v1";
-const STATIC_ASSETS = [
+// Service Worker for PWA offline support
+const CACHE_NAME = "lms-v1";
+const PRECACHE_URLS = [
   "/",
-  "/login",
-  "/learn",
   "/catalog",
-  "/teacher",
-  "/guardian",
+  "/learn",
+  "/manifest.json",
 ];
 
-// Install: cache critical paths
+// Install: precache shell
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS))
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)),
   );
   self.skipWaiting();
 });
@@ -21,9 +20,9 @@ self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
-        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-      )
-    )
+        keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)),
+      ),
+    ),
   );
   self.clients.claim();
 });
@@ -33,13 +32,18 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip non-GET and API calls
+  // Skip non-GET
   if (request.method !== "GET") return;
-  if (url.pathname.startsWith("/api/")) return;
+
+  // Skip API routes and Supabase — always network
+  if (url.pathname.startsWith("/api/") || url.hostname.includes("supabase")) return;
+
+  // Skip server actions
+  if (request.headers.get("Next-Action")) return;
 
   event.respondWith(
     caches.match(request).then((cached) => {
-      const fetched = fetch(request)
+      const fetchPromise = fetch(request)
         .then((response) => {
           // Cache successful responses
           if (response.ok) {
@@ -50,7 +54,8 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(() => cached);
 
-      return cached || fetched;
-    })
+      // Return cached immediately if available, update in background
+      return cached || fetchPromise;
+    }),
   );
 });

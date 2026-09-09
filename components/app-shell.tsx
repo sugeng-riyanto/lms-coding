@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { LogoutButton } from "@/app/profile/logout-button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { NotificationBell } from "@/components/notification-bell";
 import type { NavItem } from "@/lib/role-nav";
 import { COMMON, getLang } from "@/lib/i18n";
 import { MobileDrawer, NavLinks } from "./app-nav";
+import { createClient } from "@/lib/supabase/server";
 
 /**
  * Shell aplikasi terautentikasi: sidebar (desktop) + topbar + drawer (mobile).
@@ -24,6 +26,22 @@ export async function AppShell({
   children: React.ReactNode;
 }) {
   const lang = await getLang();
+
+  // Fetch unread notifications for the current user
+  let notifications: { id: string; type: string; title: string; body: string; link: string | null; read_at: string | null; created_at: string }[] = [];
+  try {
+    const supabase = await createClient();
+    const { data: notifRows } = await supabase
+      .from("notifications")
+      .select("id,type,title,body,link,read_at,created_at")
+      .is("read_at", null)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    notifications = (notifRows as typeof notifications | null) ?? [];
+  } catch {
+    // Best-effort — notification bell gracefully handles empty state
+  }
+
   return (
     <div className="min-h-screen md:flex">
       <aside
@@ -59,6 +77,7 @@ export async function AppShell({
             </div>
             <div className="flex items-center gap-2">
               {topbarExtra}
+              <NotificationBell notifications={notifications} lang={lang} />
               <ThemeToggle lang={lang} />
               <Link
                 href="/settings"
