@@ -2212,3 +2212,24 @@ Migration `20260909055534_grade_correction_audit.sql` (di-push ke hosted) + UI q
 - **UI terverifikasi live**: guru `/teacher/grading` → badge + hint + "Current attempt score: 87.5%" + rantai revisi `— → 20 → 8 → 15` + input pre-filled 15 + tombol "Save correction"; koreksi UI Python essay 85→70 → notice "Correction saved — old→new revision + audit recorded, student sees the latest score." + revisi `— → 85 → 70`. Murid `/quiz/7c51fa59…` → **"Result: 87.5"** + per-butir "Auto: 0 · Manual: 15".
 
 Gates: tsc 0 · lint 0 · vitest **741/1** · build 0.
+
+## Randomisasi soal server-authoritative + grading konsisten subset
+
+**Defect keamanan live yang ditemukan:** RLS `attempts_student_insert` mengizinkan murid mengisi `question_order_json` BEBAS — dan `submitAttempt` menghormati `order` TANPA cek settings.randomize → murid yang memakai API langsung bisa (a) memilih subset soal termudah sendiri pada asesmen randomize, atau (b) memotong/merombak urutan pool pada asesmen non-randomize.
+
+**Fix — migration `20260909061251_server_roll_randomized_pool.sql`** (di-push ke hosted):
+- Port plpgsql PERSIS dari `lib/shuffle.ts` (xmur3 + mulberry32 + Fisher–Yates + pickPool) sebagai `private.xmur3` + `private.roll_pool` — **diverifikasi empiris 40/40 seed identik** dengan implementasi JS (batch SQL vs node). Seed 128-bit dari `extensions.gen_random_bytes(16)` (pgcrypto di schema `extensions` di Supabase).
+- Trigger **BEFORE INSERT `attempts_server_roll`** (security definer, search_path di-pin): randomize=true → `question_order_json` kiriman client DITIMPA roll server `{seed, order}`; non-randomize → dipaksa NULL (client tak bisa memotong pool). Semua fungsi private + revoke PUBLIC.
+
+**Simulasi live (`.freebuff/simulate-randomization.mjs`, hosted, idempoten — run 1: 38/38, run ulang: 34/34):**
+- Kursus `randomisasi-pool-demo`: pool **8 MCQ**, `randomize=true poolSize=3`, cohort berisi murid01+murid02.
+- Murid menyisipkan attempt dengan `question_order_json` jahat (`order=[1 soal]`) → **trigger menimpanya** dengan roll 3 soal ⊆ pool (seed ≠ crafted, order ≠ crafted).
+- **Order reproducible**: untuk tiap attempt, `JS pickPool(pool,3,seed)` == order tersimpan (bukti DB memakai algoritma yang sama dgn lib).
+- **4 seed unik** · **6/6 pasang attempt pakai subset berbeda** · 3 attempt murid01 = 3 subset berbeda.
+- **Grading konsisten subset**: tiap attempt 3 soal subset dijawab benar → `final_score=100` (30/30); respons PALSU untuk soal di LUAR subset (`auto_score` null) TIDAK memengaruhi skor; `auto_score=10` hanya pada 3 soal subset.
+- Keamanan: PATCH murid `final_score=33` no-op RLS (tetap 100).
+- **UI live**: murid01 mulai kuis → quiz-taker merender **tepat 3 soal** (subset baru: Soal 7, 5, 2), jawab benar → submit → status `submitted`, `raw/final = 100`, `question_order_json` = roll server (seed `478a519e…`).
+
+**Test** `tests/integration/randomized-pool.test.ts` (+5): bukti statis — port xmur3/mulberry32 konstanta sama, trigger BEFORE INSERT, null untuk non-randomize, revoke PUBLIC.
+
+Gates: tsc 0 · lint 0 · vitest **746/1** · build 0.
