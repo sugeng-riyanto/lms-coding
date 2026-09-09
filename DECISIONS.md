@@ -310,6 +310,54 @@ Agent menambahkan keputusan menggunakan format berikut; jangan menghapus keputus
   juga tercatat masih hardcoded Indonesian (belum bilingual) — masuk backlog
   terjemahan, bukan blocker cakupan ini.
 
+## ADR-021 — Intervention queue workflow via alerts extension + notifications
+
+- Status: accepted
+- Context: spec (`freebuff-lms-prompts.md:77`) menuntut "intervention queue: evidence → teacher assignment/action → due date → follow-up assessment → resolved/reopened state." Sistem `alerts` yang ada hanya punya status `open/acknowledged/snoozed/resolved` tanpa penugasan, tanggal jatuh tempo, atau pembukaan kembali.
+- Decision: perpanjang tabel `alerts` dengan kolom `assigned_to`, `due_at`, `follow_up_assessment_id`, `escalation_level`; tambahkan nilai `'reopened'` ke CHECK status. Buat tabel `notifications` untuk notifikasi in-app. `autoEscalateOverdue()` server action menaikkan `escalation_level` untuk alert yang lewat `due_at`. Alert yang di-resolve bisa dibuka kembali via `reopenAlert`. Guru dapat menugaskan alert ke diri sendiri via `assignAlert`.
+- Alternatives: (a) tabel intervensi terpisah — menambah JOIN dan kebutuhan sinkronisasi; (b) trigger DB untuk eskalasi — menyembunyikan logika di migration.
+- Consequences: semua alert melewati satu jalur; notifikasi di-cache per-user via RLS owner-only; `autoEscalateOverdue` best-effort (error logged, tidak throw).
+
+## ADR-020 — Quiz feedback loop via dedicated action + client component
+
+- Status: accepted
+- Context: siswa menerima skor kuis tetapi tidak pernah melihat penjelasan, jawaban benar, atau indikator benar/salah per soal. `grading_json` dan `explanation_json` tersembunyi dari murid oleh RLS — akses langsung via client never works.
+- Decision: `getAttemptFeedback` server action membaca via service client (bypass RLS), mengembalikan data mentah (responses, question_versions, questions) tanpa grading info ke client. `buildQuizFeedback()` murni fungsi TS menghitung `isCorrect`, `correctAnswer`, `explanation`, `needsManualGrade`. Komponen `QuizResult` merender indikator visual (hijau/merah/amber), jawaban benar, dan penjelasan yang dapat dikembangkan.
+- Alternatives: (a) RPC DB khusus untuk feedback — menambah kompleksitas migration; (b) memaparkan grading_json via view — melanggar pertahanan RLS.
+- Consequences: semua pertanyaan kuis melewati satu jalur; `canShowScore()` menghormati kebijakan rilis guru; komentar audit `getAttemptFeedback` mencatat kapan penjelasan ditampilkan. Dependensi baru: tidak ada — hanya TS murni + komponen klien yang sudah ada.
+
+## ADR-022 — External integrations via adapter pattern
+
+- Status: accepted
+- Context: spec (`freebuff-lms-prompts.md:123`) meminta integrasi Google Classroom + LTI. Setiap platform punya API/protokol berbeda; integrasi langsung mengunci vendor.
+- Decision: buat interface `IntegrationAdapter` dengan `verify()`, `listCourses()`, `syncRoster()`, `syncGrades()`, `getConfigFields()`. Daftarkan adapter via `registerAdapter()`. Implementasi pertama: Google Classroom (OAuth2 + Classroom API v1) dan LTI 1.3 (JWT validation + NRPS + AGS). Kredensial disimpan di tabel `external_integrations` (RLS org-scoped); token OAuth refresh otomatis.
+- Alternatives: (a) integrasi langsung — mengunci vendor dan memperluas permukaan RLS; (b) webhook-only — tidak memungkinkan roster/grade sync.
+- Consequences: adapter baru ditambahkan via `registerAdapter()` tanpa mengubah core code; UI integrasi settings page membaca `getConfigFields()` secara dinamis.
+
+## ADR-023 — Caching: in-memory stale-while-revalidate
+
+- Status: accepted
+- Context: tidak ada lapisan caching; setiap request memicu fresh fetch ke Supabase. Untuk data yang jarang berubah (catalog, course content), ini membuang-buang bandwidth.
+- Decision: `lib/cache.ts` menyediakan `cachedFetch()` dengan TTL + stale-while-revalidate pattern berbasis Map in-memory. Data fresh disajikan langsung; data stale disajikan sambil revalidate di background. `invalidateCache()` dipanggil setelah writes.
+- Alternatives: (a) Next.js `unstable_cache` — API berubah antar versi Next; (b) Redis — menambah infra untuk MVP.
+- Consequences: cache bersifat per-process (tidak dibagikan antar-instance); cocok untuk deployment single-instance. Untuk multi-instance, pindah ke Redis/KV nanti.
+
+## ADR-024 — PWA: manifest + service worker (offline shell)
+
+- Status: accepted
+- Context: LMS mobile experience membutuhkan offline access untuk konten yang sudah di-cache. PWA memberikan install prompt dan offline fallback.
+- Decision: `public/manifest.json` dengan standalone display + `public/sw.js` dengan network-first untuk API, cache-first untuk static assets. Service worker precache shell routes (`/`, `/catalog`, `/learn`). Tidak adaIndexedDB atau complex offline queue.
+- Alternatives: (a) full offline with IndexedDB — over-engineering untuk MVP; (b) tanpa PWA — mobile experience buruk.
+- Consequences: offline access terbatas pada halaman yang sudah di-cache; API routes selalu network (tidak ada offline write).
+
+## ADR-025 — Screen reader: LiveAnnouncer + focus trap
+
+- Status: accepted
+- Context: WCAG 2.2 AA membutuhkan announcement untuk dynamic content changes dan focus management untuk modals. Foundation (ARIA labels, skip-link, roles) sudah ada tapi tanpa announcer global.
+- Decision: `LiveAnnouncer` component menyediakan dua `aria-live` regions (polite + assertive) via context. `useFocusTrap` hook trap Tab dalam modals + auto-focus first element. `focusFirstError` helper untuk form validation.
+- Alternatives: (a) announcer per-page — duplikasi kode; (b) tanpa announcer — screen reader tidak tahu tentang perubahan dynamic.
+- Consequences: semua route changes dan async status updates harus memanggil `announce()`; hook focus trap wajib dipasang di setiap modal/drawer.
+
 ## Template
 
 ```text
