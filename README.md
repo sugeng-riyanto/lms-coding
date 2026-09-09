@@ -17,6 +17,8 @@ Akun seed anonim untuk local/preview (lihat `docs/e2e-setup.md` dan `RBAC.md`). 
 
 > ⚠️ Akun demo HANYA untuk local/preview. Jangan pernah memakai password ini di production — rotasi/ganti sebelum data murid nyata masuk. Wali hanya melihat anak via guardian link aktif; publik tidak melihat data internal apa pun.
 
+> 📖 **Workflow lengkap per role**: lihat [`docs/rbac-workflows.md`](docs/rbac-workflows.md) untuk alur kerja detail teacher, student, dan guardian.
+
 ## Sasaran
 
 - Murid memiliki jalur belajar personal dan dapat belajar mandiri.
