@@ -60,11 +60,11 @@ describe("quiz result persistence — server-rendered for submitted attempts", (
     });
   });
 
-  describe("result panel rendering (unchanged)", () => {
-    it("visible result shows score and per-question items", () => {
+  describe("result panel rendering (updated: QuizResult component)", () => {
+    it("visible result shows score and uses QuizResult component", () => {
       expect(quizTakerSource).toMatch(/result\?\.ok && result\.visible/);
       expect(quizTakerSource).toMatch(/result\.finalScore/);
-      expect(quizTakerSource).toMatch(/result\.items\.map/);
+      expect(quizTakerSource).toMatch(/<QuizResult attemptId=\{attemptId\}/);
     });
 
     it("pending-release shows awaiting message when not visible", () => {

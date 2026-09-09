@@ -9,12 +9,13 @@ import { navForRole } from "@/lib/role-nav";
  */
 
 describe("navForRole — peta tautan per peran", () => {
-  it("murid: belajar/katalog/review/sertifikat/pengaturan", () => {
+  it("murid: belajar/katalog/review/sertifikat/analitik/pengaturan", () => {
     expect(navForRole("student", false).map((n) => n.href)).toEqual([
       "/learn",
       "/catalog",
       "/review",
       "/certificates",
+      "/analytics",
       "/settings",
     ]);
   });

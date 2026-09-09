@@ -7,10 +7,10 @@ import { describe, expect, it } from "vitest";
  * RLS) diuji live di scripts/live-denial; semantik jadwal di
  * tests/unit/progress-planning.test.ts.
  */
-const actions = readFileSync("features/actions.ts", "utf8");
-const lib = readFileSync("lib/progress-planning.ts", "utf8");
-const migration = readFileSync("supabase/migrations/20260906000009_learning_planning.sql", "utf8");
-const validation = readFileSync("lib/validation.ts", "utf8");
+const actions = readFileSync("features/actions.ts", "utf8").replace(/\r\n/g, "\n");
+const lib = readFileSync("lib/progress-planning.ts", "utf8").replace(/\r\n/g, "\n");
+const migration = readFileSync("supabase/migrations/20260906000009_learning_planning.sql", "utf8").replace(/\r\n/g, "\n");
+const validation = readFileSync("lib/validation.ts", "utf8").replace(/\r\n/g, "\n");
 
 describe("level completion → jadwal review pertama (hook aplikasi)", () => {
   it("recomputeProgress memakai firstReviewInsertRows dari lib", () => {

@@ -173,4 +173,13 @@ export const DASH = {
   interventionNotePlaceholder: { id: "Catatan intervensi…", en: "Intervention note…" },
   resolve: { id: "Resolve", en: "Resolve" },
   dismissSession: { id: "Dismiss sesi ini", en: "Dismiss for this session" },
+  // ---- Intervention queue ----
+  assignSelf: { id: "Ambil tugas", en: "Assign to me" },
+  dueLabel: { id: "Batas: {date}", en: "Due: {date}" },
+  overdue: { id: "TERLAMBAT", en: "OVERDUE" },
+  escalationLevel: { id: "Eskalasi L{level}", en: "Escalation L{level}" },
+  reopen: { id: "Buka kembali", en: "Reopen" },
+  reopenReason: { id: "Alasan buka kembali", en: "Reopen reason" },
+  assignedTo: { id: "Ditugaskan ke: {name}", en: "Assigned to: {name}" },
+  statusReopened: { id: "dibuka kembali", en: "reopened" },
 } as const satisfies TextDict;

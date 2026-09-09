@@ -50,6 +50,11 @@ import {
   saveCatalogOrderSchema,
   submitReviewSchema,
   resolveAlertSchema,
+  assignAlertSchema,
+  reopenAlertSchema,
+  createNotificationSchema,
+  markNotificationReadSchema,
+  createAlertSchema,
   revokeCertificateSchema,
   saveResponseSchema,
   saveCanvasStrokesSchema,
@@ -2328,6 +2333,130 @@ export async function resolveAlert(input: unknown) {
   return setAlertStatus(parsed.data.alertId, { status: "resolved", resolved_note: parsed.data.note });
 }
 
+// ---------- Intervention queue: assign, reopen, escalate ----------
+export async function assignAlert(input: unknown) {
+  const parsed = assignAlertSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const patch: Record<string, unknown> = {
+    assigned_to: parsed.data.assignedTo,
+    status: "acknowledged",
+    updated_at: new Date().toISOString(),
+  };
+  if (parsed.data.dueAt) patch.due_at = parsed.data.dueAt;
+  const { data, error } = await supabase
+    .from("alerts")
+    .update(patch)
+    .eq("id", parsed.data.alertId)
+    .select("id");
+  if (error || ((data as { id: string }[] | null) ?? []).length === 0)
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  return { ok: true as const };
+}
+
+export async function reopenAlert(input: unknown) {
+  const parsed = reopenAlertSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data, error } = await supabase
+    .from("alerts")
+    .update({
+      status: "reopened",
+      resolved_note: parsed.data.reason || undefined,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", parsed.data.alertId)
+    .select("id");
+  if (error || ((data as { id: string }[] | null) ?? []).length === 0)
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  return { ok: true as const };
+}
+
+/**
+ * Auto-escalate overdue alerts: increment escalation_level for alerts past due_at
+ * that are still open/acknowledged/snoozed. Best-effort — errors logged, not thrown.
+ */
+export async function autoEscalateOverdue(): Promise<{ escalated: number }> {
+  const supabase = await createServiceClient();
+  const now = new Date().toISOString();
+  const { data: overdue } = await supabase
+    .from("alerts")
+    .select("id,escalation_level")
+    .in("status", ["open", "acknowledged", "snoozed"])
+    .not("due_at", "is", null)
+    .lt("due_at", now);
+  const rows = (overdue as { id: string; escalation_level: number }[] | null) ?? [];
+  let escalated = 0;
+  for (const row of rows) {
+    const nextLevel = Math.min(row.escalation_level + 1, 5);
+    if (nextLevel === row.escalation_level) continue;
+    const { error } = await supabase
+      .from("alerts")
+      .update({ escalation_level: nextLevel, updated_at: now })
+      .eq("id", row.id);
+    if (!error) escalated++;
+  }
+  return { escalated };
+}
+
+// ---------- Alerts: create (for risk signal → persisted alert) ----------
+export async function createAlert(input: unknown) {
+  const parsed = createAlertSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const insert: Record<string, unknown> = {
+    cohort_id: parsed.data.cohortId,
+    student_id: parsed.data.studentId,
+    code: parsed.data.code,
+    message: parsed.data.message,
+  };
+  if (parsed.data.assignedTo) insert.assigned_to = parsed.data.assignedTo;
+  if (parsed.data.dueAt) insert.due_at = parsed.data.dueAt;
+  if (parsed.data.followUpAssessmentId) insert.follow_up_assessment_id = parsed.data.followUpAssessmentId;
+  const { data, error } = await supabase.from("alerts").insert(insert).select("id").single();
+  if (error) return { ok: false as const, error: "CREATE_FAILED" };
+  return { ok: true as const, alertId: (data as { id: string }).id };
+}
+
+// ---------- Notifications: create, mark-read ----------
+export async function createNotification(input: unknown) {
+  const parsed = createNotificationSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data, error } = await supabase
+    .from("notifications")
+    .insert({
+      user_id: parsed.data.userId,
+      type: parsed.data.type,
+      title: parsed.data.title,
+      body: parsed.data.body,
+      link: parsed.data.link,
+    })
+    .select("id")
+    .single();
+  if (error) return { ok: false as const, error: "CREATE_FAILED" };
+  return { ok: true as const, notificationId: (data as { id: string }).id };
+}
+
+export async function markNotificationRead(input: unknown) {
+  const parsed = markNotificationReadSchema.safeParse(input);
+  if (!parsed.success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+  const { data, error } = await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", parsed.data.notificationId)
+    .select("id");
+  if (error || ((data as { id: string }[] | null) ?? []).length === 0)
+    return { ok: false as const, error: "NOT_FOUND_OR_FORBIDDEN" };
+  return { ok: true as const };
+}
+
 // ---------- Attempt: hasil untuk murid (gate release policy) ----------
 export async function getAttemptResult(attemptId: string) {
   if (!uuidSchema.safeParse(attemptId).success) return { ok: false as const, error: "INVALID_INPUT" };
@@ -2375,6 +2504,119 @@ export async function getAttemptResult(attemptId: string) {
         | null) ?? []
     ).map((r) => ({ ...r })),
   };
+}
+
+// ---------- Attempt feedback: per-question explanation + correct answer (after release) ----------
+export async function getAttemptFeedback(attemptId: string) {
+  if (!uuidSchema.safeParse(attemptId).success) return { ok: false as const, error: "INVALID_INPUT" };
+  const supabase = await createClient();
+  if (!(await requireAuth(supabase))) return { ok: false as const, error: "UNAUTHENTICATED" };
+
+  const { data: attempt } = await supabase
+    .from("attempts")
+    .select("id,assessment_id,status,final_score,question_order_json")
+    .eq("id", attemptId)
+    .single();
+  const att = attempt as {
+    id: string;
+    assessment_id: string;
+    status: string;
+    final_score: number | null;
+    question_order_json: { seed: string; order: string[] } | null;
+  } | null;
+  if (!att) return { ok: false as const, error: "NOT_FOUND" };
+
+  const { data: asmt } = await supabase
+    .from("assessments")
+    .select("settings_json")
+    .eq("id", att.assessment_id)
+    .single();
+  const release = String(
+    ((asmt as { settings_json: Record<string, unknown> } | null)?.settings_json ?? {}).release ?? "immediate",
+  );
+  if (!canShowScore(release, att.status))
+    return { ok: true as const, visible: false as const, items: [] };
+
+  // Use service client to read grading_json + explanation (RLS hides these from students).
+  const svc = createServiceClient();
+
+  // Fetch links ordered by position.
+  const { data: linksRaw } = await svc
+    .from("assessment_questions")
+    .select("question_version_id,position,points")
+    .eq("assessment_id", att.assessment_id);
+  let links = (linksRaw as { question_version_id: string; position: number; points: number }[] | null) ?? [];
+
+  // Respect server-generated pool order.
+  const ordered = att.question_order_json?.order;
+  if (ordered && ordered.length > 0) {
+    const byId = new Map(links.map((l) => [l.question_version_id, l]));
+    links = ordered
+      .map((id, i) => {
+        const link = byId.get(id);
+        return link ? { ...link, position: i } : null;
+      })
+      .filter((l): l is { question_version_id: string; position: number; points: number } => !!l);
+  }
+
+  // Batch-fetch question versions + questions + responses.
+  const qvIds = links.map((l) => l.question_version_id);
+
+  const { data: qvs } = await svc
+    .from("question_versions")
+    .select("id,question_id,grading_json")
+    .in("id", qvIds);
+
+  const qvMap = new Map(
+    ((qvs as { id: string; question_id: string; grading_json: Record<string, unknown> }[] | null) ?? []).map(
+      (q) => [q.id, q],
+    ),
+  );
+
+  const questionIds = [...new Set(((qvs as { question_id: string }[] | null) ?? []).map((q) => q.question_id))];
+  const { data: questions } = await svc
+    .from("questions")
+    .select("id,prompt_json,explanation_json,type")
+    .in("id", questionIds);
+  const qMap = new Map(
+    ((questions as { id: string; prompt_json: Record<string, unknown>; explanation_json: Record<string, unknown>; type: string }[] | null) ?? []).map(
+      (q) => [q.id, q],
+    ),
+  );
+
+  const { data: responses } = await svc
+    .from("responses")
+    .select("question_version_id,answer_json,auto_score,manual_score,feedback_json")
+    .eq("attempt_id", att.id);
+  const respMap = new Map(
+    ((responses as { question_version_id: string; answer_json: unknown; auto_score: number | null; manual_score: number | null; feedback_json: Record<string, unknown> }[] | null) ?? []).map(
+      (r) => [r.question_version_id, r],
+    ),
+  );
+
+  const { buildQuizFeedback } = await import("@/lib/quiz-feedback");
+  const items = buildQuizFeedback(
+    links.map((link) => {
+      const qv = qvMap.get(link.question_version_id);
+      const q = qMap.get(qv?.question_id ?? "");
+      const resp = respMap.get(link.question_version_id);
+      return {
+        questionVersionId: link.question_version_id,
+        position: link.position,
+        points: link.points,
+        type: (q?.type ?? "short_text") as import("@/lib/grading").QuestionType,
+        promptJson: (q?.prompt_json ?? {}) as { text?: string; options?: string[] },
+        gradingJson: (qv?.grading_json ?? {}) as unknown as import("@/lib/grading").GradingRule,
+        explanationJson: (q?.explanation_json ?? {}) as Record<string, unknown>,
+        answerJson: resp?.answer_json ?? null,
+        autoScore: resp?.auto_score ?? null,
+        manualScore: resp?.manual_score ?? null,
+        feedbackJson: (resp?.feedback_json ?? {}) as Record<string, unknown>,
+      };
+    }),
+  );
+
+  return { ok: true as const, visible: true as const, items };
 }
 
 // ---------- Authoring: resolve version dari node (draft-only guard ADR-003) ----------
