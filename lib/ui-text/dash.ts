@@ -88,6 +88,10 @@ export const DASH = {
     en: "No questions from the demo Math/Chem courses detected yet.",
   },
   bankKeyManual: { id: "— (kunci manual)", en: "— (manual key)" },
+  bankReuse: { id: "Pakai ulang", en: "Reuse" },
+  bankCopyKey: { id: "Salin kunci", en: "Copy key" },
+  bankCopied: { id: "Tersalin ✓", en: "Copied ✓" },
+  bankActions: { id: "Aksi", en: "Actions" },
   bankFootnote: {
     id: "Terpakai = versi terbaru soal pernah di-link ke assessment (termasuk draft). Kunci dibaca dari question_versions.grading_json — tidak pernah tampil ke murid.",
     en: "Used = the question's latest version is linked to an assessment (drafts included). Keys are read from question_versions.grading_json — never shown to students.",

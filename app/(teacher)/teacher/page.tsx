@@ -7,6 +7,7 @@ import { MeterBar, SectionHeader, StatCard } from "@/components/dashboard";
 import { fmt, getLang, mkT, type Lang } from "@/lib/i18n";
 import { DASH } from "@/lib/ui-text/dash";
 import { AlertControls } from "./alert-controls";
+import { BankIdlePanel } from "@/components/bank-idle-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -459,85 +460,7 @@ export default async function TeacherPage({ searchParams }: { searchParams: Prom
               {t("bankNoDemo")}
             </p>
           ) : (
-            <div className="mt-3 overflow-x-auto rounded-2xl border bg-white shadow-sm dark:bg-slate-900">
-              <table className="w-full border-collapse text-left text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="p-2">{t("bankColQuestion")}</th>
-                    <th className="p-2">{t("bankColCourse")}</th>
-                    <th className="p-2">{t("bankColType")}</th>
-                    <th className="p-2">{t("bankColDifficulty")}</th>
-                    <th className="p-2">{t("bankColKey")}</th>
-                    <th className="p-2">{t("bankColStatus")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bank.rows.map((r) => (
-                    <tr key={r.id} className="border-b align-top">
-                      <td className="max-w-[16rem] p-2 font-medium" title={r.prompt}>
-                        {r.prompt.length > 64 ? r.prompt.slice(0, 63) + "…" : r.prompt}
-                      </td>
-                      <td className="p-2">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            r.courseSlug === "kimia-dasar-demo"
-                              ? "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300"
-                              : "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-                          }`}
-                        >
-                          {r.courseSlug === "kimia-dasar-demo" ? t("bankCourseChem") : t("bankCourseMath")}
-                        </span>
-                      </td>
-                      <td className="p-2 text-slate-600 dark:text-slate-300">
-                        {{
-                          single_choice: t("bankTypeSingleChoice"),
-                          true_false: t("bankTypeTrueFalse"),
-                          multiple_choice: t("bankTypeMultipleChoice"),
-                          numeric_tolerance: t("bankTypeNumeric"),
-                          short_text: t("bankTypeShortText"),
-                          essay_manual: t("bankTypeEssay"),
-                          file_manual: t("bankTypeFile"),
-                        }[r.type] ?? r.type}
-                      </td>
-                      <td className="p-2">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            {
-                              easy: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-                              medium: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
-                              hard: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
-                            }[r.difficulty] ?? "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                          }`}
-                        >
-                          {{
-                            easy: t("bankDiffEasy"),
-                            medium: t("bankDiffMedium"),
-                            hard: t("bankDiffHard"),
-                          }[r.difficulty] ?? r.difficulty}
-                        </span>
-                      </td>
-                      <td
-                        className="max-w-[14rem] p-2 font-mono text-xs"
-                        title={r.key ? r.key : undefined}
-                      >
-                        {r.key ? (r.key.length > 36 ? r.key.slice(0, 35) + "…" : r.key) : t("bankKeyManual")}
-                      </td>
-                      <td className="p-2">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            r.used
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                              : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"
-                          }`}
-                        >
-                          {r.used ? t("bankStatusUsed") : t("bankStatusIdle")}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <BankIdlePanel rows={bank.rows} lang={lang} />
           )}
           <p className="mt-2 text-xs text-slate-500">{t("bankFootnote")}</p>
         </>
