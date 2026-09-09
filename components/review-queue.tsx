@@ -112,7 +112,7 @@ export function ReviewQueue({ lang = "en", userId, enrollmentId }: ReviewQueuePr
   return (
     <div className="space-y-4">
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <div className="rounded-xl border bg-gradient-to-br from-blue-50 to-indigo-50 p-4 text-center dark:from-blue-950 dark:to-indigo-950">
           <p className="text-2xl font-bold text-blue-600">{dueCount}</p>
           <p className="text-xs text-slate-600">{t("dueForReview")}</p>

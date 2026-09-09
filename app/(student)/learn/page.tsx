@@ -442,7 +442,7 @@ export default async function LearnPage({
             })}
           </ol>
 
-          <div className="mt-8 grid grid-cols-3 gap-3">
+          <div className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <StatCard
               label={t("statLevelsDone")}
               value={String(levels.filter((l) => l.state === "completed").length)}
