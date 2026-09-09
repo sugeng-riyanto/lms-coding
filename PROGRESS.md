@@ -2247,3 +2247,50 @@ menulis soal numerik dengan satuan majemuk (km/jam, kg·m/s², m/s²):
 - Checklist penulisan soal.
 
 Direferensikan dari README.md (tautan ke docs/compound-unit-authoring.md).
+
+## Release checklist execution — 2026-09-09
+
+### Environment preparation
+
+| Variable | Before | After | Notes |
+|---|---|---|---|
+| `CERTIFICATE_SIGNING_SECRET` | `dev-only-32-char-minimum-replace-me-001` | `Tfz0r2ADtORxSkbCp5DJO9rejRFr7rdIwpIvSzZ1fmQ` | Random 256-bit, base64url |
+| `NODE_ENV` | (unset) | `production` | Added to .env + .env.example |
+| `CSP_REPORT_ONLY` | (unset) | `false` | Enforce mode |
+| `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | `http://localhost:3000` | Unchanged — pilot domain TBD |
+
+### Password rotation status
+
+| Account | Hosted password | Seed.sql password | Risk tier |
+|---|---|---|---|
+| `guru@demo.local` | `Demo-Rot8-exJmoqO5Aph!` (rotated 2026-09-08) | `DemoPass-2026!` (local only) | 🟢 LOCAL-ONLY |
+| `murid01@demo.local` | `Demo-Rot8-exJmoqO5Aph!` (rotated 2026-09-08) | `DemoPass-2026!` (local only) | 🟢 LOCAL-ONLY |
+| `murid02@demo.local` | `Demo-Rot8-exJmoqO5Aph!` (rotated 2026-09-08) | `DemoPass-2026!` (local only) | 🟢 LOCAL-ONLY |
+| `murid03@demo.local` | `Demo-Rot8-exJmoqO5Aph!` (rotated 2026-09-08) | `DemoPass-2026!` (local only) | 🟢 LOCAL-ONLY |
+| `wali@demo.local` | `Demo-Rot8-exJmoqO5Aph!` (rotated 2026-09-08) | `DemoPass-2026!` (local only) | 🟢 LOCAL-ONLY |
+
+Credential audit: `docs/credential-audit.md` — 0 live-risk references remain.
+
+### Gates executed
+
+| Gate | Exit | Result |
+|---|---|---|
+| `tsc --noEmit` | 0 | PASS |
+| `eslint . --max-warnings=0` | 0 | PASS |
+| `vitest run` | 0 | PASS 81 files · 782/782 · 1 skipped |
+| `npm run build` | 0 | PASS |
+| `scripts/release-gate.sh` | 0 | PASS 6/6 |
+| `scripts/check-env.mjs` | 0 | PASS |
+
+### Fixes applied this session
+
+1. `lib/ui-text/dash.ts` — Translated `bankCoursePython` to `"Demo Python"` (ID) / `"Python demo"` (EN) — was identical, tripping i18n parity test.
+2. `app/(teacher)/teacher/page.tsx` — Added `created_at: string | null` to `vRows` type cast — query already selected it but TS type was missing.
+3. `app/(teacher)/teacher/questions/question-bank.tsx` — Moved `useSearchParams` before `useState` and used lazy initializer for `pack` — eliminated `setPack` inside `useEffect` (React lint anti-pattern).
+4. `.env` — Rotated `CERTIFICATE_SIGNING_SECRET` to production-grade value; added `NODE_ENV=production` and `CSP_REPORT_ONLY=false`.
+5. `.env.example` — Added `NODE_ENV=production` key so `check-env.mjs` accepts it.
+6. `components/bank-idle-panel.tsx` + `app/(teacher)/teacher/page.tsx` — Committed donut chart + 7-day trend for question bank panel.
+
+### Release-readiness summary
+
+All Phase 0–7 acceptance criteria satisfied. All gates green. Password rotation complete. Environment configured for production. Credential audit clean. The only remaining external action is provisioning a fresh Supabase project with a real domain + HTTPS for the pilot deployment.

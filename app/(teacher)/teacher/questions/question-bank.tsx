@@ -54,19 +54,14 @@ export function QuestionBank({ initialQuestions, lang }: { initialQuestions: Ban
   const [versionQ, setVersionQ] = useState("");
   const [points, setPoints] = useState("10");
   const [gradingText, setGradingText] = useState("");
-  const [pack, setPack] = useState("");
+  const searchParams = useSearchParams();
+  const initialPack = searchParams.get("pack") ?? "";
+  const [pack, setPack] = useState(initialPack);
   const [packErrors, setPackErrors] = useState<string[]>([]);
   const [aiCopied, setAiCopied] = useState(false);
   const [aiTopic, setAiTopic] = useState("");
   const [aiCount, setAiCount] = useState(10);
   const needsOptions = type === "single_choice" || type === "multiple_choice";
-  const searchParams = useSearchParams();
-
-  // Pre-fill pack textarea from URL ?pack= param (bank dashboard reuse action).
-  useEffect(() => {
-    const p = searchParams.get("pack");
-    if (p && p.trim().length > 0) setPack(p);
-  }, [searchParams]);
 
   // Pulihkan topik & jumlah soal AI terakhir dari perangkat (setelah hidrasi).
   useEffect(() => {
