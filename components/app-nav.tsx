@@ -17,7 +17,15 @@ const GROUP_LABELS: Partial<Record<string, { id: string; en: string }>> = {
 };
 
 /** Daftar tautan sidebar dengan status aktif (aria-current) berbasis pathname. */
-export function NavLinks({ items, onNavigate, lang = "en" }: { items: NavItem[]; onNavigate?: () => void; lang?: "id" | "en" }) {
+export function NavLinks({
+  items,
+  onNavigate,
+  lang = "en",
+}: {
+  items: NavItem[];
+  onNavigate?: () => void;
+  lang?: "id" | "en";
+}) {
   const pathname = usePathname();
 
   // Group items by their group field, preserving order.

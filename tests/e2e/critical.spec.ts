@@ -23,8 +23,8 @@ function requireStudentPassword(): string {
   if (!pw) {
     throw new Error(
       "E2E_STUDENT_PASSWORD is not set. " +
-      "Export it or add it to .env.local before running e2e specs that need authentication. " +
-      "The old fallback (DemoPass-2026!) has been removed after the password rotation."
+        "Export it or add it to .env.local before running e2e specs that need authentication. " +
+        "The old fallback (DemoPass-2026!) has been removed after the password rotation.",
     );
   }
   return pw;

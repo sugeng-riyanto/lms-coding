@@ -35,7 +35,13 @@ export async function GET() {
     .eq("student_id", userId);
   const enr =
     (enrollments as
-      | { id: string; course_id: string; courses: { title: string } | null; cohort_id: string | null; status: string }[]
+      | {
+          id: string;
+          course_id: string;
+          courses: { title: string } | null;
+          cohort_id: string | null;
+          status: string;
+        }[]
       | null) ?? [];
   const enrIds = enr.map((e) => e.id);
 
@@ -47,7 +53,15 @@ export async function GET() {
     .order("submitted_at", { ascending: false });
   const atts =
     (attempts as
-      | { id: string; assessment_id: string; attempt_no: number; status: string; final_score: number | null; submitted_at: string | null; enrollment_id: string }[]
+      | {
+          id: string;
+          assessment_id: string;
+          attempt_no: number;
+          status: string;
+          final_score: number | null;
+          submitted_at: string | null;
+          enrollment_id: string;
+        }[]
       | null) ?? [];
 
   // Assessment titles untuk kolom "Assessment".
@@ -70,9 +84,19 @@ export async function GET() {
           .select("serial_no,status,issued_at,level_id,enrollment_id")
           .in("enrollment_id", enrIds)
           .order("issued_at", { ascending: false })
-      : { data: [] as { serial_no: string; status: string; issued_at: string; level_id: string; enrollment_id: string }[] };
+      : {
+          data: [] as {
+            serial_no: string;
+            status: string;
+            issued_at: string;
+            level_id: string;
+            enrollment_id: string;
+          }[],
+        };
   const certRows =
-    (certs as { serial_no: string; status: string; issued_at: string; level_id: string; enrollment_id: string }[] | null) ?? [];
+    (certs as
+      | { serial_no: string; status: string; issued_at: string; level_id: string; enrollment_id: string }[]
+      | null) ?? [];
 
   // Progress snapshot terbaru per enrollment.
   const { data: snaps } =
@@ -84,7 +108,8 @@ export async function GET() {
           .order("recorded_at", { ascending: false })
       : { data: [] as { enrollment_id: string; percent: number; mastery: number; recorded_at: string }[] };
   const snapRows =
-    (snaps as { enrollment_id: string; percent: number; mastery: number; recorded_at: string }[] | null) ?? [];
+    (snaps as { enrollment_id: string; percent: number; mastery: number; recorded_at: string }[] | null) ??
+    [];
   const latestSnap = new Map<string, (typeof snapRows)[number]>();
   for (const s of snapRows) {
     if (!latestSnap.has(s.enrollment_id)) latestSnap.set(s.enrollment_id, s);
@@ -118,7 +143,12 @@ export async function GET() {
 
   // Bagian 3: Certificates.
   const certHeaders = ["Course", "Serial", "Status", "Issued At"];
-  const certRowsOut = certRows.map((c) => [enrTitle.get(c.enrollment_id ?? "") ?? "", c.serial_no, c.status, c.issued_at]);
+  const certRowsOut = certRows.map((c) => [
+    enrTitle.get(c.enrollment_id ?? "") ?? "",
+    c.serial_no,
+    c.status,
+    c.issued_at,
+  ]);
 
   const csv =
     "MY LEARNING TRANSCRIPT\n" +

@@ -12,14 +12,8 @@ import { describe, expect, it } from "vitest";
  * 4. No session_replication_role = replica workaround exists in any
  *    committed .ts/.mjs/.sql file (the fix eliminates the need).
  */
-const originalMigration = readFileSync(
-  "supabase/migrations/20260906000011_ai_feedback_consent.sql",
-  "utf8",
-);
-const fixMigration = readFileSync(
-  "supabase/migrations/20260909000001_ai_draft_cascade_fix.sql",
-  "utf8",
-);
+const originalMigration = readFileSync("supabase/migrations/20260906000011_ai_feedback_consent.sql", "utf8");
+const fixMigration = readFileSync("supabase/migrations/20260909000001_ai_draft_cascade_fix.sql", "utf8");
 
 describe("ai_feedback_drafts cascade fix", () => {
   it("original migration has ON DELETE CASCADE FK to responses", () => {
@@ -33,13 +27,9 @@ describe("ai_feedback_drafts cascade fix", () => {
   });
 
   it("fix migration creates private.block_direct_ai_draft_delete trigger function", () => {
-    expect(fixMigration).toMatch(
-      /create or replace function private\.block_direct_ai_draft_delete/,
-    );
+    expect(fixMigration).toMatch(/create or replace function private\.block_direct_ai_draft_delete/);
     expect(fixMigration).toMatch(/security definer/);
-    expect(fixMigration).toMatch(
-      /set search_path = private, public, pg_temp/,
-    );
+    expect(fixMigration).toMatch(/set search_path = private, public, pg_temp/);
     expect(fixMigration).toMatch(/returns trigger/);
     expect(fixMigration).toMatch(/language plpgsql/);
   });

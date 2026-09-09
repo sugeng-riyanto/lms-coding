@@ -14,21 +14,13 @@ import { describe, expect, it } from "vitest";
  * 2. QuizTaker accepts an initialResult prop.
  * 3. QuizTaker initializes result state from initialResult.
  */
-const pageSource = readFileSync(
-  "app/(student)/quiz/[attemptId]/page.tsx",
-  "utf8",
-);
-const quizTakerSource = readFileSync(
-  "app/(student)/quiz/[attemptId]/quiz-taker.tsx",
-  "utf8",
-);
+const pageSource = readFileSync("app/(student)/quiz/[attemptId]/page.tsx", "utf8");
+const quizTakerSource = readFileSync("app/(student)/quiz/[attemptId]/quiz-taker.tsx", "utf8");
 
 describe("quiz result persistence — server-rendered for submitted attempts", () => {
   describe("server page fetches result for submitted attempts", () => {
     it("imports getAttemptResult", () => {
-      expect(pageSource).toMatch(
-        /import.*getAttemptResult.*from.*features\/actions/,
-      );
+      expect(pageSource).toMatch(/import.*getAttemptResult.*from.*features\/actions/);
     });
 
     it("calls getAttemptResult when status is not in_progress", () => {
@@ -53,16 +45,12 @@ describe("quiz result persistence — server-rendered for submitted attempts", (
     });
 
     it("destructures initialResult from props", () => {
-      expect(quizTakerSource).toMatch(
-        /function QuizTaker\(\{.*initialResult/,
-      );
+      expect(quizTakerSource).toMatch(/function QuizTaker\(\{.*initialResult/);
     });
 
     it("initializes result state from initialResult (not null)", () => {
       // The useState should use initialResult ?? null, not just null
-      expect(quizTakerSource).toMatch(
-        /useState.*initialResult\s*\?\?\s*null/,
-      );
+      expect(quizTakerSource).toMatch(/useState.*initialResult\s*\?\?\s*null/);
     });
 
     it("does NOT change the submit-time flow — onSubmit still calls getAttemptResult", () => {

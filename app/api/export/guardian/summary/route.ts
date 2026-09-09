@@ -15,16 +15,25 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const studentId = url.searchParams.get("studentId") ?? "";
   if (!studentId) {
-    return NextResponse.json({ error: { code: "INVALID_INPUT", message: "studentId wajib." } }, { status: 400 });
+    return NextResponse.json(
+      { error: { code: "INVALID_INPUT", message: "studentId wajib." } },
+      { status: 400 },
+    );
   }
   const supabase = await createClient();
   const { data: claimsData } = await supabase.auth.getClaims();
   const userId = (claimsData?.claims as { sub?: string } | undefined)?.sub;
   if (!userId) {
-    return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Not signed in." } }, { status: 401 });
+    return NextResponse.json(
+      { error: { code: "UNAUTHENTICATED", message: "Not signed in." } },
+      { status: 401 },
+    );
   }
   if (!checkRateLimit(`guardian-summary:${userId}`, 5, 60_000)) {
-    return NextResponse.json({ error: { code: "RATE_LIMITED", message: "Too many requests." } }, { status: 429 });
+    return NextResponse.json(
+      { error: { code: "RATE_LIMITED", message: "Too many requests." } },
+      { status: 429 },
+    );
   }
 
   // Harus wali dengan guardian link AKTIF ke studentId (RLS guardian_links).
@@ -36,10 +45,17 @@ export async function GET(req: Request) {
     .eq("status", "active")
     .single();
   if (!link) {
-    return NextResponse.json({ error: { code: "FORBIDDEN", message: "No active guardian link." } }, { status: 403 });
+    return NextResponse.json(
+      { error: { code: "FORBIDDEN", message: "No active guardian link." } },
+      { status: 403 },
+    );
   }
 
-  const { data: profile } = await supabase.from("profiles").select("display_name").eq("id", studentId).single();
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("display_name")
+    .eq("id", studentId)
+    .single();
   const displayName = (profile as { display_name: string } | null)?.display_name ?? studentId.slice(0, 8);
 
   const { data: enrollments } = await supabase
@@ -48,8 +64,7 @@ export async function GET(req: Request) {
     .eq("student_id", studentId);
   const enr =
     (enrollments as
-      | { id: string; course_id: string; courses: { title: string } | null; status: string }[]
-      | null) ?? [];
+      { id: string; course_id: string; courses: { title: string } | null; status: string }[] | null) ?? [];
   const enrIds = enr.map((e) => e.id);
 
   // Progress snapshot terbaru per enrollment.
@@ -62,7 +77,8 @@ export async function GET(req: Request) {
           .order("recorded_at", { ascending: false })
       : { data: [] as { enrollment_id: string; percent: number; mastery: number; recorded_at: string }[] };
   const snapRows =
-    (snaps as { enrollment_id: string; percent: number; mastery: number; recorded_at: string }[] | null) ?? [];
+    (snaps as { enrollment_id: string; percent: number; mastery: number; recorded_at: string }[] | null) ??
+    [];
   const latestSnap = new Map<string, (typeof snapRows)[number]>();
   for (const s of snapRows) {
     if (!latestSnap.has(s.enrollment_id)) latestSnap.set(s.enrollment_id, s);
@@ -76,20 +92,41 @@ export async function GET(req: Request) {
           .select("serial_no,status,issued_at,level_id,enrollment_id")
           .in("enrollment_id", enrIds)
           .order("issued_at", { ascending: false })
-      : { data: [] as { serial_no: string; status: string; issued_at: string; level_id: string; enrollment_id: string }[] };
+      : {
+          data: [] as {
+            serial_no: string;
+            status: string;
+            issued_at: string;
+            level_id: string;
+            enrollment_id: string;
+          }[],
+        };
   const certRows =
-    (certs as { serial_no: string; status: string; issued_at: string; level_id: string; enrollment_id: string }[] | null) ?? [];
+    (certs as
+      | { serial_no: string; status: string; issued_at: string; level_id: string; enrollment_id: string }[]
+      | null) ?? [];
 
   const enrTitle = new Map(enr.map((e) => [e.id, e.courses?.title ?? "Course"]));
 
   const headers = ["Course", "Enrollment Status", "Progress %", "Mastery %", "Last Snapshot"];
   const rows = enr.map((e) => {
     const s = latestSnap.get(e.id);
-    return [e.courses?.title ?? "Course", e.status, s ? String(s.percent) : "", s ? String(Math.round(s.mastery * 100)) : "", s?.recorded_at ?? ""];
+    return [
+      e.courses?.title ?? "Course",
+      e.status,
+      s ? String(s.percent) : "",
+      s ? String(Math.round(s.mastery * 100)) : "",
+      s?.recorded_at ?? "",
+    ];
   });
 
   const certHeaders = ["Course", "Serial", "Status", "Issued At"];
-  const certRowsOut = certRows.map((c) => [enrTitle.get(c.enrollment_id ?? "") ?? "", c.serial_no, c.status, c.issued_at]);
+  const certRowsOut = certRows.map((c) => [
+    enrTitle.get(c.enrollment_id ?? "") ?? "",
+    c.serial_no,
+    c.status,
+    c.issued_at,
+  ]);
 
   const csv =
     `CHILD PROGRESS SUMMARY\nStudent: ${displayName}\nStudent ID: ${studentId}\n\nProgress by Course\n` +
