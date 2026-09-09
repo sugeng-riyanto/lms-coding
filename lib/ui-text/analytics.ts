@@ -4,6 +4,7 @@ import type { TextDict } from "@/lib/i18n";
 export const ANALYTICS = {
   title: { id: "Analitik kelas", en: "Class analytics" },
   cohortLabel: { id: "Cohort: {name}", en: "Cohort: {name}" },
+  exportCsv: { id: "Ekspor CSV", en: "Export CSV" },
   noCohort: {
     id: "Belum ada cohort yang Anda ampu. Buat cohort lalu daftarkan murid untuk melihat analitik.",
     en: "You do not teach any cohort yet. Create a cohort and enroll students to see analytics.",

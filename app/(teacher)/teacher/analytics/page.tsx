@@ -364,9 +364,17 @@ export default async function AnalyticsPage({
     <main id="main" className="mx-auto max-w-5xl px-4 py-10">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h1 className="text-2xl font-bold">{t("title")}</h1>
-        <p className="text-sm text-slate-500">
-          {fmt(t("cohortLabel"), { name: cohorts.find((c) => c.id === selectedCohort)?.name ?? "" })}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-slate-500">
+            {fmt(t("cohortLabel"), { name: cohorts.find((c) => c.id === selectedCohort)?.name ?? "" })}
+          </p>
+          <a
+            href={`/api/teacher/export?cohortId=${selectedCohort}`}
+            className="rounded-lg border px-3 py-1.5 text-sm font-semibold underline"
+          >
+            {t("exportCsv")}
+          </a>
+        </div>
       </div>
 
       {/* Digest mingguan: tiga prioritas tindakan */}

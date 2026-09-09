@@ -196,12 +196,20 @@ export default async function GuardianPage() {
                       </p>
                     </div>
                   </div>
-                  <span
-                    aria-label={fmt(t("statusAria"), { name: c.displayName })}
-                    className="rounded-full bg-white/20 px-3 py-1 text-sm font-semibold"
-                  >
-                    {t("linkedActive")}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span
+                      aria-label={fmt(t("statusAria"), { name: c.displayName })}
+                      className="rounded-full bg-white/20 px-3 py-1 text-sm font-semibold"
+                    >
+                      {t("linkedActive")}
+                    </span>
+                    <a
+                      href={`/api/export/guardian/summary?studentId=${c.studentId}`}
+                      className="rounded-full bg-white/90 px-3 py-1 text-sm font-semibold text-blue-800 hover:bg-white"
+                    >
+                      {t("exportSummary")}
+                    </a>
+                  </div>
                 </div>
 
                 <div className="grid gap-4 p-5 md:grid-cols-3">

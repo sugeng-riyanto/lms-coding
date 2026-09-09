@@ -39,6 +39,7 @@ export const GUARDIAN: TextDict = {
     en: "No certificates yet — they appear automatically once quizzes reach 100% and the final exam is ≥ 70%.",
   },
   downloadPdf: { id: "Unduh PDF resmi", en: "Download official PDF" },
+  exportSummary: { id: "Ekspor ringkasan (CSV)", en: "Export summary (CSV)" },
   verify: { id: "Verifikasi", en: "Verify" },
   revokedNote: {
     id: "Sertifikat ini dicabut; unduhan valid tidak tersedia.",

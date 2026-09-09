@@ -83,6 +83,8 @@ describe("P11: rate limit di endpoint sensitif", () => {
       "app/api/certificates/[publicId]/qr/route.ts",
       "app/api/certificates/[publicId]/pdf/route.ts",
       "app/api/teacher/export/route.ts",
+      "app/api/export/me/transcript/route.ts",
+      "app/api/export/guardian/summary/route.ts",
       "app/api/integrations/roblox/completions/route.ts",
     ]) {
       expect(readFileSync(f, "utf8"), f).toMatch(/checkRateLimit/);

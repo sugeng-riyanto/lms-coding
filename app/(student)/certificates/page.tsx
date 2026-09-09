@@ -42,7 +42,15 @@ export default async function MyCertificatesPage() {
   }
   return (
     <main id="main" className="mx-auto max-w-3xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Sertifikatku</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-3xl font-bold">Sertifikatku</h1>
+        <a
+          href="/api/export/me/transcript"
+          className="rounded-lg border px-4 py-2 text-sm font-semibold underline"
+        >
+          Ekspor transkrip belajar (CSV)
+        </a>
+      </div>
       {certs.length === 0 ? (
         <p className="mt-6 rounded-xl border p-5" role="status">
           Belum ada sertifikat. Selesaikan level hingga eligible, lalu minta guru menerbitkan.
