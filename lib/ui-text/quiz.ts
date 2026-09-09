@@ -33,10 +33,34 @@ export const QUIZ: TextDict = {
   fileUploaded: { id: "File terunggah: {path}", en: "Uploaded file: {path}" },
   results: { id: "Hasil", en: "Results" },
   resultTitle: { id: "Hasil: {score}", en: "Result: {score}" },
+  resultSubtitle: {
+    id: "Lihat umpan balik per butir soal di bawah.",
+    en: "See per-question feedback below.",
+  },
   autoScore: { id: "Otomatis: {score}", en: "Auto: {score}" },
   manualScore: { id: " · Manual: {score}", en: " · Manual: {score}" },
   pendingRelease: {
     id: "Jawaban terkirim. Nilai menunggu release guru.",
     en: "Answers submitted. Score awaits teacher release.",
   },
+  // Feedback loop
+  loadingFeedback: { id: "Memuat umpan balik…", en: "Loading feedback…" },
+  feedbackSection: { id: "Umpan balik per soal", en: "Per-question feedback" },
+  feedbackTitle: { id: "Umpan balik Jawaban", en: "Answer Feedback" },
+  feedbackSummary: {
+    id: "Benar {correct} dari {total} soal otomatis.",
+    en: "Correct {correct} out of {total} auto-graded questions.",
+  },
+  yourAnswer: { id: "Jawabanmu", en: "Your answer" },
+  correctAnswer: { id: "Jawaban benar", en: "Correct answer" },
+  score: { id: "Skor", en: "Score" },
+  awaitingManualGrade: {
+    id: "Menunggu penilaian manual oleh guru.",
+    en: "Awaiting manual grading by your teacher.",
+  },
+  showExplanation: { id: "Tampilkan penjelasan", en: "Show explanation" },
+  hideExplanation: { id: "Sembunyikan penjelasan", en: "Hide explanation" },
+  badgeCorrect: { id: "Benar", en: "Correct" },
+  badgeIncorrect: { id: "Salah", en: "Incorrect" },
+  badgePending: { id: "Menunggu", en: "Pending" },
 } as const;

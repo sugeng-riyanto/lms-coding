@@ -177,6 +177,39 @@ export const resolveAlertSchema = z.object({
   note: z.string().max(2000).default(""),
 });
 
+export const assignAlertSchema = z.object({
+  alertId: uuidSchema,
+  assignedTo: uuidSchema,
+  dueAt: z.string().datetime().optional(),
+});
+
+export const reopenAlertSchema = z.object({
+  alertId: uuidSchema,
+  reason: z.string().max(2000).default(""),
+});
+
+export const createNotificationSchema = z.object({
+  userId: uuidSchema,
+  type: z.string().max(50),
+  title: z.string().max(200),
+  body: z.string().max(2000).default(""),
+  link: z.string().max(500).optional(),
+});
+
+export const markNotificationReadSchema = z.object({
+  notificationId: uuidSchema,
+});
+
+export const createAlertSchema = z.object({
+  cohortId: uuidSchema,
+  studentId: uuidSchema,
+  code: z.string().max(50),
+  message: z.string().max(500),
+  assignedTo: uuidSchema.optional(),
+  dueAt: z.string().datetime().optional(),
+  followUpAssessmentId: uuidSchema.optional(),
+});
+
 export const updateContentSchema = z.object({
   table: z.enum(["levels", "modules", "lessons", "activities"]),
   id: uuidSchema,

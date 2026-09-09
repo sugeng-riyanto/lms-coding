@@ -50,6 +50,13 @@ export const STUDENT_DETAIL: TextDict = {
   certRevoked: { id: "revoked", en: "revoked" },
   replaced: { id: "diganti", en: "replaced" },
 
+  // ---- alert history (intervention queue) ----
+  alertHistoryHeading: { id: "Riwayat intervensi", en: "Intervention history" },
+  noAlerts: { id: "Tidak ada riwayat intervensi.", en: "No intervention history." },
+  interventionNote: { id: "Catatan", en: "Note" },
+  alertTimestamp: { id: "Dibuat: {created} · Diubah: {updated}", en: "Created: {created} · Updated: {updated}" },
+  dueLabel: { id: "Batas: {date}", en: "Due: {date}" },
+
   // ---- issuance approval ----
   issuanceHeading: { id: "Penerbitan (approval guru)", en: "Issuance (teacher approval)" },
   issuanceBody: {

@@ -37,6 +37,12 @@ export function navForRole(role: Role, isOrgAdmin: boolean, lang: Lang = "id"): 
           desc: p("studentCertificatesDesc"),
           group: "_main",
         },
+        {
+          href: "/analytics",
+          label: p("studentAnalytics"),
+          desc: p("studentAnalyticsDesc"),
+          group: "_main",
+        },
         settings,
       ];
     case "teacher":

@@ -8,4 +8,13 @@ export const NOTIFICATIONS = {
   quizSubmission: { id: "Kuis dikumpulkan", en: "Quiz submitted" },
   assignmentSubmission: { id: "Tugas dikumpulkan", en: "Assignment submitted" },
   newEnrollment: { id: "Pendaftaran baru", en: "New enrollment" },
+  // ---- Intervention queue notifications ----
+  alertAssigned: { id: "Anda ditugaskan intervensi", en: "Intervention assigned to you" },
+  alertDueSoon: { id: "Intervensi mendekati batas", en: "Intervention due soon" },
+  alertOverdue: { id: "Intervensi terlambat", en: "Intervention overdue" },
+  alertReopened: { id: "Intervensi dibuka kembali", en: "Intervention reopened" },
+  alertResolved: { id: "Intervensi diselesaikan", en: "Intervention resolved" },
+  gradeReleased: { id: "Nilai dirilis", en: "Grades released" },
+  markRead: { id: "Tandai sudah dibaca", en: "Mark as read" },
+  unreadCount: { id: "{n} belum dibaca", en: "{n} unread" },
 } satisfies TextDict;

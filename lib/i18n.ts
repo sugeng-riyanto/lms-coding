@@ -41,6 +41,8 @@ export const NAV = {
   studentReviewDesc: { id: "Ulasan terjadwal", en: "Scheduled review" },
   studentCertificates: { id: "Sertifikat", en: "Certificates" },
   studentCertificatesDesc: { id: "Sertifikatku", en: "My certificates" },
+  studentAnalytics: { id: "Analitik", en: "Analytics" },
+  studentAnalyticsDesc: { id: "Statistik belajar", en: "Learning stats" },
   teacherDashboard: { id: "Dasbor", en: "Dashboard" },
   teacherDashboardDesc: { id: "Ringkasan kelas", en: "Class summary" },
   teacherCourses: { id: "Kursus", en: "Courses" },
