@@ -233,27 +233,36 @@ export default async function VerifyPage({ params }: { params: Promise<{ publicI
         <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:ring-emerald-800">
           ✓ 2-page PDF (A4)
         </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-800 ring-1 ring-blue-200 dark:bg-blue-900/30 dark:text-blue-200 dark:ring-blue-800">
+          📋 Page 2: General Info &amp; Completion Summary
+        </span>
         <span className="text-xs text-slate-500">
-          Page 2 holds brief general information &amp; a compact completeness summary (table + chart), with
-          the same QR and unique code as page 1. Per-module details live in the web record, not on paper.
+          Page 2 carries the same QR and unique code as page 1. Per-module completeness lives in the web
+          record below.
         </span>
       </div>
-      {valid && authorizedForPdf && (
-        <div className="mt-4">
-          <a
-            href={`/api/certificates/${encodeURIComponent(publicId)}/pdf`}
-            className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-          >
-            Open certificate PDF (2 pages)
-            <span aria-hidden>↓</span>
-          </a>
+      {valid && (
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          {authorizedForPdf ? (
+            <a
+              href={`/api/certificates/${encodeURIComponent(publicId)}/pdf`}
+              className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+            >
+              📥 View PDF (2 pages)
+              <span aria-hidden>↓</span>
+            </a>
+          ) : (
+            <a
+              href="/login"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-400 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            >
+              🔐 Sign in to download PDF
+            </a>
+          )}
+          <span className="text-xs text-slate-500">
+            PDF available to the certificate recipient or class teacher.
+          </span>
         </div>
-      )}
-      {valid && !authorizedForPdf && (
-        <p className="mt-4 text-xs text-slate-500">
-          The PDF is only available to the certificate recipient or the class teacher after signing in — for
-          privacy, this public page does not include the document.
-        </p>
       )}
       {digitalRecord && (
         <section className="mt-6 rounded-xl border p-5" aria-labelledby="digital-record-heading">
