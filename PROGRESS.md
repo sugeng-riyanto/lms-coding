@@ -2156,3 +2156,20 @@ Catatan: password demo di-rotate via GoTrue admin API ke `PhysDemo-2026!` (env `
 | 2026-09-09 | Ujian akhir 100% → sertifikat | PASS | auto_issue → CERT-20260909-4d2cca |
 
 **Defect live yang diperbaiki (migration 20260909000002):** nilai manual TIDAK pernah masuk `attempts.final_score` — murid melihat skor auto saja meski guru sudah menilai (panel hasil salah + kelayakan sertifikat untuk asesmen ber-essay tidak pernah terpenuhi). Fix: `private.recompute_attempt_score(p_attempt_id)` menghitung ulang raw/final dari responses (earned = min(auto+manual, points) per soal, hormati subset randomisasi), dipanggil dari `grade_response_manual` DAN `finalize_response_grades`. Sekaligus `finalize_response_grades` kini menyimpan manual_score dalam **POIN soal** (pct% × question_versions.points), konsisten dengan auto_score (sebelumnya persen 0-100 dicampur poin). Guard DRAFT_INCOMPLETE/EMPTY_RUBRIC/NO_RUBRIC + grade_revisions/audit append-only dipertahankan. +8 test statis (`tests/integration/manual-grading.test.ts`). Gates: tsc 0 · lint 0 · vitest **724/1**.
+
+## Simulasi RE-ANSWER (hosted, `.freebuff/simulate-reanswer.mjs` — idempoten) — 26/26 PASS
+
+Kursus baru **Retry Mastery: Quiz Retake** (`retry-mastery-demo`, cohort Kelas Retry 2026, murid01+murid02) — 1 level, 1 artikel, 1 kuis 3×10 poin MCQ.
+
+| Langkah | Hasil |
+|---|---|
+| murid01 attempt 1 jawab 1/3 benar | final **33.33%** (<70 → GAGAL), status submitted, append-only |
+| murid01 melihat PEMBAHASAN (panel hasil) | release=immediate → tampil; per-butir `Auto: 10 / 0 / 0`; UI `/quiz/{attemptId}` = "Result: 33.3" + daftar auto score |
+| Bukti keamanan skor | murid PATCH `final_score=100` **ditolak RLS** (nilai tetap 33.33) — skor hanya bisa ditulis server/service key |
+| Bukti temporal (fresh) | attempt gagal SAJA → `auto_issue_certificates` = **0 sertifikat** (quiz<100, ujian<70) |
+| murid01 attempt 2 jawab 3/3 | final **100%**, UI "Result: 100" (Auto: 10/10/10) |
+| Kelayakan sertifikat | `max(final_score)` = 100 → sertifikat **CERT-20260909-66a542** terbit meski ada attempt gagal; 2 attempt dipertahankan (skor terbaik, bukan terakhir) |
+| Kontrol negatif (run-independent) | murid02 hanya attempt 1 (33.33%) → **0 sertifikat** |
+| Entry ulang di UI | level map → aktivitas quiz → tombol **"Start quiz"** (2/5 attempts terpakai, maxAttempts=5) |
+
+**Defect live yang diperbaiki (`app/(student)/learn/[id]/page.tsx`):** deep-link `/learn/{levelId}` tanpa `?enrollment=` memakai **enrollment aktif pertama lintas kursus** (murid01 → Matematika Dasar) — link kuis membawa enrollment kursus SALAH → potensi polusi attempt/learning-event lintas course. Fix: fallback kini di-scope ke **course milik level** (`level → course_versions → enrollment aktif course tsb`), fallback lama hanya bila tak ada enrollment course itu. Terverifikasi live: link aktivitas kini membawa `enrollment=8daf3fdd…` (course Retry) bukan `b5eda02e…` (Matematika). Gates: tsc 0 · lint 0 · vitest **724/1** · build 0.
