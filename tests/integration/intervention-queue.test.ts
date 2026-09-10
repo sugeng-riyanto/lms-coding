@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const actions = readFileSync("features/actions.ts", "utf8");
-const migration = readFileSync("supabase/migrations/20260909120000_intervention_queue.sql", "utf8");
+const migration = readFileSync("supabase/migrations/20260909120001_intervention_queue.sql", "utf8");
 const validation = readFileSync("lib/validation.ts", "utf8");
 const alertControls = readFileSync("app/(teacher)/teacher/alert-controls.tsx", "utf8");
 const studentDetail = readFileSync("app/(teacher)/teacher/students/[studentId]/page.tsx", "utf8");

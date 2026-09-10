@@ -32,7 +32,7 @@ create policy "teacher_select_activity_versions" on public.activity_content_vers
       join public.course_versions cv on cv.id = lv.course_version_id
       join public.courses c on c.id = cv.course_id
       where a.id = activity_content_versions.activity_id
-        and c.teacher_id = auth.uid()
+        and c.owner_id = auth.uid()
     )
   );
 
@@ -49,7 +49,7 @@ create policy "teacher_insert_activity_versions" on public.activity_content_vers
       join public.course_versions cv on cv.id = lv.course_version_id
       join public.courses c on c.id = cv.course_id
       where a.id = activity_content_versions.activity_id
-        and c.teacher_id = auth.uid()
+        and c.owner_id = auth.uid()
     )
   );
 
@@ -111,7 +111,7 @@ select
   1, 
   content_json, 
   title, 
-  (select teacher_id from courses c join course_versions cv on cv.course_id = c.id join levels lv on lv.course_version_id = cv.id join modules m on m.level_id = lv.id join lessons l on l.module_id = m.id where l.id = lesson_id limit 1),
+  (select owner_id from courses c join course_versions cv on cv.course_id = c.id join levels lv on lv.course_version_id = cv.id join modules m on m.level_id = lv.id join lessons l on l.module_id = m.id where l.id = lesson_id limit 1),
   'Initial version'
 from public.activities
 where not exists (

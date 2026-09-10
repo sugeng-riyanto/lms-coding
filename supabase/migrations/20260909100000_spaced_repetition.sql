@@ -28,7 +28,8 @@ create table public.spaced_repetition (
 );
 
 -- Indexes for fast due-for-review queries
-create index idx_sr_next_review on public.spaced_repetition(next_review_at) where next_review_at <= now();
+-- Note: cannot use now() in partial index predicate (volatile), so plain index.
+create index idx_sr_next_review on public.spaced_repetition(next_review_at);
 create index idx_sr_student_enrollment on public.spaced_repetition(student_id, enrollment_id);
 create index idx_sr_student_question on public.spaced_repetition(student_id, question_version_id);
 

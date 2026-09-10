@@ -35,7 +35,7 @@ create policy "enrolled_read_comments" on public.activity_comments
       join public.course_versions cv on cv.id = lv.course_version_id
       join public.courses c on c.id = cv.course_id
       where a.id = activity_comments.activity_id
-        and c.teacher_id = auth.uid()
+        and c.owner_id = auth.uid()
     )
   );
 
@@ -64,7 +64,7 @@ create policy "enrolled_insert_comments" on public.activity_comments
         join public.course_versions cv on cv.id = lv.course_version_id
         join public.courses c on c.id = cv.course_id
         where a.id = activity_comments.activity_id
-          and c.teacher_id = auth.uid()
+          and c.owner_id = auth.uid()
       )
     )
   );
