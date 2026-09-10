@@ -69,6 +69,7 @@ If conflicts arise, the higher-ordered document wins. Never guess scoring rules 
 - `docs/runbooks.md` — operational procedures (migration, seed, live-denial, backup/restore).
 - `docs/release-checklist.md` — release checklist and smoke tests.
 - `docs/pilot-deployment.md` — pilot deployment playbook: env set, db push + smoke sequence, restore procedure (rehearsal 9/9).
+- `docs/production-readiness-checklist.md` — full production readiness checklist: domain, HTTPS, env vars, demo cleanup, monitoring, security, rollback.
 - `docs/language-policy.md` — UI language policy: public shells MUST be English, role dashboards bilingual. **Read before adding text to shell pages** (enforced by `lms/no-indonesian-shell-text`).
 - `PROGRESS.md` — phase status, gate evidence, and remaining work.
 

@@ -191,6 +191,7 @@ CSP_REPORT_ONLY=false
 - [ ] Zero lost/duplicated graded submissions
 - [ ] Restore rehearsal completed
 - [ ] Deployment/rollback checklist documented
+- [ ] Production readiness checklist complete (`docs/production-readiness-checklist.md`)
 
 ## Notes for Next Agent
 
