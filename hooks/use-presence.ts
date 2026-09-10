@@ -65,7 +65,7 @@ export function usePresence({ channelName, initialState, enabled = true }: UsePr
         supabase.removeChannel(channelRef.current);
       }
     };
-  }, [channelName, enabled]);
+  }, [channelName, enabled, initialState]);
 
   const broadcast = useCallback((event: string, payload: Record<string, unknown>) => {
     if (channelRef.current) {

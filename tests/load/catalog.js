@@ -14,7 +14,7 @@ export const options = {
   thresholds: THRESHOLDS,
 };
 
-export default function () {
+export default function catalogLoadTest() {
   // 1. Landing page
   const landingRes = http.get(`${BASE_URL}/`);
   check(landingRes, {

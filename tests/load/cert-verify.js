@@ -17,7 +17,7 @@ export const options = {
   },
 };
 
-export default function () {
+export default function certVerifyLoadTest() {
   // Public certificate verification endpoint
   const res = http.get(`${BASE_URL}/verify`);
   check(res, {

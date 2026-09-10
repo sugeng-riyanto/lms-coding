@@ -32,7 +32,7 @@ function login(email, password) {
   return null;
 }
 
-export default function () {
+export default function quizLoadTest() {
   // Use test student credentials from env
   const email = __ENV.TEST_STUDENT_EMAIL || "student@test.com";
   const password = __ENV.TEST_STUDENT_PASSWORD || "testpassword123";
